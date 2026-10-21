@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Routeurs — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="routeurs">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Routeurs</h1>
+      <p class="subtitle">Vos MikroTik, leurs forfaits et leurs points de vente.</p>
+    </div>
+    <button class="btn" type="button" id="addBtn">+ Ajouter</button>
+  </div>
+  <label class="search"><span class="sr-only">Rechercher un routeur</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="search" type="search" placeholder="Rechercher un routeur…" autocomplete="off"></label>
+  <section class="router-cards" id="list" aria-live="polite"><div class="card empty">Chargement…</div></section>
+</main>
+
+<div class="bs-shade" id="bsShade"></div>
+<section class="bs" id="bs" role="dialog" aria-modal="true" aria-labelledby="bsTitle" hidden>
+  <div class="bs-head">
+    <span class="bs-ico" id="bsIco" aria-hidden="true"></span>
+    <h2 id="bsTitle"></h2>
+    <button class="icon-btn icon-btn-plain" type="button" id="bsClose" aria-label="Fermer"></button>
+  </div>
+  <div class="bs-body" id="bsBody"></div>
+  <div class="bs-foot" id="bsFoot"></div>
+</section>
+
+<script src="/static/shell.js"></script>
+<script src="/static/routeurs.js"></script>
+</body>
+</html>

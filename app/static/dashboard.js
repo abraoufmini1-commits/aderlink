@@ -1,0 +1,298 @@
+/* ADER LINK — tableau de bord */
+(function () {
+  "use strict";
+
+  var state = { range: "24h", data: null, tableView: false, sheetZone: null, sessions: [] };
+  var REFRESH_MS = 15000;
+  var $ = function (id) { return document.getElementById(id); };
+  var nf = new Intl.NumberFormat("fr-FR");
+  var nf1 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
+
+  // --- formats -----------------------------------------------------------------
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function bps(v) {
+    v = v || 0;
+    if (v >= 1e9) return nf1.format(v / 1e9) + " Gb/s";
+    if (v >= 1e6) return nf1.format(v / 1e6) + " Mb/s";
+    if (v >= 1e3) return nf.format(Math.round(v / 1e3)) + " kb/s";
+    return nf.format(v) + " b/s";
+  }
+  function bytes(v) {
+    v = v || 0;
+    if (v >= 1e9) return nf1.format(v / 1e9) + " Go";
+    if (v >= 1e6) return nf1.format(v / 1e6) + " Mo";
+    if (v >= 1e3) return nf.format(Math.round(v / 1e3)) + " ko";
+    return nf.format(v) + " o";
+  }
+  function duration(s) {
+    if (s == null) return "–";
+    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d) return d + " j " + h + " h";
+    if (h) return h + " h " + String(m).padStart(2, "0");
+    return m + " min";
+  }
+  function ago(ts) {
+    if (!ts) return "–";
+    var s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    if (s < 60) return "à l'instant";
+    if (s < 3600) return "il y a " + Math.floor(s / 60) + " min";
+    if (s < 86400) return "il y a " + Math.floor(s / 3600) + " h";
+    return "il y a " + Math.floor(s / 86400) + " j";
+  }
+  function clock(ts, withDay) {
+    var d = new Date(ts * 1000);
+    var t = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    return withDay ? d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" }) + " " + t : t;
+  }
+
+  var ICON_OK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ICON_KO = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  var ICON_UNK = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.5" fill="currentColor"/></svg>';
+
+  // --- chargement --------------------------------------------------------------------
+  function load() {
+    return fetch("/api/overview?range=" + state.range, { credentials: "same-origin" })
+      .then(function (r) {
+        if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
+        return r.json();
+      })
+      .then(function (d) {
+        state.data = d;
+        render();
+        if (state.sheetZone) loadSessions(state.sheetZone, true);
+      })
+      .catch(function (e) {
+        if (e.message !== "auth") $("updated").textContent = "Serveur injoignable — nouvel essai…";
+      });
+  }
+
+  function render() {
+    var d = state.data, t = d.totals;
+    $("demoBanner").hidden = !d.demo;
+    $("updated").textContent = "Mis à jour à " + clock(d.generated_at);
+    $("kActive").textContent = nf.format(t.active);
+    var peak = d.history.reduce(function (m, p) { return Math.max(m, p.active); }, 0);
+    $("kActiveSub").textContent = "Pic sur la période : " + nf.format(peak);
+    $("kZones").innerHTML = nf.format(t.zones_online) + " <small>/ " + nf.format(t.zones) + "</small>";
+    var off = t.zones - t.zones_online;
+    $("kZonesSub").textContent = off ? off + " routeur" + (off > 1 ? "s" : "") + " hors ligne" : "Tous en ligne";
+    var st = d.sales_today || { tickets: 0, amount: 0 };
+    $("heroAmount").textContent = nf.format(st.amount);
+    $("heroTickets").textContent = nf.format(st.tickets) + " ticket" + (st.tickets > 1 ? "s" : "") + " vendu" + (st.tickets > 1 ? "s" : "") + " aujourd'hui";
+    $("pollInfo").textContent = "Relevé toutes les " + d.poll_seconds + " s";
+    renderZones(d.zones);
+    renderEvents(d.events, d.zones);
+    renderChart(d.history);
+  }
+
+  // --- zones -------------------------------------------------------------------------
+  function pill(status) {
+    if (status === "online") return '<span class="pill pill-online">' + ICON_OK + "En ligne</span>";
+    if (status === "offline") return '<span class="pill pill-offline">' + ICON_KO + "Hors ligne</span>";
+    return '<span class="pill pill-unknown">' + ICON_UNK + "En attente</span>";
+  }
+  function meter(label, value) {
+    var v = value == null ? null : Math.max(0, Math.min(100, value));
+    return '<div><div class="stat-label">' + label + '</div><div class="stat-value num">' +
+      (v == null ? "–" : v + " %") + '</div><div class="meter"><span data-w="' + (v || 0) + '"' +
+      (v >= 80 ? ' class="high"' : "") + "></span></div></div>";
+  }
+  function renderZones(zones) {
+    var html = zones.map(function (z) {
+      var online = z.status === "online";
+      var meta = [z.board, z.version ? "RouterOS " + z.version : ""].filter(Boolean).join(" · ");
+      var body;
+      if (online) {
+        body =
+          '<div class="zone-big"><span class="n num">' + nf.format(z.active) + '</span><span class="l">connecté' + (z.active > 1 ? "s" : "") + "</span></div>" +
+          '<div class="zone-stats">' + meter("Processeur", z.cpu) + meter("Mémoire", z.memory) +
+          '<div><div class="stat-label">Débit</div><div class="stat-value num">↓ ' + bps(z.rx_bps) + "</div></div>" +
+          '<div><div class="stat-label">Allumé depuis</div><div class="stat-value num">' + duration(z.uptime_s) + "</div></div></div>";
+      } else {
+        body = '<div class="zone-error">' + esc(z.error || "Aucune réponse pour l'instant") + "</div>" +
+          '<div class="zone-stats"><div><div class="stat-label">Dernier contact</div><div class="stat-value">' +
+          (z.last_seen ? ago(z.last_seen) : "–") + "</div></div></div>";
+      }
+      return '<article class="card zone' + (z.status === "offline" ? " is-offline" : "") + '">' +
+        '<div class="zone-head"><div><div class="zone-name">' + esc(z.name) + '</div><div class="zone-meta">' +
+        esc(meta || z.location || "") + "</div></div>" + pill(z.status) + "</div>" + body +
+        '<div class="zone-foot"><span class="zone-meta num">' +
+        (z.tickets != null ? nf.format(z.tickets) + " tickets" : "") + "</span>" +
+        (online ? '<button class="btn btn-sm" type="button" data-zone="' + esc(z.id) + '">Voir les connectés</button>' : "") +
+        "</div></article>";
+    }).join("");
+    var box = $("zones");
+    box.innerHTML = html || '<div class="card empty">Aucune zone configurée. Ajoutez vos routeurs dans config.json.</div>';
+    box.querySelectorAll(".meter span").forEach(function (s) { s.style.width = s.dataset.w + "%"; });
+  }
+
+  // --- activité ----------------------------------------------------------------------
+  function renderEvents(events) {
+    var ul = $("events");
+    if (!events.length) { ul.innerHTML = '<li class="empty">Aucun événement pour le moment.</li>'; return; }
+    ul.innerHTML = events.map(function (e) {
+      var ok = e.kind === "online";
+      return '<li><span class="ico ' + (ok ? "online" : "offline") + '">' + (ok ? ICON_OK : ICON_KO) +
+        "</span><span>" + esc(e.message) + '</span><time datetime="' + new Date(e.ts * 1000).toISOString() +
+        '" title="' + esc(clock(e.ts, true)) + '">' + ago(e.ts) + "</time></li>";
+    }).join("");
+  }
+
+  // --- graphique ---------------------------------------------------------------------
+  var chartGeom = null;
+  function niceMax(v) {
+    if (v <= 5) return 5;
+    var p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+  function renderChart(hist) {
+    var svg = $("chartSvg");
+    var W = svg.clientWidth || 800, H = svg.clientHeight || 240;
+    var m = { l: 36, r: 12, t: 12, b: 26 };
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    if (!hist.length) {
+      svg.innerHTML = '<text class="axis" x="' + W / 2 + '" y="' + H / 2 + '" text-anchor="middle">Pas encore de données</text>';
+      chartGeom = null; renderTable(hist); return;
+    }
+    if (hist.length === 1) hist = [hist[0], { ts: state.data.generated_at, active: hist[0].active, rx_bps: hist[0].rx_bps, tx_bps: hist[0].tx_bps }];
+    var x0 = hist[0].ts, x1 = hist[hist.length - 1].ts || x0 + 1;
+    if (x1 === x0) x1 = x0 + 1;
+    var ymax = niceMax(hist.reduce(function (a, p) { return Math.max(a, p.active); }, 0));
+    var X = function (t) { return m.l + (t - x0) / (x1 - x0) * (W - m.l - m.r); };
+    var Y = function (v) { return H - m.b - v / ymax * (H - m.t - m.b); };
+    var out = "";
+    for (var i = 0; i <= 4; i++) {
+      var v = ymax * i / 4, y = Y(v);
+      out += '<line class="gridline" x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y + '" y2="' + y + '"/>';
+      out += '<text class="axis" x="' + (m.l - 8) + '" y="' + (y + 4) + '" text-anchor="end">' + nf.format(v) + "</text>";
+    }
+    var span = x1 - x0, step = span > 3 * 86400 ? 86400 : span > 12 * 3600 ? 4 * 3600 : 3600;
+    var ticks = Math.max(1, Math.round((W - m.l - m.r) / 90));
+    step = Math.max(step, Math.ceil(span / ticks / step) * step);
+    var first = Math.ceil((x0 + 3600) / step) * step - 3600; // aligné sur l'heure locale UTC+1
+    for (var t = first; t <= x1; t += step) {
+      out += '<text class="axis" x="' + X(t) + '" y="' + (H - 6) + '" text-anchor="middle">' +
+        (step >= 86400 ? new Date(t * 1000).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" }) : clock(t)) + "</text>";
+    }
+    var pts = hist.map(function (p) { return X(p.ts).toFixed(1) + "," + Y(p.active).toFixed(1); });
+    out += '<path class="area" d="M' + X(x0) + "," + Y(0) + " L" + pts.join(" L") + " L" + X(x1) + "," + Y(0) + ' Z"/>';
+    out += '<path class="line" d="M' + pts.join(" L") + '"/>';
+    out += '<line class="cross" id="cross" y1="' + m.t + '" y2="' + (H - m.b) + '" visibility="hidden"/>';
+    out += '<circle class="dot" id="dot" r="5" visibility="hidden"/>';
+    out += '<rect id="hit" x="' + m.l + '" y="0" width="' + (W - m.l - m.r) + '" height="' + H + '" fill="transparent"/>';
+    svg.innerHTML = out;
+    chartGeom = { hist: hist, X: X, Y: Y, W: W };
+    renderTable(hist);
+  }
+  function onMove(ev) {
+    if (!chartGeom) return;
+    var svg = $("chartSvg"), rect = svg.getBoundingClientRect();
+    var px = (ev.clientX - rect.left) * (chartGeom.W / rect.width);
+    var h = chartGeom.hist, best = h[0], bd = Infinity;
+    h.forEach(function (p) { var dd = Math.abs(chartGeom.X(p.ts) - px); if (dd < bd) { bd = dd; best = p; } });
+    var x = chartGeom.X(best.ts), y = chartGeom.Y(best.active);
+    var cross = $("cross"), dot = $("dot"), tip = $("tooltip");
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("visibility", "visible");
+    tip.innerHTML = "<strong>" + nf.format(best.active) + "</strong> connecté" + (best.active > 1 ? "s" : "") +
+      "<br>" + esc(clock(best.ts, state.range === "7j")) + " · ↓ " + bps(best.rx_bps);
+    var sx = x * rect.width / chartGeom.W, sy = y * rect.height / svg.viewBox.baseVal.height;
+    tip.style.left = Math.min(Math.max(sx, 70), rect.width - 70) + "px";
+    tip.style.top = (sy - 12) + "px";
+    tip.style.opacity = 1;
+  }
+  function onLeave() {
+    var c = $("cross"), d = $("dot");
+    if (c) c.setAttribute("visibility", "hidden");
+    if (d) d.setAttribute("visibility", "hidden");
+    $("tooltip").style.opacity = 0;
+  }
+  function renderTable(hist) {
+    var rows = hist.slice().reverse().map(function (p) {
+      return "<tr><td class='num'>" + esc(clock(p.ts, true)) + "</td><td class='r num'>" + nf.format(p.active) +
+        "</td><td class='r num'>" + bps(p.rx_bps) + "</td></tr>";
+    }).join("");
+    $("chartTable").innerHTML = "<table class='chart-table'><thead><tr><th>Heure</th><th class='r'>Connectés</th><th class='r'>Débit ↓</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  // --- panneau des connectés --------------------------------------------------------------
+  function loadSessions(zoneId, silent) {
+    return fetch("/api/zones/" + encodeURIComponent(zoneId) + "/sessions", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        state.sessions = d.sessions || [];
+        $("sheetTitle").textContent = d.zone ? d.zone.name : "Connectés";
+        $("sheetSub").textContent = nf.format(state.sessions.length) + " connecté" + (state.sessions.length > 1 ? "s" : "");
+        renderSessions();
+        if (!silent) $("sheetSearch").focus();
+      });
+  }
+  function renderSessions() {
+    var q = $("sheetSearch").value.trim().toLowerCase();
+    var list = state.sessions.filter(function (s) {
+      return !q || [s.user, s.ip, s.mac].join(" ").toLowerCase().indexOf(q) >= 0;
+    }).sort(function (a, b) { return b.bytes_in - a.bytes_in; });
+    if (!list.length) { $("sheetBody").innerHTML = '<div class="empty">' + (q ? "Aucun résultat." : "Personne n'est connecté.") + "</div>"; return; }
+    $("sheetBody").innerHTML = "<table><thead><tr><th>Ticket</th><th class='hide-sm'>Adresse</th><th class='r'>Durée</th><th class='r'>Consommé</th></tr></thead><tbody>" +
+      list.map(function (s) {
+        return "<tr><td><span class='mono'>" + esc(s.user) + "</span><div class='zone-meta mono'>" + esc(s.mac) + "</div></td>" +
+          "<td class='hide-sm mono'>" + esc(s.ip) + "</td><td class='r num'>" + duration(s.uptime_s) + "</td>" +
+          "<td class='r num'>" + bytes(s.bytes_in + s.bytes_out) + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  }
+  var lastFocus = null;
+  function openSheet(zoneId) {
+    lastFocus = document.activeElement;
+    state.sheetZone = zoneId;
+    $("sheetSearch").value = "";
+    $("sheetBody").innerHTML = '<div class="empty">Chargement…</div>';
+    $("sheet").classList.add("open"); $("backdrop").classList.add("open");
+    loadSessions(zoneId);
+  }
+  function closeSheet() {
+    state.sheetZone = null;
+    $("sheet").classList.remove("open"); $("backdrop").classList.remove("open");
+    if (lastFocus) lastFocus.focus();
+  }
+
+  // --- événements ----------------------------------------------------------------------
+  document.querySelectorAll(".seg button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      state.range = b.dataset.range;
+      document.querySelectorAll(".seg button").forEach(function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+      load();
+    });
+  });
+  $("toggleTable").addEventListener("click", function () {
+    state.tableView = !state.tableView;
+    $("chartTable").hidden = !state.tableView;
+    $("chart").hidden = state.tableView;
+    this.textContent = state.tableView ? "Voir le graphique" : "Voir en tableau";
+    if (!state.tableView && state.data) renderChart(state.data.history);
+  });
+  $("zones").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-zone]");
+    if (b) openSheet(b.dataset.zone);
+  });
+  $("sheetClose").addEventListener("click", closeSheet);
+  $("backdrop").addEventListener("click", closeSheet);
+  $("sheetSearch").addEventListener("input", renderSessions);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && state.sheetZone) closeSheet(); });
+  var svg = $("chartSvg");
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerdown", onMove);
+  svg.addEventListener("pointerleave", onLeave);
+  var rt;
+  window.addEventListener("resize", function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { if (state.data) renderChart(state.data.history); }, 150);
+  });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
+
+  load();
+  setInterval(function () { if (!document.hidden) load(); }, REFRESH_MS);
+})();

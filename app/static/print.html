@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impression des tickets — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/print.css">
+</head>
+<body>
+<div class="toolbar">
+  <div class="tb-left">
+    <a class="tb-back" href="/tickets">← Tickets</a>
+    <div>
+      <div class="tb-title" id="title">Chargement…</div>
+      <div class="tb-sub" id="sub"></div>
+    </div>
+  </div>
+  <div class="tb-right">
+    <label class="tb-check"><input type="checkbox" id="onlyNew" checked> Seulement les tickets non utilisés</label>
+    <button class="tb-btn" id="printBtn" type="button">Imprimer</button>
+  </div>
+  <p class="tb-hint">Dans la fenêtre d'impression : format <strong>A4</strong>, échelle <strong>100 %</strong> (taille réelle), marges <strong>par défaut</strong>. Découpez le long des pointillés.</p>
+</div>
+<div id="sheets"></div>
+<script src="/static/print.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Contrôler un ticket — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="controle">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Contrôler un ticket</h1>
+      <p class="subtitle">Tapez le code imprimé sur la carte pour connaître son état</p>
+    </div>
+  </div>
+  <section class="card wizard">
+    <form id="checkForm" class="check-big" autocomplete="off">
+      <label class="sr-only" for="checkCode">Code du ticket</label>
+      <input id="checkCode" inputmode="numeric" placeholder="Code du ticket" required autofocus>
+      <button class="btn btn-big" type="submit">Vérifier</button>
+    </form>
+    <div id="checkResult" aria-live="polite"></div>
+  </section>
+</main>
+<script src="/static/shell.js"></script>
+<script src="/static/controle.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# /etc/caddy/Caddyfile — HTTPS automatique (certificat Let's Encrypt)
+# Remplace le nom de domaine par le tien (son DNS doit pointer vers le VPS).
+
+admin.aderlink.example {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

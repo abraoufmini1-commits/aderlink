@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Tableau de bord — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="accueil">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+
+<main>
+  <div class="page-head">
+    <div>
+      <h1>Tableau de bord</h1>
+      <p class="subtitle">Vue d'ensemble de vos zones Wi-Fi en temps réel</p>
+    </div>
+  </div>
+
+  <section class="hero" aria-labelledby="heroLabel">
+    <div class="hero-top">
+      <span class="hero-label" id="heroLabel">Ventes d'aujourd'hui</span>
+    </div>
+    <div class="hero-amount num"><span id="heroAmount">–</span> <small>F CFA</small></div>
+    <div class="hero-sub"><span class="hero-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z"/></svg></span><span id="heroTickets">–</span></div>
+    <div class="hero-actions">
+      <a class="btn" href="/tickets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Créer</a>
+      <a class="btn btn-light" href="/controle">Contrôler</a>
+      <a class="btn btn-light" href="/lots">Lots</a>
+    </div>
+  </section>
+
+  <section class="kpis" aria-label="Indicateurs">
+    <div class="card kpi kpi-accent">
+      <div class="kpi-label">Connectés maintenant</div>
+      <div class="kpi-value num" id="kActive">–</div>
+      <div class="kpi-sub" id="kActiveSub">&nbsp;</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-label">Routeurs en ligne</div>
+      <div class="kpi-value num" id="kZones">–</div>
+      <div class="kpi-sub" id="kZonesSub">&nbsp;</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-label">Chiffre d'affaires</div>
+      <div class="kpi-value num" id="kCa">–</div>
+      <div class="kpi-sub" id="kCaSub">depuis le début</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-label">Tickets vendus</div>
+      <div class="kpi-value num" id="kSold">–</div>
+      <div class="kpi-sub" id="kSoldSub">&nbsp;</div>
+    </div>
+  </section>
+
+  <section class="card chart-card" aria-labelledby="salesTitle">
+    <div class="chart-head">
+      <h2 id="salesTitle">Évolution des ventes</h2>
+      <div class="seg" role="group" aria-label="Période des ventes" id="salesRange">
+        <button type="button" data-days="7" aria-pressed="false">7 j</button>
+        <button type="button" data-days="30" aria-pressed="true">30 j</button>
+        <button type="button" data-days="90" aria-pressed="false">90 j</button>
+      </div>
+    </div>
+    <div class="sales-total"><strong class="num" id="salesAmount">–</strong> <span id="salesSub"></span></div>
+    <div class="chart-wrap" id="salesChart">
+      <svg id="salesSvg" role="img" aria-labelledby="salesTitle"></svg>
+      <div class="tooltip" id="salesTip"></div>
+    </div>
+  </section>
+
+  <section class="card chart-card" aria-labelledby="chartTitle">
+    <div class="chart-head">
+      <h2 id="chartTitle">Utilisateurs connectés — toutes zones</h2>
+      <div class="chart-tools">
+        <button class="link" id="toggleTable" type="button">Voir en tableau</button>
+        <div class="seg" role="group" aria-label="Période">
+          <button type="button" data-range="6h" aria-pressed="false">6 h</button>
+          <button type="button" data-range="24h" aria-pressed="true">24 h</button>
+          <button type="button" data-range="7j" aria-pressed="false">7 j</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="chart">
+      <svg id="chartSvg" role="img" aria-labelledby="chartTitle"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <div class="chart-table-wrap" id="chartTable" hidden></div>
+  </section>
+
+  <div class="section-head">
+    <h2>Routeurs</h2>
+    <span class="zone-meta" id="pollInfo"></span>
+  </div>
+  <section class="zones" id="zones" aria-live="polite"></section>
+
+  <div class="section-head"><h2>Derniers lots</h2><a class="link" href="/lots">Tous les lots →</a></div>
+  <section class="card"><ul class="lot-list" id="recentLots"></ul></section>
+
+  <div class="section-head"><h2>Activité des routeurs</h2></div>
+  <section class="card"><ul class="events" id="events"></ul></section>
+</main>
+
+<div class="sheet-backdrop" id="backdrop"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet-head">
+    <div>
+      <h2 id="sheetTitle">Connectés</h2>
+      <div class="zone-meta" id="sheetSub"></div>
+    </div>
+    <button class="x" id="sheetClose" type="button" aria-label="Fermer">×</button>
+  </div>
+  <div class="sheet-tools">
+    <input id="sheetSearch" type="search" placeholder="Ticket, IP ou adresse MAC" aria-label="Rechercher">
+  </div>
+  <div class="sheet-body" id="sheetBody"></div>
+</aside>
+
+<script src="/static/shell.js"></script>
+<script src="/static/dashboard.js"></script>
+<script src="/static/home.js"></script>
+</body>
+</html>

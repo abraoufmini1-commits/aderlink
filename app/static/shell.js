@@ -1,0 +1,135 @@
+/* ADER LINK — en-tête, menu latéral et barre du bas, communs à toutes les pages */
+(function () {
+  "use strict";
+  var page = document.body.dataset.page || "";
+  var I = {
+    home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    ticket: '<path d="M3 8a2 2 0 0 0 0 4v0a2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z"/><path d="M9 9h6M9 15h6"/>',
+    layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+    scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><circle cx="12" cy="12" r="3"/>',
+    router: '<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0"/>',
+    zones: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h0"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+    pencil: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+    store: '<path d="M4 9.5 5.5 4h13L20 9.5M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0M5 10.5V20h14v-9.5"/><path d="M10 20v-5h4v5"/>',
+    wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a14.5 14.5 0 0 1 20 0"/><path d="M12 19.5h.01"/>',
+    terminal: '<path d="m5 7 5 5-5 5M12 18h7"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>'
+  };
+  function icon(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + I[name] + "</svg>";
+  }
+  var main = [
+    { id: "accueil", href: "/", label: "Accueil", icon: "home" },
+    { id: "creer", href: "/tickets", label: "Créer des tickets", icon: "ticket" },
+    { id: "lots", href: "/lots", label: "Lots", icon: "layers" },
+    { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
+    { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router" },
+    { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear" }
+  ];
+  var soon = [
+    { label: "Multi-zones", icon: "zones" },
+    { label: "Rapport des ventes", icon: "chart" },
+    { label: "Analytique", icon: "trend" },
+    { label: "Utilisateurs", icon: "users" }
+  ];
+  function link(m) {
+    return '<a href="' + m.href + '"' + (m.id === page ? ' aria-current="page"' : "") + ">" + icon(m.icon) + "<span>" + m.label + "</span></a>";
+  }
+
+  // En-tête
+  var header = document.createElement("header");
+  header.className = "topbar";
+  header.innerHTML =
+    '<div class="topbar-inner">' +
+    '<a class="brand" href="/"><span class="brand-mark"><img src="/static/logo-blue.svg" alt="" width="22" height="22"></span>' +
+    '<img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15"></a>' +
+    '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 5).map(function (m) {
+      return '<a href="' + m.href + '"' + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
+    }).join("") + "</nav>" +
+    '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +
+    '<button class="icon-btn" type="button" id="menuBtn" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="drawer">' + icon("menu") + "</button></div></div>";
+  var banner = document.getElementById("demoBanner");
+  document.body.insertBefore(header, banner ? banner.nextSibling : document.body.firstChild);
+
+  // Menu latéral
+  var shade = document.createElement("div");
+  shade.className = "drawer-shade";
+  var drawer = document.createElement("aside");
+  drawer.className = "drawer";
+  drawer.id = "drawer";
+  drawer.setAttribute("aria-label", "Menu");
+  drawer.innerHTML =
+    '<div class="drawer-head"><span class="drawer-title">Menu</span><button class="icon-btn icon-btn-plain" type="button" id="menuClose" aria-label="Fermer le menu">' + icon("x") + "</button></div>" +
+    '<nav class="drawer-nav">' + main.map(link).join("") +
+    '<div class="drawer-sep"></div>' +
+    soon.map(function (m) { return '<span class="is-soon" aria-disabled="true">' + icon(m.icon) + "<span>" + m.label + '</span><em>Bientôt</em></span>'; }).join("") +
+    '<div class="drawer-sep"></div>' +
+    '<a href="/logout">' + icon("logout") + "<span>Déconnexion</span></a></nav>" +
+    '<div class="drawer-foot">ADER LINK<br>Gestion de zones Wi-Fi</div>';
+  document.body.appendChild(shade);
+  document.body.appendChild(drawer);
+
+  // Barre du bas (téléphone)
+  var bar = document.createElement("nav");
+  bar.className = "bottombar";
+  bar.setAttribute("aria-label", "Raccourcis");
+  function tab(id, href, label, ic) {
+    return '<a href="' + href + '"' + (id === page ? ' aria-current="page"' : "") + ">" + icon(ic) + "<span>" + label + "</span></a>";
+  }
+  bar.innerHTML = tab("accueil", "/", "Accueil", "home") + tab("routeurs", "/routeurs", "Routeurs", "router") +
+    '<a class="fab" href="/tickets" aria-label="Créer des tickets"' + (page === "creer" ? ' aria-current="page"' : "") + ">" + icon("plus") + "</a>" +
+    tab("lots", "/lots", "Lots", "layers") +
+    '<button type="button" id="menuBtn2">' + icon("menu") + "<span>Menu</span></button>";
+  document.body.appendChild(bar);
+  document.body.classList.add("has-bottombar");
+
+  var lastFocus = null;
+  function open() {
+    lastFocus = document.activeElement;
+    drawer.classList.add("open"); shade.classList.add("open");
+    document.getElementById("menuBtn").setAttribute("aria-expanded", "true");
+    document.getElementById("menuClose").focus();
+  }
+  function close() {
+    drawer.classList.remove("open"); shade.classList.remove("open");
+    document.getElementById("menuBtn").setAttribute("aria-expanded", "false");
+    if (lastFocus) lastFocus.focus();
+  }
+  document.getElementById("menuBtn").addEventListener("click", open);
+  document.getElementById("menuBtn2").addEventListener("click", open);
+  document.getElementById("menuClose").addEventListener("click", close);
+  shade.addEventListener("click", close);
+  drawer.addEventListener("click", function (e) { if (e.target.closest("a")) close(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && drawer.classList.contains("open")) close(); });
+
+  // Mise à jour automatique : quand le serveur change de version, la page se recharge toute seule
+  var version = null;
+  function toast(msg) {
+    var t = document.createElement("div");
+    t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
+    document.body.appendChild(t);
+  }
+  function checkVersion() {
+    fetch("/api/version", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (version && d.version !== version) {
+        toast("Nouvelle version " + d.version + " installée — actualisation…");
+        setTimeout(function () { location.reload(); }, 2500);
+      }
+      version = d.version;
+    }).catch(function () { /* serveur en train de redémarrer */ });
+  }
+  checkVersion();
+  setInterval(checkVersion, 30000);
+
+  window.AderShell = { icon: icon };
+})();

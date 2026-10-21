@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Paramètres — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="parametres">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Paramètres</h1>
+      <p class="subtitle">Version installée : <strong class="num" id="ver">–</strong></p>
+    </div>
+  </div>
+
+  <section class="card wizard" aria-labelledby="upTitle">
+    <h2 id="upTitle">Mise à jour automatique</h2>
+    <p class="pane-sub">ADER LINK vérifie toutes les 10 minutes s'il existe une nouvelle version sur GitHub, l'installe toute seule (sans toucher à vos réglages ni à vos ventes) et recharge les pages ouvertes.</p>
+    <form id="upForm" class="form-grid form-grid-2" autocomplete="off" novalidate>
+      <div class="f span2">
+        <label for="repo">Dépôt GitHub</label>
+        <input id="repo" placeholder="votre-nom/aderlink" spellcheck="false" autocapitalize="off">
+        <div class="hint">Votre nom d'utilisateur GitHub, une barre « / », puis le nom du dépôt</div>
+      </div>
+      <label class="switch span2"><input type="checkbox" id="auto" checked><span><strong>Installer automatiquement</strong><br><small>Sinon, ADER LINK signale seulement qu'une version est disponible</small></span></label>
+    </form>
+    <div class="info-box" id="upState" aria-live="polite">–</div>
+    <div class="notice" id="upMsg" role="status"></div>
+    <div class="pane-foot">
+      <button class="btn-prev" type="button" id="checkBtn">Vérifier maintenant</button>
+      <button class="btn btn-big" type="button" id="saveBtn">Enregistrer</button>
+    </div>
+  </section>
+
+  <section class="card wizard settings-more" aria-labelledby="phoneTitle">
+    <h2 id="phoneTitle">Ouvrir sur un téléphone</h2>
+    <p class="pane-sub">Sur le même Wi-Fi que ce PC, tapez cette adresse dans le navigateur du téléphone :</p>
+    <div class="script mono" id="phoneUrl">–</div>
+  </section>
+</main>
+<script src="/static/shell.js"></script>
+<script src="/static/parametres.js"></script>
+</body>
+</html>

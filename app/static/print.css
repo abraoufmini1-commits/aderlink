@@ -1,0 +1,94 @@
+/* ADER LINK — cartes 85 × 54 mm sur A4 (2 × 5 par page) */
+:root {
+  --blue-700: #0a3f8a; --blue-600: #0d4fa8; --blue-50: #eef4fc;
+  --orange: #f08a1c; --ink: #0f1d33; --ink-2: #4a5a73; --ink-3: #7a879b;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: #e7ecf3; color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+/* --- Barre d'outils (écran seulement) --- */
+.toolbar {
+  position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #dfe6f0;
+  padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+}
+.tb-left { display: flex; align-items: center; gap: 14px; }
+.tb-back { color: var(--blue-600); text-decoration: none; font-weight: 650; font-size: 14px; }
+.tb-title { font-weight: 750; font-size: 16px; }
+.tb-sub { color: var(--ink-2); font-size: 13px; }
+.tb-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.tb-check { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.tb-check input { width: 18px; height: 18px; accent-color: var(--blue-600); }
+.tb-btn {
+  min-height: 42px; padding: 0 22px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--orange); color: #fff; font: inherit; font-weight: 700;
+}
+.tb-btn:hover { background: #d97606; }
+.tb-hint { width: 100%; margin: 0; font-size: 13px; color: var(--ink-2); }
+
+/* --- Feuilles --- */
+#sheets { padding: 20px 0 40px; }
+.sheet {
+  width: 210mm; height: 297mm; margin: 0 auto 20px; background: #fff;
+  box-shadow: 0 2px 12px rgba(15, 29, 51, 0.12);
+  padding: 13.5mm 20mm; /* centre la grille 170 × 270 mm */
+}
+.grid { display: grid; grid-template-columns: repeat(2, 85mm); grid-auto-rows: 54mm; }
+.empty-msg { text-align: center; color: var(--ink-2); padding: 60px 16px; }
+
+/* --- Carte --- */
+.card {
+  position: relative; width: 85mm; height: 54mm; overflow: hidden;
+  outline: 0.25mm dashed #9aa6b8; outline-offset: -0.125mm; /* repères de découpe */
+  display: flex; flex-direction: column; padding: 0;
+}
+.band {
+  height: 12.5mm; flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 3.5mm; background: linear-gradient(135deg, var(--blue-700), var(--blue-600)); color: #fff;
+}
+.brand { display: flex; align-items: center; gap: 1.8mm; }
+.brand img.mark { width: 6.2mm; height: 6.2mm; background: #fff; border-radius: 1.6mm; padding: 0.8mm; }
+.brand-name { display: flex; align-items: center; line-height: 1; }
+.brand-name .word { height: 2.9mm; width: auto; display: block; }
+.brand-name b { color: var(--orange); }
+.ssid { font-size: 2.3mm; opacity: 0.85; margin-top: 0.6mm; letter-spacing: 0; font-weight: 500; }
+.price {
+  background: var(--orange); color: #fff; font-weight: 800; font-size: 3.6mm;
+  padding: 1.2mm 2.4mm; border-radius: 1.6mm; white-space: nowrap; line-height: 1.1;
+}
+.price small { font-size: 2.3mm; font-weight: 700; }
+.body { flex: 1; padding: 2.4mm 3.5mm 2mm; display: flex; flex-direction: column; }
+.code-box {
+  background: var(--blue-50); border-radius: 2mm; padding: 1.2mm 2mm 1.4mm; text-align: center;
+}
+.code-label { font-size: 2.1mm; font-weight: 700; letter-spacing: 0.12em; color: var(--blue-600); text-transform: uppercase; }
+.code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-weight: 800; font-size: 8.2mm; letter-spacing: 0.9mm; line-height: 1.05; color: var(--ink);
+}
+.code.long { font-size: 6.6mm; letter-spacing: 0.5mm; }
+.specs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5mm; margin-top: 2mm; }
+.spec { border-left: 0.5mm solid var(--orange); padding-left: 1.5mm; }
+.spec-l { font-size: 1.9mm; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.spec-v { font-size: 2.9mm; font-weight: 750; line-height: 1.2; }
+.howto { margin-top: 2.2mm; font-size: 2.2mm; line-height: 1.35; color: var(--ink-2); }
+.howto b { color: var(--ink); }
+.foot { margin-top: auto; border-top: 0.2mm solid #e3e9f2; padding-top: 1.2mm; font-size: 1.95mm; color: var(--ink-2); display: flex; justify-content: space-between; gap: 2mm; }
+.demo { background: #fff; color: var(--orange); font-weight: 800; font-size: 2.1mm; padding: 0.4mm 1.4mm; border-radius: 1mm; margin-left: 1.5mm; }
+
+@page { size: A4 portrait; margin: 0; }
+@media print {
+  body { background: #fff; }
+  .toolbar { display: none; }
+  #sheets { padding: 0; }
+  .sheet { margin: 0; box-shadow: none; break-after: page; }
+  .sheet:last-child { break-after: auto; }
+}
+@media screen and (max-width: 860px) {
+  #sheets { overflow-x: auto; padding: 16px; }
+}

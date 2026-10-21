@@ -1,0 +1,226 @@
+"""Point d'entrée en ligne de commande d'ADER LINK.
+
+    python3 -m app setup              # crée config.json (compte administrateur)
+    python3 -m app password           # change le mot de passe administrateur
+    python3 -m app test-router        # teste la connexion à chaque routeur
+    python3 -m app set-ssid "NOM"     # nom du Wi-Fi imprimé sur les cartes
+    python3 -m app serve              # lance le serveur
+    python3 -m app serve --demo       # lance avec des données fictives
+"""
+import argparse
+import getpass
+import json
+import os
+import secrets
+import sys
+from pathlib import Path
+
+from .collector import Collector, Store
+from .routeros import RouterOS, RouterOSError
+from .server import App, hash_password, serve
+from .tickets import Tickets
+from .routers import Routers
+from .updater import Updater
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+CONFIG = Path(os.environ.get("ADERLINK_CONFIG", ROOT / "config.json"))
+DATA = Path(os.environ.get("ADERLINK_DATA", ROOT / "data"))
+
+DEMO_CONFIG = {
+    "admin": {"username": "admin", "password_hash": hash_password("aderlink")},
+    "poll_seconds": 15,
+    "zones": [
+        {"id": "marche", "name": "Zone Grand Marché", "ssid": "ADER LINK Marché", "location": "Niamey", "demo_capacity": 55},
+        {"id": "gare", "name": "Zone Gare routière", "location": "Niamey", "demo_capacity": 35,
+         "demo_board": "hAP ax²"},
+        {"id": "campus", "name": "Zone Campus", "ssid": "ADER LINK Campus", "location": "Niamey", "demo_capacity": 70,
+         "demo_board": "RB4011"},
+        {"id": "quartier", "name": "Zone Plateau", "location": "Niamey", "demo_capacity": 20,
+         "demo_offline": True},
+    ],
+}
+
+
+def load_config():
+    if not CONFIG.exists():
+        sys.exit(f"Fichier de configuration introuvable : {CONFIG}\n"
+                 "Lance d'abord :  python3 -m app setup")
+    with open(CONFIG, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_config(cfg):
+    tmp = CONFIG.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, CONFIG)  # écriture atomique : config.json n'est jamais à moitié écrit  # contient les mots de passe des routeurs
+
+
+def ask_password():
+    while True:
+        p1 = getpass.getpass("Mot de passe administrateur (10 caractères min.) : ")
+        if len(p1) < 10:
+            print("Trop court.")
+            continue
+        if p1 != getpass.getpass("Confirmer : "):
+            print("Les deux saisies diffèrent.")
+            continue
+        return p1
+
+
+def cmd_setup(_args):
+    if CONFIG.exists():
+        sys.exit(f"{CONFIG} existe déjà. Utilise « password » pour changer le mot de passe.")
+    username = input("Nom d'utilisateur administrateur [admin] : ").strip() or "admin"
+    cfg = {
+        "admin": {"username": username, "password_hash": hash_password(ask_password())},
+        "secret_key": secrets.token_hex(32),
+        "poll_seconds": 30,
+        "secure_cookies": True,
+        "behind_proxy": True,
+        "zones": [
+            {
+                "id": "zone1",
+                "name": "Ma première zone",
+                "location": "",
+                "router": {
+                    "host": "10.66.0.2",
+                    "port": 8728,
+                    "ssl": False,
+                    "username": "aderlink",
+                    "password": "A_REMPLACER",
+                    "wan_interface": "ether1",
+                },
+            }
+        ],
+    }
+    save_config(cfg)
+    print(f"Configuration créée : {CONFIG}\nAjoute tes zones dans ce fichier, puis lance « test-router ».")
+
+
+def cmd_password(_args):
+    cfg = load_config()
+    cfg["admin"]["password_hash"] = hash_password(ask_password())
+    cfg["secret_key"] = secrets.token_hex(32)  # déconnecte toutes les sessions ouvertes
+    save_config(cfg)
+    print("Mot de passe modifié. Les sessions ouvertes sont déconnectées.")
+
+
+def cmd_test(_args):
+    cfg = load_config()
+    ok = True
+    for zone in cfg.get("zones", []):
+        r = zone["router"]
+        label = f"{zone['name']} ({r['host']})"
+        try:
+            with RouterOS(r["host"], r["username"], r["password"],
+                          port=r.get("port", 8729 if r.get("ssl") else 8728),
+                          use_ssl=r.get("ssl", False)) as api:
+                res = api.query("/system/resource/print")[0]
+                active = len(api.query("/ip/hotspot/active/print"))
+            print(f"  OK   {label} — {res.get('board-name')} RouterOS {res.get('version')}, "
+                  f"{active} connecté(s)")
+        except RouterOSError as e:
+            ok = False
+            print(f"  ÉCHEC {label} — {e}")
+    sys.exit(0 if ok else 1)
+
+
+def cmd_set_ssid(args):
+    cfg = load_config()
+    zones = cfg.get("zones", [])
+    zone = next((z for z in zones if z["id"] == args.zone), None) if args.zone else (zones[0] if zones else None)
+    if not zone:
+        sys.exit("Zone introuvable.")
+    zone["ssid"] = args.ssid
+    save_config(cfg)
+    print(f"Nom du Wi-Fi de « {zone['name']} » : {args.ssid}")
+
+
+def cmd_serve(args):
+    DATA.mkdir(parents=True, exist_ok=True)
+    if args.demo:
+        cfg = json.loads(json.dumps(DEMO_CONFIG))
+        cfg["secret_key"] = secrets.token_hex(32)
+        for i, z in enumerate(cfg["zones"]):
+            z.setdefault("router", {"host": f"192.168.{88 + i}.1", "port": 8728, "username": "aderlink",
+                                    "password": "demo", "wan_interface": "ether1"})
+        store = Store(":memory:")
+        print("Mode démonstration — identifiants : admin / aderlink")
+    else:
+        cfg = load_config()
+        store = Store(str(DATA / "aderlink.db"))
+    collector = Collector(cfg, store, demo=args.demo)
+    tickets = Tickets(cfg, store, demo=args.demo)
+    routers = Routers(cfg, store, collector, save=save_config, demo=args.demo)
+    for z in cfg.get("zones", []):
+        routers.ensure_default_pv(z["id"])
+    updater = Updater(cfg)
+    collector.ticket_hook = tickets.on_poll
+    if args.demo:
+        _demo_batches(tickets)
+    collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
+    collector.start()
+    if not args.demo:
+        updater.start()
+    print(f"ADER LINK version {updater.state['current']}")
+    serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater),
+          args.host, args.port)
+
+
+def _demo_batches(tickets):
+    plans = [
+        ("marche", "1 heure", 200, 3600, 500, 86400, 2, 1, 1, 20),
+        ("marche", "Journée", 500, 86400, 2048, 86400, 3, 1, 1, 10),
+        ("campus", "Pass journée", 1000, 0, 0, 86400, 5, 2, 2, 10),
+        ("campus", "Semaine", 3000, 0, 10240, 604800, 5, 2, 2, 0),
+    ]
+    for zid, name, price, up_s, mb, val, down, upl, shared, count in plans:
+        f = tickets.create_forfait({"zone_id": zid, "name": name, "price": price, "uptime_s": up_s,
+                                    "data_mb": mb, "validity_s": val, "down_mbps": down, "up_mbps": upl,
+                                    "shared_users": shared})
+        if count:
+            b = tickets.create_batch({"forfait_id": f["id"], "count": count})
+            for t in tickets.get_batch(b["id"])["tickets"][: count // 3]:
+                tickets._mark_used(zid, t["code"], int(time.time()) - 5000)
+    # historique fictif sur 90 jours pour la courbe des ventes
+    import random as _r
+    rnd = _r.Random(7)
+    hist = tickets.create_forfait({"zone_id": "gare", "name": "Ticket 100 F", "price": 100, "uptime_s": 0,
+                                   "data_mb": 2048, "validity_s": 86400, "down_mbps": 2, "up_mbps": 1,
+                                   "shared_users": 1})
+    b = tickets.create_batch({"forfait_id": hist["id"], "count": 1000, "note": "Historique démo"})
+    codes = [t["code"] for t in tickets.get_batch(b["id"])["tickets"]]
+    now = int(time.time())
+    i = 0
+    for day in range(89, 0, -1):
+        n = int(max(0, rnd.gauss(4 + (89 - day) * 0.12, 2)))
+        for _ in range(n):
+            if i >= len(codes) - 60:
+                break
+            tickets._mark_used("gare", codes[i], now - day * 86400 + rnd.randint(-20000, 20000))
+            i += 1
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="python3 -m app", description="ADER LINK")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("setup").set_defaults(func=cmd_setup)
+    sub.add_parser("password").set_defaults(func=cmd_password)
+    sub.add_parser("test-router").set_defaults(func=cmd_test)
+    w = sub.add_parser("set-ssid", help="nom du Wi-Fi imprimé sur les cartes")
+    w.add_argument("ssid")
+    w.add_argument("--zone", help="identifiant de la zone (par défaut : la première)")
+    w.set_defaults(func=cmd_set_ssid)
+    s = sub.add_parser("serve")
+    s.add_argument("--host", default=os.environ.get("ADERLINK_HOST", "127.0.0.1"))
+    s.add_argument("--port", type=int, default=int(os.environ.get("ADERLINK_PORT", 8080)))
+    s.add_argument("--demo", action="store_true")
+    s.set_defaults(func=cmd_serve)
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

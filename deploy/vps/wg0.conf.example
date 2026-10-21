@@ -1,0 +1,17 @@
+# /etc/wireguard/wg0.conf — tunnel entre le VPS et les routeurs des zones
+# Le VPS est 10.66.0.1 ; chaque routeur reçoit 10.66.0.2, .3, .4…
+
+[Interface]
+Address = 10.66.0.1/24
+ListenPort = 51820
+PrivateKey = CONTENU_DE_/etc/wireguard/vps.key
+
+# --- Zone Grand Marché ---
+[Peer]
+PublicKey = CLE_PUBLIQUE_AFFICHEE_PAR_LE_ROUTEUR
+AllowedIPs = 10.66.0.2/32
+
+# --- Zone Gare routière ---
+# [Peer]
+# PublicKey = CLE_PUBLIQUE_DU_DEUXIEME_ROUTEUR
+# AllowedIPs = 10.66.0.3/32

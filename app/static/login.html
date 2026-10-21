@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Connexion — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="login-page">
+  <form class="card login-card" method="post" action="/login" autocomplete="on">
+    <div class="brand">
+      <span class="brand-mark"><img src="/static/logo-white.svg" alt="" width="22" height="22"></span>
+      <img class="brand-word" src="/static/wordmark-blue.svg" alt="ADER LINK" width="155" height="22">
+    </div>
+    <p class="lead">Gestion de vos zones Wi-Fi</p>
+    <div class="alert alert-error" id="err" role="alert"></div>
+    <div class="alert alert-info" id="demo">Mode démonstration : identifiant <strong>admin</strong>, mot de passe <strong>aderlink</strong></div>
+    <label class="field"><span>Identifiant</span>
+      <input name="username" autocomplete="username" required autofocus></label>
+    <label class="field"><span>Mot de passe</span>
+      <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">Se connecter</button>
+  </form>
+</div>
+<script src="/static/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "admin": {
+    "username": "admin",
+    "password_hash": "(généré par : python3 -m app setup)"
+  },
+  "secret_key": "(généré par : python3 -m app setup)",
+  "poll_seconds": 30,
+  "secure_cookies": true,
+  "behind_proxy": true,
+  "zones": [
+    {
+      "id": "marche",
+      "name": "Zone Grand Marché",
+      "location": "Niamey",
+      "router": {
+        "host": "10.66.0.2",
+        "port": 8728,
+        "ssl": false,
+        "username": "aderlink",
+        "password": "mot-de-passe-du-routeur",
+        "wan_interface": "ether1"
+      },
+      "ssid": "ADER LINK Marché"
+    },
+    {
+      "id": "gare",
+      "name": "Zone Gare routière",
+      "location": "Niamey",
+      "router": {
+        "host": "10.66.0.3",
+        "port": 8728,
+        "ssl": false,
+        "username": "aderlink",
+        "password": "mot-de-passe-du-routeur",
+        "wan_interface": "ether1"
+      },
+      "ssid": "ADER LINK Gare"
+    }
+  ],
+  "utc_offset_hours": 1
+}

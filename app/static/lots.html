@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Lots — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="lots">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Lots</h1>
+      <p class="subtitle" id="lotsSub">Tous vos lots de tickets</p>
+    </div>
+    <a class="btn btn-sm" href="/tickets">+ Créer des tickets</a>
+  </div>
+  <div class="chips filter" id="filter" role="group" aria-label="Filtrer par routeur"></div>
+  <section class="lot-cards" id="lots" aria-live="polite"><div class="card empty">Chargement…</div></section>
+</main>
+<script src="/static/shell.js"></script>
+<script src="/static/lots.js"></script>
+</body>
+</html>

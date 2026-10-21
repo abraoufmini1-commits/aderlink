@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Créer des tickets — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="creer">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Créer des tickets</h1>
+      <p class="subtitle">Quatre étapes, et vos tickets partent vers le routeur.</p>
+    </div>
+    <a class="btn btn-sm btn-outline" href="/lots">Voir les lots</a>
+  </div>
+
+  <section class="card wizard" aria-label="Création de tickets">
+    <ol class="stepper" id="stepper">
+      <li data-step="routeur"><span class="dot-n">1</span><span class="lbl">Routeur</span></li>
+      <li data-step="pv"><span class="dot-n">2</span><span class="lbl">Point de vente</span></li>
+      <li data-step="forfait"><span class="dot-n">3</span><span class="lbl">Forfait</span></li>
+      <li data-step="quantite"><span class="dot-n">4</span><span class="lbl">Quantité</span></li>
+    </ol>
+
+    <!-- 1. Routeur -->
+    <div class="pane" id="pane-routeur">
+      <h2>Choisissez un routeur</h2>
+      <p class="pane-sub">Où les tickets seront installés</p>
+      <label class="search"><span class="sr-only">Rechercher un routeur</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="routerSearch" type="search" placeholder="Rechercher par nom…" autocomplete="off"></label>
+      <div class="pick-list" id="routers" role="radiogroup" aria-label="Routeurs"></div>
+    </div>
+
+    <!-- 2. Point de vente -->
+    <div class="pane" id="pane-pv" hidden>
+      <h2>Choisissez un point de vente</h2>
+      <p class="pane-sub">Pour savoir qui vend quoi, et où · <span id="ctxRouterPv"></span></p>
+      <div class="pick-list" id="pvs" role="radiogroup" aria-label="Points de vente"></div>
+      <a class="add-row add-link" id="pvManage" href="/routeurs">+ Gérer les points de vente</a>
+      <div class="pane-foot">
+        <button class="btn-prev" type="button" data-back>← Précédent</button>
+      </div>
+    </div>
+
+    <!-- 2. Forfait -->
+    <div class="pane" id="pane-forfait" hidden>
+      <h2>Choisissez un forfait</h2>
+      <p class="pane-sub">Le profil de connexion appliqué aux tickets · <span id="ctxRouter"></span></p>
+      <div class="pick-list" id="forfaits" role="radiogroup" aria-label="Forfaits"></div>
+      <button class="add-row" type="button" data-go="forfait/nouveau">+ Nouveau forfait</button>
+      <div class="manage-row"><button class="link link-muted" type="button" id="manage" aria-pressed="false" hidden>Retirer un forfait</button></div>
+      <div class="pane-foot">
+        <button class="btn-prev" type="button" data-back>← Précédent</button>
+      </div>
+    </div>
+
+    <!-- 2 bis. Nouveau forfait -->
+    <form class="pane" id="pane-nouveau" hidden autocomplete="off" novalidate>
+      <h2>Nouveau forfait</h2>
+      <p class="pane-sub">Créé sur <span id="ctxRouter2"></span>. Laissez une case vide pour « illimité ».</p>
+      <div class="form-grid form-grid-2">
+        <div class="f span2">
+          <label for="pName">Nom du forfait</label>
+          <input id="pName" maxlength="40" required placeholder="Ex. 1 heure, Journée, 100 F">
+        </div>
+        <div class="f">
+          <label for="pPrice">Prix</label>
+          <div class="unit-field"><input id="pPrice" type="number" min="0" step="any" inputmode="numeric" placeholder="200"><span class="unit">F CFA</span></div>
+        </div>
+        <div class="f">
+          <label for="pShared">Appareils par ticket</label>
+          <div class="unit-field"><input id="pShared" type="number" min="1" max="10" value="1" inputmode="numeric"><span class="unit">appareil(s)</span></div>
+        </div>
+        <div class="f">
+          <label for="pUptimeN">Durée de connexion</label>
+          <div class="unit-field"><input id="pUptimeN" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitée">
+            <select id="pUptimeU" aria-label="Unité de durée"><option value="60">minutes</option><option value="3600" selected>heures</option><option value="86400">jours</option></select></div>
+        </div>
+        <div class="f">
+          <label for="pDataN">Données</label>
+          <div class="unit-field"><input id="pDataN" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitées">
+            <select id="pDataU" aria-label="Unité de données"><option value="1">Mo</option><option value="1024" selected>Go</option></select></div>
+        </div>
+        <div class="f">
+          <label for="pValN">Validité après 1re connexion</label>
+          <div class="unit-field"><input id="pValN" type="number" min="0" step="any" inputmode="decimal" placeholder="Sans limite">
+            <select id="pValU" aria-label="Unité de validité"><option value="3600">heures</option><option value="86400" selected>jours</option></select></div>
+        </div>
+        <div class="f">
+          <label for="pDown">Vitesse téléchargement</label>
+          <div class="unit-field"><input id="pDown" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitée"><span class="unit">Mb/s</span></div>
+        </div>
+        <div class="f">
+          <label for="pUp">Vitesse envoi</label>
+          <div class="unit-field"><input id="pUp" type="number" min="0" step="any" inputmode="decimal" placeholder="Auto"><span class="unit">Mb/s</span></div>
+          <div class="hint">Vide = moitié du téléchargement</div>
+        </div>
+      </div>
+      <div class="summary-box" id="pSummary" aria-live="polite"></div>
+      <div class="notice" id="pNotice" role="status"></div>
+      <div class="pane-foot">
+        <button class="btn-prev" type="button" data-back>← Précédent</button>
+        <button class="btn btn-big" type="submit" id="pSave">Enregistrer le forfait</button>
+      </div>
+    </form>
+
+    <!-- 3. Quantité -->
+    <form class="pane" id="pane-quantite" hidden autocomplete="off" novalidate>
+      <h2>Combien de tickets ?</h2>
+      <p class="pane-sub">Entre 1 et 1000 par lot</p>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="tiles" id="tiles"></div>
+      <label class="q-label" for="count">Quantité de tickets</label>
+      <div class="qty">
+        <button type="button" class="qty-btn" id="minus" aria-label="Moins">−</button>
+        <input id="count" type="number" min="1" max="1000" value="100" inputmode="numeric">
+        <button type="button" class="qty-btn" id="plus" aria-label="Plus">+</button>
+      </div>
+      <div class="chips" id="chips">
+        <button type="button" data-n="50">50</button><button type="button" data-n="100">100</button>
+        <button type="button" data-n="200">200</button><button type="button" data-n="500">500</button>
+        <button type="button" data-n="1000">1000</button>
+      </div>
+      <details class="adv">
+        <summary>Options du lot</summary>
+        <div class="form-grid form-grid-2">
+          <div class="f">
+            <label for="codeLen">Longueur du code</label>
+            <div class="unit-field"><input id="codeLen" type="number" min="4" max="12" value="6" inputmode="numeric"><span class="unit">chiffres</span></div>
+          </div>
+          <div class="f">
+            <label for="pwMode">Mot de passe hotspot</label>
+            <select id="pwMode"><option value="same" selected>Identique au code</option><option value="empty">Vide</option></select>
+          </div>
+          <div class="f span2">
+            <label for="note">Libellé du lot</label>
+            <input id="note" maxlength="80" placeholder="Ex. Revendeur Moussa (facultatif)">
+          </div>
+        </div>
+      </details>
+      <div class="total"><span>Valeur totale du lot</span><strong class="num" id="total">–</strong></div>
+      <div class="notice" id="createNotice" role="status"></div>
+      <div class="pane-foot">
+        <button class="btn-prev" type="button" data-back>← Précédent</button>
+        <button class="btn btn-big" type="submit" id="createBtn">✓ Générer le lot</button>
+      </div>
+    </form>
+
+    <!-- 4. Terminé -->
+    <div class="pane" id="pane-fini" hidden>
+      <div class="done-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h2 class="center" id="doneTitle">Lot généré</h2>
+      <p class="pane-sub center" id="doneSub"></p>
+      <div class="done-actions">
+        <a class="btn btn-big" id="donePrint" href="#" target="_blank">Imprimer les cartes</a>
+        <button class="btn-prev" type="button" id="again">Créer un autre lot</button>
+        <a class="btn-prev" href="/lots">Voir les lots</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/shell.js"></script>
+<script src="/static/tickets.js"></script>
+</body>
+</html>
