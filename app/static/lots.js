@@ -51,7 +51,7 @@
         "<span><b class='num'>" + nf.format(b.used) + "</b> vendus · <b class='num'>" + nf.format(left) + "</b> en stock" + (b.removed ? " · " + b.removed + " supprimés" : "") + "</span>" +
         "<span>Vendu : <b class='num'>" + nf.format(b.used * b.price) + " F</b></span></div>" +
         "<div class='lot-actions'><a class='btn btn-sm' href='/imprimer?lot=" + b.id + "' target='_blank'>Imprimer les cartes</a>" +
-        (left > 0 ? "<button class='btn btn-sm btn-outline' type='button' data-remove='" + b.id + "' data-left='" + left + "'>Supprimer " + left + " non utilisés</button>" : "") +
+        (left > 0 ? "<button class='btn btn-sm btn-outline need-gerant' type='button' data-remove='" + b.id + "' data-left='" + left + "'>Supprimer " + left + " non utilisés</button>" : "") +
         "</div></article>";
     }).join("") : "<div class='card empty'>Aucun lot. <a class='link' href='/tickets'>Créer des tickets</a></div>";
     $("lots").querySelectorAll(".progress span").forEach(function (s) { s.style.width = s.dataset.w + "%"; });

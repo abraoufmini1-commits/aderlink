@@ -75,8 +75,13 @@ class LoginThrottle:
 
 
 # --- application -----------------------------------------------------------------
+class Forbidden(Exception):
+    pass
+
+
 class App:
-    def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None):
+    def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None,
+                 users=None, save_config=None):
         self.config = config
         self.collector = collector
         self.store = store
@@ -84,20 +89,37 @@ class App:
         self.tickets = tickets
         self.routers = routers
         self.updater = updater
+        self.users = users
+        self.save_config = save_config or (lambda c: None)
         self.throttle = LoginThrottle()
 
-    def zones_list(self):
-        return [{"id": z["id"], "name": z["name"], "ssid": z.get("ssid") or z["name"],
-                 "code_length": z.get("code_length", 8),
-                 "points_vente": self.routers.list_pv(z["id"]) if self.routers else []}
-                for z in self.config.get("zones", [])]
+    def offset(self):
+        return int(float(self.config.get("utc_offset_hours", 1)) * 3600)  # Niger : UTC+1
 
-    def overview(self, range_key):
+    def zones_for(self, who):
+        return [z for z in self.config.get("zones", []) if who.can_zone(z["id"])]
+
+    def zones_list(self, who):
+        out = []
+        for z in self.zones_for(who):
+            pvs = self.routers.list_pv(z["id"]) if self.routers else []
+            if who.is_reseller:  # le revendeur ne voit que son point de vente
+                mine = self.users.pv_for(who, z["id"]) if self.users else None
+                pvs = [p for p in pvs if p["id"] == mine]
+            out.append({"id": z["id"], "name": z["name"], "ssid": z.get("ssid") or z["name"],
+                        "code_length": z.get("code_length", 8), "points_vente": pvs})
+        return out
+
+    def sales_scope(self, who):
+        zone_ids = None if who.zones is None else list(who.zones)
+        return zone_ids, (who.username if who.is_reseller else None)
+
+    def overview(self, range_key, who):
         hours = {"6h": 6, "24h": 24, "7j": 168}.get(range_key, 24)
         bucket = 300 if hours <= 24 else 3600
         state = self.collector.snapshot()
         zones = []
-        for z in self.config.get("zones", []):
+        for z in self.zones_for(who):
             s = state.get(z["id"], {})
             zones.append({
                 "id": z["id"], "name": z["name"], "location": z.get("location", ""),
@@ -110,13 +132,26 @@ class App:
                 "rx_bps": s.get("rx_bps", 0), "tx_bps": s.get("tx_bps", 0),
             })
         online = [z for z in zones if z["status"] == "online"]
-        off = int(float(self.config.get("utc_offset_hours", 1)) * 3600)  # Niger : UTC+1
+        off = self.offset()
         midnight = (int(time.time()) + off) // 86400 * 86400 - off
-        sales = self.tickets.sales(midnight) if self.tickets else []
+        zone_ids, mine = self.sales_scope(who)
+        sales = self.tickets.sales(midnight, zone_ids, mine) if self.tickets else []
+        since = int(time.time()) - hours * 3600
+        if who.zones is None:
+            history = self.store.history(since, bucket)
+        else:
+            merged = {}
+            for zid in who.zones:
+                for pt in self.store.history(since, bucket, zid):
+                    m = merged.setdefault(pt["ts"], {"ts": pt["ts"], "active": 0, "rx_bps": 0, "tx_bps": 0})
+                    for k in ("active", "rx_bps", "tx_bps"):
+                        m[k] += pt[k]
+            history = [merged[k] for k in sorted(merged)]
+        events = [e for e in self.store.events(40) if who.can_zone(e["zone_id"])][:15]
         return {
             "sales_today": {"tickets": sum(s["tickets"] for s in sales),
                             "amount": sum(s["amount"] for s in sales)},
-            "demo": self.demo,
+            "demo": self.demo, "me": who.public(),
             "generated_at": int(time.time()),
             "poll_seconds": self.collector.poll_seconds,
             "totals": {
@@ -128,8 +163,8 @@ class App:
                 "tickets": sum(z["tickets"] or 0 for z in zones),
             },
             "zones": zones,
-            "history": self.store.history(int(time.time()) - hours * 3600, bucket),
-            "events": self.store.events(15),
+            "history": history,
+            "events": events,
         }
 
     def sessions(self, zone_id):
@@ -140,10 +175,20 @@ class App:
         return {"zone": {"id": zone_id, "name": zone["name"]},
                 "online": s.get("online", False), "sessions": s.get("sessions", [])}
 
+    def batch_visible(self, b, who):
+        if not b or not who.can_zone(b["zone_id"]):
+            return False
+        return not who.is_reseller or b.get("created_by") == who.username
+
+
+PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
+         "/lots": ("lots.html", None), "/controle": ("controle.html", None),
+         "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
+         "/utilisateurs": ("utilisateurs.html", "users"), "/profil": ("profil.html", None)}
+
 
 def make_handler(app):
     secret = app.config["secret_key"]
-    admin = app.config["admin"]
     secure = app.config.get("secure_cookies", False)
 
     class Handler(BaseHTTPRequestHandler):
@@ -162,10 +207,16 @@ def make_handler(app):
                     return fwd.split(",")[0].strip()
             return self.client_address[0]
 
-        def user(self):
+        def who(self):
             cookie = SimpleCookie(self.headers.get("Cookie", ""))
             morsel = cookie.get(COOKIE)
-            return read_token(secret, morsel.value) if morsel else None
+            username = read_token(secret, morsel.value) if morsel else None
+            if not username:
+                return None
+            if app.users:
+                return app.users.principal(username)
+            from .users import Principal
+            return Principal(username, "Administrateur", "admin") if username == app.config["admin"]["username"] else None
 
         def send(self, status, body=b"", ctype="text/plain; charset=utf-8", headers=None):
             self.send_response(status)
@@ -198,17 +249,33 @@ def make_handler(app):
             if STATIC.resolve() not in path.parents or not path.is_file():
                 return self.send(404, b"Introuvable")
             ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            if ctype.startswith("text/") or ctype in ("application/javascript",):
+            if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
                 ctype += "; charset=utf-8"
             self.send(200, path.read_bytes(), ctype)
 
-        # --- routes ---
+        def call(self, fn, status=200):
+            from .routers import RouterError
+            from .tickets import TicketError
+            from .users import UserError
+            try:
+                return self.json(fn(), status)
+            except Forbidden as e:
+                return self.json({"error": str(e) or "Accès refusé"}, 403)
+            except (RouterError, TicketError, UserError) as e:
+                return self.json({"error": str(e)}, 400)
+
+        def need(self, cond, msg="Accès refusé pour votre compte"):
+            if not cond:
+                raise Forbidden(msg)
+
+        # --- routes GET ---
         def do_HEAD(self):
             self.do_GET()
 
         def do_GET(self):
             url = urlparse(self.path)
             p = url.path
+            q = parse_qs(url.query)
             if p == "/favicon.ico":
                 return self.static("favicon.ico")
             if p == "/api/version":
@@ -229,123 +296,170 @@ def make_handler(app):
                 return self.static(p[len("/static/"):])
             if p == "/logout":
                 return self.redirect("/login", f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
-            user = self.user()
-            pages = {"/": "dashboard.html", "/tickets": "tickets.html", "/imprimer": "print.html",
-                     "/lots": "lots.html", "/controle": "controle.html", "/routeurs": "routeurs.html",
-                     "/parametres": "parametres.html"}
-            if p in pages:
-                return self.static(pages[p]) if user else self.redirect("/login")
-            if not user:
+            who = self.who()
+            if p in PAGES:
+                page, right = PAGES[p]
+                if not who:
+                    return self.redirect("/login")
+                return self.static(page) if (right is None or who.can(right)) else self.redirect("/")
+            if not who:
                 return self.json({"error": "Non connecté"}, 401)
+            return self.call(lambda: self.api_get(p, q, who))
+
+        def api_get(self, p, q, who):
+            parts = p.split("/")
+            if p == "/api/me":
+                return dict(who.public(), demo=app.demo)
             if p == "/api/zones":
-                return self.json({"zones": app.zones_list(), "demo": app.demo})
+                return {"zones": app.zones_list(who), "demo": app.demo}
+            if p == "/api/overview":
+                return app.overview(q.get("range", ["24h"])[0], who)
+            if len(parts) == 5 and parts[2] == "zones":
+                zid, what = parts[3], parts[4]
+                self.need(who.can_zone(zid))
+                if what == "sessions":
+                    data = app.sessions(zid)
+                    self.need(data is not None, "Routeur inconnu")
+                    return data
+                if what == "forfaits" and app.tickets:
+                    return {"forfaits": app.tickets.list_forfaits(zid)}
+                if what == "profiles" and app.tickets:
+                    return {"profiles": app.tickets.profiles(zid)}
             if app.routers and p == "/api/routers":
-                return self.json({"routers": app.routers.list(), "demo": app.demo})
-            if app.routers and p.startswith("/api/routers/") and p.endswith("/install"):
-                return self.router_call(lambda: app.routers.install_info(p.split("/")[3], self.headers.get("Host", "")))
+                self.need(who.can("routers_read"))
+                return {"routers": [r for r in app.routers.list() if who.can_zone(r["id"])], "demo": app.demo,
+                        "can_write": who.can("routers_write")}
+            if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
+                self.need(who.can("routers_write"))
+                return app.routers.install_info(parts[3], self.headers.get("Host", ""))
+            if app.tickets and p == "/api/batches":
+                zid = q.get("zone", [None])[0]
+                lots = [b for b in app.tickets.list_batches(limit=300, zone_id=zid) if app.batch_visible(b, who)]
+                return {"batches": lots[:150], "demo": app.demo, "can_manage": who.can("lots_manage")}
+            if app.tickets and len(parts) == 4 and parts[2] == "batches" and parts[3].isdigit():
+                b = app.tickets.get_batch(int(parts[3]))
+                self.need(app.batch_visible(b, who), "Lot introuvable")
+                return dict(b, demo=app.demo)
+            if app.tickets and p == "/api/sales":
+                try:
+                    days = max(1, min(365, int(q.get("days", ["30"])[0])))
+                except ValueError:
+                    days = 30
+                zone_ids, mine = app.sales_scope(who)
+                return app.tickets.sales_history(days, app.offset(), zone_ids, mine)
+            if app.tickets and p == "/api/tickets/find":
+                code = q.get("code", [""])[0].strip()[:20]
+                res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]
+                return {"results": res}
+            if app.users and p == "/api/users":
+                self.need(who.can("users"))
+                off = app.offset()
+                month = time.localtime(time.time() + off - time.timezone)
+                since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
+                return {"users": app.users.list(since), "zones": [{"id": z["id"], "name": z["name"]}
+                                                                  for z in app.config.get("zones", [])]}
             if app.updater and p == "/api/settings":
+                self.need(who.can("settings"))
                 from .routers import local_ip_towards
                 zones = app.config.get("zones", [])
                 lan = local_ip_towards(zones[0]["router"]["host"] if zones and zones[0].get("router") else "8.8.8.8")
                 port = (self.headers.get("Host", "").partition(":")[2]) or "8080"
-                return self.json({"update": app.updater.info(), "demo": app.demo,
-                                  "phone_url": f"http://{lan}:{port}" if lan else None})
-            if app.tickets and p.startswith("/api/zones/") and p.endswith("/profiles"):
-                return self.ticket_call(lambda: {"profiles": app.tickets.profiles(p.split("/")[3])})
-            if app.tickets and p.startswith("/api/zones/") and p.endswith("/forfaits"):
-                return self.ticket_call(lambda: {"forfaits": app.tickets.list_forfaits(p.split("/")[3])})
-            if app.tickets and p == "/api/batches":
-                zid = parse_qs(url.query).get("zone", [None])[0]
-                return self.json({"batches": app.tickets.list_batches(zone_id=zid), "demo": app.demo})
-            if app.tickets and p.startswith("/api/batches/"):
-                try:
-                    b = app.tickets.get_batch(int(p.split("/")[3]))
-                except ValueError:
-                    b = None
-                return self.json(dict(b, demo=app.demo)) if b else self.json({"error": "Lot introuvable"}, 404)
-            if app.tickets and p == "/api/sales":
-                try:
-                    days = max(1, min(365, int(parse_qs(url.query).get("days", ["30"])[0])))
-                except ValueError:
-                    days = 30
-                off = int(float(app.config.get("utc_offset_hours", 1)) * 3600)
-                return self.json(app.tickets.sales_history(days, off))
-            if app.tickets and p == "/api/tickets/find":
-                code = parse_qs(url.query).get("code", [""])[0].strip()[:20]
-                return self.json({"results": app.tickets.find(code)})
-            if p == "/api/me":
-                return self.json({"username": user, "demo": app.demo})
-            if p == "/api/overview":
-                rng = parse_qs(url.query).get("range", ["24h"])[0]
-                return self.json(app.overview(rng))
-            if p.startswith("/api/zones/") and p.endswith("/sessions"):
-                data = app.sessions(p.split("/")[3])
-                return self.json(data) if data else self.json({"error": "Zone inconnue"}, 404)
-            self.send(404, b"Introuvable")
+                return {"update": app.updater.info(), "demo": app.demo,
+                        "phone_url": f"http://{lan}:{port}" if lan else None}
+            raise Forbidden("Introuvable")
 
-        def router_call(self, fn, status=200):
-            from .routers import RouterError
-            try:
-                return self.json(fn(), status)
-            except RouterError as e:
-                return self.json({"error": str(e)}, 400)
-
-        def ticket_call(self, fn, status=200):
-            from .tickets import TicketError
-            try:
-                return self.json(fn(), status)
-            except TicketError as e:
-                return self.json({"error": str(e)}, 400)
-
+        # --- routes POST ---
         def api_post(self, p):
             # Protection CSRF : en-tête personnalisé impossible à envoyer depuis un autre site
             if self.headers.get("X-AderLink") != "1":
                 return self.json({"error": "Requête refusée"}, 403)
-            if not self.user():
+            who = self.who()
+            if not who:
                 return self.json({"error": "Non connecté"}, 401)
-            if not app.tickets:
-                return self.send(404, b"Introuvable")
             length = min(int(self.headers.get("Content-Length", 0) or 0), 16384)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
             except ValueError:
                 return self.json({"error": "JSON invalide"}, 400)
+            status = 201 if p in ("/api/batches", "/api/forfaits", "/api/routers", "/api/users") else 200
+            return self.call(lambda: self.api_post_do(p, body, who), status)
+
+        def api_post_do(self, p, body, who):
             parts = p.split("/")
-            if app.routers:
-                R = app.routers
-                if p == "/api/routers":
-                    return self.router_call(lambda: R.create(body), 201)
-                if len(parts) == 5 and parts[2] == "routers":
-                    zid, action = parts[3], parts[4]
-                    acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
-                            "test": lambda: R.test(zid), "pv": lambda: R.create_pv(zid, body)}
-                    if action in acts:
-                        return self.router_call(acts[action], 201 if action == "pv" else 200)
-                if len(parts) == 5 and parts[2] == "pv" and parts[4] == "archive" and parts[3].isdigit():
-                    return self.router_call(lambda: R.archive_pv(int(parts[3])))
+            T, R, U = app.tickets, app.routers, app.users
+            # tickets
+            if p == "/api/batches":
+                f = T.get_forfait(int(body.get("forfait_id") or 0)) if body.get("forfait_id") else None
+                zid = f["zone_id"] if f else str(body.get("zone_id", ""))
+                self.need(who.can_zone(zid))
+                if who.is_reseller:
+                    self.need(f is not None, "Choisissez un profil")
+                    body = dict(body, pos_id=U.pv_for(who, zid) if U else None)
+                elif body.get("pos_id") and R:
+                    pv = R.get_pv(int(body["pos_id"]))
+                    self.need(pv and pv["zone_id"] == zid, "Point de vente invalide")
+                return T.create_batch(body, created_by=who.username)
+            if p == "/api/forfaits":
+                self.need(who.can("forfaits_write"))
+                self.need(who.can_zone(str(body.get("zone_id", ""))))
+                return T.create_forfait(body)
+            if len(parts) == 5 and parts[2] == "forfaits" and parts[4] == "archive" and parts[3].isdigit():
+                self.need(who.can("forfaits_write"))
+                f = T.get_forfait(int(parts[3]))
+                self.need(f and who.can_zone(f["zone_id"]), "Profil introuvable")
+                return T.archive_forfait(int(parts[3]))
+            if len(parts) == 5 and parts[2] == "batches" and parts[4] == "remove-unused" and parts[3].isdigit():
+                self.need(who.can("lots_manage"))
+                self.need(app.batch_visible(T.get_batch(int(parts[3])), who), "Lot introuvable")
+                return T.remove_unused(int(parts[3]))
+            # routeurs
+            if R and p == "/api/routers":
+                self.need(who.can("routers_write"))
+                return R.create(body)
+            if R and len(parts) == 5 and parts[2] == "routers":
+                zid, action = parts[3], parts[4]
+                self.need(who.can_zone(zid))
+                if action == "test":
+                    self.need(who.can("routers_read"))
+                    return R.test(zid)
+                self.need(who.can("routers_write"))
+                acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
+                        "pv": lambda: R.create_pv(zid, body)}
+                if action in acts:
+                    return acts[action]()
+            if R and len(parts) == 5 and parts[2] == "pv" and parts[4] == "archive" and parts[3].isdigit():
+                self.need(who.can("routers_write"))
+                return R.archive_pv(int(parts[3]))
+            # utilisateurs
+            if U and p == "/api/me/password":
+                return U.change_own_password(who, body, lambda: app.save_config(app.config))
+            if U and p == "/api/users":
+                self.need(who.can("users"))
+                return U.create(body)
+            if U and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit():
+                self.need(who.can("users"))
+                uid, action = int(parts[3]), parts[4]
+                acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),
+                        "enable": lambda: U.set_active(uid, True), "disable": lambda: U.set_active(uid, False),
+                        "delete": lambda: U.delete(uid)}
+                if action in acts:
+                    return acts[action]()
+            # paramètres
             if app.updater and p == "/api/settings/update":
-                if app.demo:
-                    return self.json({"error": "Indisponible en mode démonstration"}, 400)
+                self.need(who.can("settings"))
+                self.need(not app.demo, "Indisponible en mode démonstration")
                 repo = str(body.get("repo", "")).strip().strip("/")
                 repo = repo.replace("https://github.com/", "").replace("http://github.com/", "")
                 if repo and (repo.count("/") != 1 or not all(c.isalnum() or c in "-_./" for c in repo)):
-                    return self.json({"error": "Écrivez le dépôt sous la forme utilisateur/aderlink"}, 400)
+                    raise Forbidden("Écrivez le dépôt sous la forme utilisateur/aderlink")
                 app.config["update"] = {"repo": repo, "branch": str(body.get("branch") or "main").strip(),
                                         "auto": bool(body.get("auto", True))}
-                if app.routers:
-                    app.routers._persist()
-                return self.json({"update": app.updater.info()})
+                app.save_config(app.config)
+                return {"update": app.updater.info()}
             if app.updater and p == "/api/settings/check":
-                return self.json({"update": app.updater.check(install=bool(body.get("install")))})
-            if p == "/api/batches":
-                return self.ticket_call(lambda: app.tickets.create_batch(body), 201)
-            if p == "/api/forfaits":
-                return self.ticket_call(lambda: app.tickets.create_forfait(body), 201)
-            if len(parts) == 5 and parts[2] == "forfaits" and parts[4] == "archive" and parts[3].isdigit():
-                return self.ticket_call(lambda: app.tickets.archive_forfait(int(parts[3])))
-            if len(parts) == 5 and parts[2] == "batches" and parts[4] == "remove-unused" and parts[3].isdigit():
-                return self.ticket_call(lambda: app.tickets.remove_unused(int(parts[3])))
-            return self.send(404, b"Introuvable")
+                self.need(who.can("settings"))
+                return {"update": app.updater.check(install=bool(body.get("install")))}
+            raise Forbidden("Introuvable")
 
         def do_POST(self):
             p = urlparse(self.path).path
@@ -360,9 +474,15 @@ def make_handler(app):
             form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
             username = form.get("username", [""])[0].strip()
             password = form.get("password", [""])[0]
-            if hmac.compare_digest(username, admin["username"]) and verify_password(password, admin["password_hash"]):
+            if app.users:
+                ok = app.users.authenticate(username, password)
+            else:
+                admin = app.config["admin"]
+                ok = admin["username"] if (hmac.compare_digest(username, admin["username"])
+                                          and verify_password(password, admin["password_hash"])) else None
+            if ok:
                 app.throttle.reset(ip)
-                cookie = (f"{COOKIE}={make_token(secret, username)}; Path=/; HttpOnly; SameSite=Strict; "
+                cookie = (f"{COOKIE}={make_token(secret, ok)}; Path=/; HttpOnly; SameSite=Strict; "
                           f"Max-Age={SESSION_HOURS * 3600}" + ("; Secure" if secure else ""))
                 return self.redirect("/", cookie)
             app.throttle.fail(ip)

@@ -70,7 +70,7 @@ class Tickets:
                 """
             )
             for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
-                               ("forfaits", "color TEXT")):  # base créée par une version précédente
+                               ("forfaits", "color TEXT"), ("batches", "created_by TEXT")):  # base créée par une version précédente
                 try:
                     store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
@@ -186,7 +186,7 @@ class Tickets:
         return {"ok": True}
 
     # --- création --------------------------------------------------------------
-    def create_batch(self, data):
+    def create_batch(self, data, created_by=None):
         forfait = None
         if data.get("forfait_id"):
             try:
@@ -221,10 +221,10 @@ class Tickets:
         note = str(data.get("note") or "")[:80]
 
         _, batch_id = self._q(
-            "INSERT INTO batches (zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, note, forfait_id, pos_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO batches (zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, note, "
+            "forfait_id, pos_id, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (zone["id"], int(time.time()), 0, profile, price, uptime_s, data_mb, validity_s, note,
-             forfait["id"] if forfait else None, pos_id), commit=True)
+             forfait["id"] if forfait else None, pos_id, created_by), commit=True)
 
         rows, _ = self._q("SELECT code FROM tickets WHERE zone_id = ?", (zone["id"],))
         taken = {r[0] for r in rows}
@@ -291,6 +291,7 @@ class Tickets:
             "pos_id": row[12] if len(row) > 12 else None,
             "pos_name": self._pos_name(row[12]) if len(row) > 12 and row[12] else None,
             "color": self._forfait_color(row[11]) if len(row) > 11 and row[11] else "bleu",
+            "created_by": row[13] if len(row) > 13 else None,
         }
 
     def _forfait_color(self, forfait_id):
@@ -408,27 +409,40 @@ class Tickets:
             self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
 
     # --- ventes ---------------------------------------------------------------------------
-    def sales_history(self, days, utc_offset_s=3600):
+    @staticmethod
+    def _scope(zone_ids, created_by):
+        sql, params = "", []
+        if zone_ids is not None:
+            sql += " AND b.zone_id IN (%s)" % (",".join("?" * len(zone_ids)) or "NULL")
+            params += list(zone_ids)
+        if created_by:
+            sql += " AND b.created_by = ?"
+            params.append(created_by)
+        return sql, params
+
+    def sales_history(self, days, utc_offset_s=3600, zone_ids=None, created_by=None):
         """Ventes par jour (heure locale) sur `days` jours + totaux depuis le début."""
         now = int(time.time())
         today = (now + utc_offset_s) // 86400
         first = today - days + 1
+        sc, sp = self._scope(zone_ids, created_by)
         rows, _ = self._q(
             "SELECT (t.first_used + ?) / 86400 AS d, COUNT(*), SUM(b.price) FROM tickets t "
             "JOIN batches b ON b.id = t.batch_id WHERE t.first_used IS NOT NULL "
-            "AND (t.first_used + ?) / 86400 >= ? GROUP BY d", (utc_offset_s, utc_offset_s, first))
+            "AND (t.first_used + ?) / 86400 >= ?" + sc + " GROUP BY d", [utc_offset_s, utc_offset_s, first] + sp)
         by_day = {d: (n, a or 0) for d, n, a in rows}
         series = [{"day": d * 86400 - utc_offset_s, "tickets": by_day.get(d, (0, 0))[0],
                    "amount": by_day.get(d, (0, 0))[1]} for d in range(first, today + 1)]
         tot, _ = self._q("SELECT COUNT(*), SUM(b.price) FROM tickets t JOIN batches b ON b.id = t.batch_id "
-                         "WHERE t.first_used IS NOT NULL")
-        gen, _ = self._q("SELECT COUNT(*) FROM tickets")
+                         "WHERE t.first_used IS NOT NULL" + sc, sp)
+        gen, _ = self._q("SELECT COUNT(*) FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE 1=1" + sc, sp)
         return {"series": series,
                 "period": {"tickets": sum(x["tickets"] for x in series), "amount": sum(x["amount"] for x in series)},
                 "all_time": {"tickets": tot[0][0], "amount": tot[0][1] or 0, "generated": gen[0][0]}}
 
-    def sales(self, since):
+    def sales(self, since, zone_ids=None, created_by=None):
+        sc, sp = self._scope(zone_ids, created_by)
         rows, _ = self._q(
             "SELECT b.zone_id, COUNT(*), SUM(b.price) FROM tickets t JOIN batches b ON b.id = t.batch_id "
-            "WHERE t.first_used >= ? GROUP BY b.zone_id", (since,))
+            "WHERE t.first_used >= ?" + sc + " GROUP BY b.zone_id", [since] + sp)
         return [{"zone_id": z, "tickets": n, "amount": a or 0} for z, n, a in rows]

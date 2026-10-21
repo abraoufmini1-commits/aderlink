@@ -144,3 +144,12 @@ deploy/
   mikrotik/       script RouterOS à coller dans chaque routeur
 tests/            tests automatiques (faux routeur MikroTik inclus)
 ```
+
+## Utilisateurs et revendeurs (5.3)
+
+Menu → **Utilisateurs** (administrateur seulement) :
+
+- **Gérant** : crée des tickets et des profils, voit les lots et les ventes des routeurs qu'on lui donne.
+- **Revendeur** : crée et imprime des tickets avec son propre point de vente ; il ne voit que ses lots et ses ventes. Commission en % calculée sur les tickets vendus.
+
+Chacun change son mot de passe dans **Mon profil**. Un compte désactivé est déconnecté tout de suite.

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Mon profil — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="profil">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Mon profil</h1>
+      <p class="subtitle" id="who">–</p>
+    </div>
+    <a class="btn btn-sm btn-outline" href="/logout">Déconnexion</a>
+  </div>
+  <section class="card wizard" id="stats" hidden aria-labelledby="stTitle">
+    <h2 id="stTitle">Mes ventes</h2>
+    <dl class="check-dl" id="statList"></dl>
+  </section>
+  <form class="card wizard" id="pwForm" autocomplete="off" novalidate aria-labelledby="pwTitle">
+    <h2 id="pwTitle">Changer mon mot de passe</h2>
+    <div class="form-grid">
+      <div class="f"><label for="old">Mot de passe actuel</label><input id="old" type="password" autocomplete="current-password" required></div>
+      <div class="f"><label for="new1">Nouveau mot de passe</label><input id="new1" type="password" autocomplete="new-password" minlength="6" required>
+        <div class="hint" id="pwHint">6 caractères minimum</div></div>
+      <div class="f"><label for="new2">Répétez le nouveau mot de passe</label><input id="new2" type="password" autocomplete="new-password" required></div>
+    </div>
+    <div class="notice" id="pwMsg" role="status"></div>
+    <div class="pane-foot">
+      <a class="btn-prev" href="/">← Retour</a>
+      <button class="btn btn-big" type="submit" id="pwSave">Enregistrer</button>
+    </div>
+  </form>
+</main>
+
+<script src="/static/shell.js"></script>
+<script src="/static/profil.js"></script>
+</body>
+</html>

@@ -47,7 +47,7 @@
       <h2>Choisissez un point de vente</h2>
       <p class="pane-sub">Pour savoir qui vend quoi, et où · <span id="ctxRouterPv"></span></p>
       <div class="pick-list" id="pvs" role="radiogroup" aria-label="Points de vente"></div>
-      <a class="add-row add-link" id="pvManage" href="/routeurs">+ Gérer les points de vente</a>
+      <a class="add-row add-link need-gerant" id="pvManage" href="/routeurs">+ Gérer les points de vente</a>
       <div class="pane-foot">
         <button class="btn-prev" type="button" data-back>← Précédent</button>
       </div>
@@ -58,8 +58,8 @@
       <h2>Choisissez un forfait</h2>
       <p class="pane-sub">Le profil de connexion appliqué aux tickets · <span id="ctxRouter"></span></p>
       <div class="pick-list" id="forfaits" role="radiogroup" aria-label="Forfaits"></div>
-      <button class="add-row" type="button" data-go="forfait/nouveau">+ Nouveau forfait</button>
-      <div class="manage-row"><button class="link link-muted" type="button" id="manage" aria-pressed="false" hidden>Retirer un forfait</button></div>
+      <button class="add-row need-gerant" type="button" data-go="forfait/nouveau">+ Nouveau forfait</button>
+      <div class="manage-row need-gerant"><button class="link link-muted" type="button" id="manage" aria-pressed="false" hidden>Retirer un forfait</button></div>
       <div class="pane-foot">
         <button class="btn-prev" type="button" data-back>← Précédent</button>
       </div>
@@ -176,7 +176,7 @@
           </div>
           <div class="f span2">
             <label for="note">Libellé du lot</label>
-            <input id="note" maxlength="80" placeholder="Ex. Revendeur Moussa (facultatif)">
+            <input id="note" maxlength="80" placeholder="Ex. Lot du marché (facultatif)">
           </div>
         </div>
       </details>

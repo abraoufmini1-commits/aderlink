@@ -17,7 +17,8 @@ from pathlib import Path
 
 from .collector import Collector, Store
 from .routeros import RouterOS, RouterOSError
-from .server import App, hash_password, serve
+from .server import App, hash_password, serve, verify_password
+from .users import Users
 from .tickets import Tickets
 from .routers import Routers
 from .updater import Updater
@@ -156,17 +157,34 @@ def cmd_serve(args):
     routers = Routers(cfg, store, collector, save=save_config, demo=args.demo)
     for z in cfg.get("zones", []):
         routers.ensure_default_pv(z["id"])
+    users = Users(cfg, store, routers, hash_password, verify_password)
     updater = Updater(cfg)
     collector.ticket_hook = tickets.on_poll
     if args.demo:
         _demo_batches(tickets)
+        _demo_users(cfg, users, tickets)
     collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()
     if not args.demo:
         updater.start()
     print(f"ADER LINK version {updater.state['current']}")
-    serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater),
+    serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
+              users=users, save_config=save_config),
           args.host, args.port)
+
+
+def _demo_users(cfg, users, tickets):
+    zones = [z["id"] for z in cfg.get("zones", [])]
+    users.create({"name": "Awa Gérante", "username": "gerant", "password": "aderlink", "role": "gerant",
+                  "zones": zones[:2]})
+    rev = users.create({"name": "Moussa Revendeur", "username": "revendeur", "password": "aderlink",
+                        "role": "revendeur", "zones": zones[:1], "commission": 10, "phone": "+227 90 00 00 00"})
+    who = users.principal(rev["username"])
+    f = next((f for f in tickets.list_forfaits(zones[0])), None) if zones else None
+    if f:
+        tickets.create_batch({"forfait_id": f["id"], "count": 40, "pos_id": users.pv_for(who, zones[0]),
+                              "note": "Lot Moussa"}, created_by=who.username)
+    print("Comptes démo : gerant / aderlink · revendeur / aderlink")
 
 
 def _demo_batches(tickets):

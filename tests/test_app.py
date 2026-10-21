@@ -417,3 +417,117 @@ class RoutersAndUpdaterTests(unittest.TestCase):
             self.assertEqual((root / "app" / "static" / "x.js").read_text(), "js")
             self.assertEqual((root / "config.json").read_text(), '{"secret": 1}')
             self.assertEqual(calls, [1])
+
+
+class UsersAndRolesTests(unittest.TestCase):
+    """Administrateur, gérant et revendeur : chacun ne voit que ce qui lui revient."""
+
+    @classmethod
+    def setUpClass(cls):
+        from app.routers import Routers
+        from app.tickets import Tickets
+        from app.users import Users
+        cls.config = {
+            "admin": {"username": "admin", "password_hash": hash_password("admin-secret-1")},
+            "secret_key": "y" * 64, "poll_seconds": 30,
+            "zones": [{"id": "a", "name": "Zone A", "router": {"host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}},
+                      {"id": "b", "name": "Zone B", "router": {"host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}}],
+        }
+        store = Store(":memory:")
+        collector = Collector(cls.config, store, demo=True)
+        cls.tickets = Tickets(cls.config, store, demo=True)
+        routers = Routers(cls.config, store, collector, save=lambda c: None, demo=True)
+        for z in cls.config["zones"]:
+            routers.ensure_default_pv(z["id"])
+        cls.users = Users(cls.config, store, routers, hash_password, verify_password)
+        cls.fa = cls.tickets.create_forfait({"zone_id": "a", "name": "1H", "price": 200, "uptime_s": 3600})
+        cls.fb = cls.tickets.create_forfait({"zone_id": "b", "name": "1H", "price": 200, "uptime_s": 3600})
+        cls.tickets.create_batch({"forfait_id": cls.fa["id"], "count": 5}, created_by="admin")
+        app = App(cls.config, collector, store, demo=True, tickets=cls.tickets, routers=routers, users=cls.users)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+        cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+
+    def login(self, user, pwd):
+        jar = CookieJar()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        op.open(self.base + "/login", data=f"username={user}&password={pwd}".encode())
+        return op
+
+    def get(self, op, path):
+        return json.loads(op.open(self.base + path).read())
+
+    def post(self, op, path, body):
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json", "X-AderLink": "1"})
+        try:
+            return 200, json.loads(op.open(req).read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_roles(self):
+        admin = self.login("admin", "admin-secret-1")
+        code, rev = self.post(admin, "/api/users", {"name": "Moussa Issa", "username": "moussa", "role": "revendeur",
+                                                    "zones": ["a"], "commission": 10})
+        self.assertEqual(code, 200, rev)
+        self.assertEqual(len(rev["password"]), 10)  # mot de passe créé automatiquement
+        code, ger = self.post(admin, "/api/users", {"name": "Awa", "username": "awa", "role": "gerant",
+                                                    "zones": ["b"], "password": "awa-123456"})
+        self.assertEqual(code, 200, ger)
+        code, err = self.post(admin, "/api/users", {"name": "X", "username": "moussa", "role": "gerant", "zones": ["a"]})
+        self.assertEqual(code, 400)
+
+        # Revendeur : une seule zone, son point de vente, ses lots
+        r = self.login("moussa", rev["password"])
+        me = self.get(r, "/api/me")
+        self.assertEqual(me["role"], "revendeur")
+        zones = self.get(r, "/api/zones")["zones"]
+        self.assertEqual([z["id"] for z in zones], ["a"])
+        self.assertEqual([p["name"] for p in zones[0]["points_vente"]], ["Moussa Issa"])
+        self.assertEqual(self.get(r, "/api/batches")["batches"], [])  # ne voit pas le lot de l'admin
+        code, lot = self.post(r, "/api/batches", {"forfait_id": self.fa["id"], "count": 3, "pos_id": 1})
+        self.assertEqual(code, 200, lot)
+        detail = self.get(r, f"/api/batches/{lot['id']}")
+        self.assertEqual(detail["pos_name"], "Moussa Issa")  # forcé sur son point de vente
+        self.assertEqual(detail["created_by"], "moussa")
+        self.assertEqual(len(self.get(r, "/api/batches")["batches"]), 1)
+        self.assertEqual(self.post(r, "/api/batches", {"forfait_id": self.fb["id"], "count": 1})[0], 403)
+        self.assertEqual(self.post(r, "/api/forfaits", {"zone_id": "a", "name": "X", "price": 1})[0], 403)
+        self.assertEqual(self.post(r, "/api/users", {})[0], 403)
+        for path in ("/api/routers", "/api/users", "/api/settings", "/api/zones/b/forfaits"):
+            with self.assertRaises(urllib.error.HTTPError, msg=path):
+                r.open(self.base + path)
+        admin_lot = self.get(admin, "/api/batches")["batches"][-1]["id"]
+        with self.assertRaises(urllib.error.HTTPError):
+            r.open(self.base + f"/api/batches/{admin_lot}")
+
+        # Gérant : zone B seulement, peut créer un profil, pas d'utilisateurs
+        g = self.login("awa", "awa-123456")
+        self.assertEqual([z["id"] for z in self.get(g, "/api/zones")["zones"]], ["b"])
+        self.assertEqual(self.post(g, "/api/forfaits", {"zone_id": "b", "name": "Jour", "price": 500})[0], 200)
+        self.assertEqual(self.post(g, "/api/forfaits", {"zone_id": "a", "name": "Jour", "price": 500})[0], 403)
+        self.assertEqual(self.get(g, "/api/batches")["batches"], [])
+        with self.assertRaises(urllib.error.HTTPError):
+            g.open(self.base + "/api/users")
+
+        # Statistiques et commission vues par l'admin
+        self.tickets._q("UPDATE tickets SET first_used = ? WHERE batch_id = ?", (int(time.time()), lot["id"]), commit=True)
+        users = {u["username"]: u for u in self.get(admin, "/api/users")["users"]}
+        self.assertEqual(users["moussa"]["stats"]["sold"], 3)
+        self.assertEqual(users["moussa"]["stats"]["commission_due"], 60)
+
+        # Changer son mot de passe, puis désactivation : la session tombe
+        self.assertEqual(self.post(r, "/api/me/password", {"old": "faux", "new": "nouveau-1"})[0], 400)
+        self.assertEqual(self.post(r, "/api/me/password", {"old": rev["password"], "new": "nouveau-1"})[0], 200)
+        self.post(admin, f"/api/users/{rev['id']}/disable", {})
+        with self.assertRaises(urllib.error.HTTPError):
+            r.open(self.base + "/api/me")
+        with self.assertRaises(urllib.error.HTTPError):
+            self.login("moussa", "nouveau-1").open(self.base + "/api/me")
+        self.post(admin, f"/api/users/{rev['id']}/enable", {})
+        self.assertEqual(self.get(self.login("moussa", "nouveau-1"), "/api/me")["username"], "moussa")
+        self.assertEqual(self.post(admin, f"/api/users/{rev['id']}/delete", {})[0], 200)

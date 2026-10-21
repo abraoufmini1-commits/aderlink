@@ -23,7 +23,10 @@
     wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a14.5 14.5 0 0 1 20 0"/><path d="M12 19.5h.01"/>',
     terminal: '<path d="m5 7 5 5-5 5M12 18h7"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
-    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>'
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/>',
+    trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
   };
   function icon(name) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + I[name] + "</svg>";
@@ -33,17 +36,19 @@
     { id: "creer", href: "/tickets", label: "Créer des tickets", icon: "ticket" },
     { id: "lots", href: "/lots", label: "Lots", icon: "layers" },
     { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
-    { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router" },
-    { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear" }
+    { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
+    { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", need: "admin" },
+    { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
+    { id: "profil", href: "/profil", label: "Mon profil", icon: "user" }
   ];
   var soon = [
     { label: "Multi-zones", icon: "zones" },
     { label: "Rapport des ventes", icon: "chart" },
-    { label: "Analytique", icon: "trend" },
-    { label: "Utilisateurs", icon: "users" }
+    { label: "Analytique", icon: "trend" }
   ];
+  function need(m) { return m.need ? ' data-need="' + m.need + '"' : ""; }
   function link(m) {
-    return '<a href="' + m.href + '"' + (m.id === page ? ' aria-current="page"' : "") + ">" + icon(m.icon) + "<span>" + m.label + "</span></a>";
+    return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + icon(m.icon) + "<span>" + m.label + "</span></a>";
   }
 
   // En-tête
@@ -54,7 +59,7 @@
     '<a class="brand" href="/"><span class="brand-mark"><img src="/static/logo-blue.svg" alt="" width="22" height="22"></span>' +
     '<img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15"></a>' +
     '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 5).map(function (m) {
-      return '<a href="' + m.href + '"' + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
+      return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +
     '<button class="icon-btn" type="button" id="menuBtn" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="drawer">' + icon("menu") + "</button></div></div>";
@@ -69,7 +74,7 @@
   drawer.id = "drawer";
   drawer.setAttribute("aria-label", "Menu");
   drawer.innerHTML =
-    '<div class="drawer-head"><span class="drawer-title">Menu</span><button class="icon-btn icon-btn-plain" type="button" id="menuClose" aria-label="Fermer le menu">' + icon("x") + "</button></div>" +
+    '<div class="drawer-head"><div><span class="drawer-title" id="meName">Menu</span><span class="drawer-role" id="meRole"></span></div><button class="icon-btn icon-btn-plain" type="button" id="menuClose" aria-label="Fermer le menu">' + icon("x") + "</button></div>" +
     '<nav class="drawer-nav">' + main.map(link).join("") +
     '<div class="drawer-sep"></div>' +
     soon.map(function (m) { return '<span class="is-soon" aria-disabled="true">' + icon(m.icon) + "<span>" + m.label + '</span><em>Bientôt</em></span>'; }).join("") +
@@ -86,7 +91,9 @@
   function tab(id, href, label, ic) {
     return '<a href="' + href + '"' + (id === page ? ' aria-current="page"' : "") + ">" + icon(ic) + "<span>" + label + "</span></a>";
   }
-  bar.innerHTML = tab("accueil", "/", "Accueil", "home") + tab("routeurs", "/routeurs", "Routeurs", "router") +
+  bar.innerHTML = tab("accueil", "/", "Accueil", "home") +
+    '<span class="bb-slot" data-need="gerant">' + tab("routeurs", "/routeurs", "Routeurs", "router") + "</span>" +
+    '<span class="bb-slot" data-only="revendeur" hidden>' + tab("controle", "/controle", "Contrôle", "scan") + "</span>" +
     '<a class="fab" href="/tickets" aria-label="Créer des tickets"' + (page === "creer" ? ' aria-current="page"' : "") + ">" + icon("plus") + "</a>" +
     tab("lots", "/lots", "Lots", "layers") +
     '<button type="button" id="menuBtn2">' + icon("menu") + "<span>Menu</span></button>";
@@ -131,5 +138,21 @@
   checkVersion();
   setInterval(checkVersion, 30000);
 
-  window.AderShell = { icon: icon };
+  // Compte connecté : on masque ce que son rôle ne permet pas
+  var rank = { revendeur: 1, gerant: 2, admin: 3 };
+  var me = fetch("/api/me", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+  me.then(function (u) {
+    if (!u) return;
+    document.body.dataset.role = u.role;
+    document.getElementById("meName").textContent = u.name;
+    document.getElementById("meRole").textContent = u.role_label;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-need]"), function (el) {
+      if (rank[u.role] < rank[el.dataset.need]) el.hidden = true;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-only]"), function (el) {
+      el.hidden = el.dataset.only !== u.role;
+    });
+  });
+
+  window.AderShell = { icon: icon, me: me };
 })();

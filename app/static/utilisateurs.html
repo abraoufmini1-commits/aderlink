@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Utilisateurs — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="utilisateurs">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main class="narrow">
+  <div class="page-head">
+    <div>
+      <h1>Utilisateurs</h1>
+      <p class="subtitle">Vos gérants et revendeurs, leurs ventes du mois et leur commission.</p>
+    </div>
+    <button class="btn" type="button" id="addBtn">+ Ajouter</button>
+  </div>
+  <div class="role-help card">
+    <div><strong>Gérant</strong> — crée des tickets et des profils, voit les lots et les ventes de ses routeurs.</div>
+    <div><strong>Revendeur</strong> — crée et imprime des tickets avec son propre point de vente. Il ne voit que ses lots et ses ventes.</div>
+  </div>
+  <section class="router-cards" id="list" aria-live="polite"><div class="card empty">Chargement…</div></section>
+</main>
+
+<div class="bs-shade" id="bsShade"></div>
+<section class="bs" id="bs" role="dialog" aria-modal="true" aria-labelledby="bsTitle" hidden>
+  <div class="bs-head">
+    <span class="bs-ico" id="bsIco" aria-hidden="true"></span>
+    <h2 id="bsTitle"></h2>
+    <button class="icon-btn icon-btn-plain" type="button" id="bsClose" aria-label="Fermer"></button>
+  </div>
+  <div class="bs-body" id="bsBody"></div>
+  <div class="bs-foot" id="bsFoot"></div>
+</section>
+
+<script src="/static/shell.js"></script>
+<script src="/static/utilisateurs.js"></script>
+</body>
+</html>
