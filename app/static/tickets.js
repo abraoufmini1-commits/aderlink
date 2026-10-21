@@ -239,7 +239,8 @@
     var f = S.forfait;
     $("crumbs").innerHTML = "<span>" + esc(zoneObj().name) + "</span><span aria-hidden='true'>›</span><span>" + esc(S.pv ? S.pv.name : "") +
       "</span><span aria-hidden='true'>›</span><span>" + esc(f.name) + "</span>";
-    if (!$("codeLen").dataset.touched) $("codeLen").value = zoneObj().code_length || 6;
+    if (!$("codeLen").dataset.touched) $("codeLen").value = zoneObj().code_length || 8;
+    lenUi();
     var tile = function (cls, label, value) { return "<div class='tile " + cls + "'><strong>" + value + "</strong><span>" + label + "</span></div>"; };
     $("tiles").innerHTML = tile("t-price", "Prix unité", nf.format(f.price) + " F") +
       tile("t-time", "Durée", esc(dur(f.uptime_s))) +
@@ -256,7 +257,17 @@
     document.querySelectorAll("#chips button").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.n === n ? "true" : "false"); });
   }
   $("count").addEventListener("input", total);
-  $("codeLen").addEventListener("input", function () { this.dataset.touched = "1"; });
+  function lenUi() {
+    var n = Math.round(num("codeLen"));
+    document.querySelectorAll("#lenChips button").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.len === n ? "true" : "false"); });
+    var digits = "1234567890123".slice(0, Math.max(0, Math.min(12, n)));
+    $("codeSample").textContent = n >= 8 ? digits.replace(/(\d{4})(?=\d)/g, "$1 ") : digits.replace(/(\d{3})(?=\d)/g, "$1 ");
+  }
+  $("codeLen").addEventListener("input", function () { this.dataset.touched = "1"; lenUi(); });
+  $("lenChips").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-len]"); if (!b) return;
+    $("codeLen").value = b.dataset.len; $("codeLen").dataset.touched = "1"; lenUi();
+  });
   $("minus").addEventListener("click", function () { setQty(qty() - (qty() > 10 ? 10 : 1)); });
   $("plus").addEventListener("click", function () { setQty(qty() + (qty() >= 10 ? 10 : 1)); });
   $("chips").addEventListener("click", function (e) { var b = e.target.closest("[data-n]"); if (b) setQty(+b.dataset.n); });

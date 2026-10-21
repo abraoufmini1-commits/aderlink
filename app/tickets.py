@@ -205,7 +205,7 @@ class Tickets:
             pos_id = None
         try:
             count = int(data.get("count", 0))
-            code_len = int(data.get("code_length") or zone.get("code_length", 6))
+            code_len = int(data.get("code_length") or zone.get("code_length", 8))
             price = max(0, int(data.get("price", 0)))
             uptime_s = max(0, int(data.get("uptime_s", 0)))
             data_mb = max(0, int(data.get("data_mb", 0)))

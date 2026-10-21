@@ -83,7 +83,7 @@ class Routers:
         d = {k: z.get(k) for k in PUBLIC}
         r = z.get("router", {})
         d.update({"host": r.get("host", ""), "port": r.get("port", 8728), "wan_interface": r.get("wan_interface", ""),
-                  "ssid": z.get("ssid") or z["name"], "code_length": z.get("code_length", 6)})
+                  "ssid": z.get("ssid") or z["name"], "code_length": z.get("code_length", 8)})
         s = self.collector.snapshot().get(z["id"], {}) if self.collector else {}
         d["status"] = "unknown" if not s else ("online" if s.get("online") else "offline")
         for k in ("board", "version", "uptime_s", "cpu", "memory", "tickets", "active", "error", "last_seen", "identity"):
@@ -104,7 +104,7 @@ class Routers:
             raise RouterError("Adresse IP du routeur invalide (ex. 10.10.0.1)")
         try:
             port = int(data.get("port") or 8728)
-            code_length = int(data.get("code_length") or 6)
+            code_length = int(data.get("code_length") or 8)
         except (TypeError, ValueError):
             raise RouterError("Valeurs invalides")
         if not 1 <= port <= 65535:

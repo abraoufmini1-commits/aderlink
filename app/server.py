@@ -88,7 +88,7 @@ class App:
 
     def zones_list(self):
         return [{"id": z["id"], "name": z["name"], "ssid": z.get("ssid") or z["name"],
-                 "code_length": z.get("code_length", 6),
+                 "code_length": z.get("code_length", 8),
                  "points_vente": self.routers.list_pv(z["id"]) if self.routers else []}
                 for z in self.config.get("zones", [])]
 

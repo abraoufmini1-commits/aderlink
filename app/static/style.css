@@ -803,3 +803,9 @@ body.no-scroll { overflow: hidden; }
 .mc-label { margin: 10px 12px 0; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--c2); text-align: center; }
 .mc-code { margin: 2px 12px 0; padding: 6px; border-radius: 8px; background: var(--cs); text-align: center; font: 800 24px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 2px; }
 .mc-specs { padding: 8px 12px 12px; font-size: 12px; color: #4a5a73; text-align: center; }
+.code-len { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.code-len .chips { margin-top: 0; }
+.len-field { width: 150px; }
+.len-field input { min-height: 44px; border: 0; background: transparent; padding: 0 12px; font: inherit; font-weight: 700; color: var(--ink); min-width: 0; flex: 1; width: 60px; }
+.len-field input:focus { outline: none; }
+#lenChips button[aria-pressed="true"] { background: var(--blue-600); border-color: var(--blue-600); color: #fff; }

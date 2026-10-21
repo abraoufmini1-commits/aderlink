@@ -114,7 +114,7 @@
 
   // --- ajouter / modifier -----------------------------------------------------------------------
   function edit(r) {
-    var v = r || { name: "", location: "", ssid: "", host: "", port: 8728, wan_interface: "ether1", code_length: 6 };
+    var v = r || { name: "", location: "", ssid: "", host: "", port: 8728, wan_interface: "ether1", code_length: 8 };
     var f = function (id, label, value, attrs, hint) {
       return "<div class='f'><label for='" + id + "'>" + label + "</label><input id='" + id + "' value='" + esc(value) + "' " + (attrs || "") + ">" +
         (hint ? "<div class='hint'>" + hint + "</div>" : "") + "</div>";
@@ -135,7 +135,7 @@
     sheet(r ? "Modifier " + r.name : "Ajouter un routeur", r ? "pencil" : "router", body, foot);
     function save() {
       var data = { name: $("rName").value, location: $("rLoc").value, ssid: $("rSsid").value, host: $("rHost").value,
-        port: +$("rPort").value || 8728, wan_interface: $("rWan").value, code_length: +$("rLen").value || 6 };
+        port: +$("rPort").value || 8728, wan_interface: $("rWan").value, code_length: +$("rLen").value || 8 };
       var btn = $("rSave"); btn.disabled = true;
       api(r ? "/api/routers/" + encodeURIComponent(r.id) + "/update" : "/api/routers", data).then(function (res) {
         var show = !r && $("rShow").checked;

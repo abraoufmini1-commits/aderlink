@@ -154,13 +154,19 @@
         <button type="button" data-n="200">200</button><button type="button" data-n="500">500</button>
         <button type="button" data-n="1000">1000</button>
       </div>
+      <label class="q-label" for="codeLen">Longueur du code</label>
+      <div class="code-len">
+        <div class="chips" id="lenChips">
+          <button type="button" data-len="6">6</button><button type="button" data-len="8">8</button>
+          <button type="button" data-len="10">10</button><button type="button" data-len="12">12</button>
+        </div>
+        <div class="unit-field len-field"><input id="codeLen" type="number" min="4" max="12" value="8" inputmode="numeric" aria-label="Autre longueur"><span class="unit">chiffres</span></div>
+      </div>
+      <div class="hint">Exemple de code : <strong class="mono" id="codeSample">1234 5678</strong></div>
       <details class="adv">
         <summary>Options du lot</summary>
         <div class="form-grid form-grid-2">
-          <div class="f">
-            <label for="codeLen">Longueur du code</label>
-            <div class="unit-field"><input id="codeLen" type="number" min="4" max="12" value="6" inputmode="numeric"><span class="unit">chiffres</span></div>
-          </div>
+
           <div class="f">
             <label for="pwMode">Mot de passe hotspot</label>
             <select id="pwMode"><option value="same" selected>Identique au code</option><option value="empty">Vide</option></select>
