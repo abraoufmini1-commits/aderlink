@@ -2,3 +2,5 @@ config.json
 data/
 __pycache__/
 *.pyc
+config.json.tmp
+*.old/
