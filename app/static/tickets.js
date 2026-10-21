@@ -152,7 +152,7 @@
       var bits = [f.uptime_s ? dur(f.uptime_s) : null, f.data_mb ? data(f.data_mb) : null,
         f.validity_s ? "valable " + dur(f.validity_s) : null].filter(Boolean).join(" · ") || "Illimité";
       return "<div class='pick-row'><button type='button' class='pick' role='radio' aria-checked='" + (S.forfait && S.forfait.id === f.id) + "' data-forfait='" + f.id + "'>" +
-        "<span class='avatar avatar-ticket' aria-hidden='true'>" + window.AderShell.icon("ticket") + "</span>" +
+        "<span class='avatar avatar-ticket c-" + esc(f.color || "bleu") + "' aria-hidden='true'>" + window.AderShell.icon("ticket") + "</span>" +
         "<span class='pick-main'><span class='pick-title'>" + esc(f.name) + "</span><span class='pick-sub'>" + esc(bits) + "</span>" +
         "<span class='pick-stock'>" + nf.format(f.stock) + " en stock" + (f.down_mbps ? " · " + nf.format(f.down_mbps) + " Mb/s" : "") + "</span></span>" +
         "<span class='pick-price num'>" + nf.format(f.price) + " F</span><span class='radio' aria-hidden='true'></span></button>" +
@@ -195,15 +195,22 @@
       uptime_s: Math.round(num("pUptimeN") * +$("pUptimeU").value),
       data_mb: Math.round(num("pDataN") * +$("pDataU").value),
       validity_s: Math.round(num("pValN") * +$("pValU").value),
-      down_mbps: down, up_mbps: up, shared_users: Math.round(num("pShared")) || 1
+      down_mbps: down, up_mbps: up, shared_users: Math.round(num("pShared")) || 1, color: pColor()
     };
+  }
+  function pColor() {
+    var c = document.querySelector("input[name=pColor]:checked");
+    return c ? c.value : "bleu";
   }
   function pSummary() {
     var v = profileValues();
-    $("pSummary").innerHTML = "<strong>" + (v.name ? esc(v.name) : "Nouveau forfait") + "</strong> · " + nf.format(v.price) + " F · durée " +
-      dur(v.uptime_s).toLowerCase() + " · " + data(v.data_mb).toLowerCase() + " · validité " + (v.validity_s ? dur(v.validity_s) : "sans limite") +
-      " · " + (v.down_mbps ? nf.format(v.down_mbps) + " Mb/s" : "vitesse illimitée");
+    $("miniCard").className = "mini-card c-" + v.color;
+    $("miniCard").querySelector("img").src = "/static/" + (v.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg");
+    $("mcPrice").textContent = nf.format(v.price) + " F";
+    $("mcSpecs").textContent = [v.data_mb ? data(v.data_mb) : "Données illimitées", v.validity_s ? dur(v.validity_s) : null,
+      v.uptime_s ? dur(v.uptime_s) + " de connexion" : null].filter(Boolean).join(" · ");
   }
+  $("pMore").addEventListener("change", function () { $("pMoreBox").hidden = !this.checked; });
   $("pane-nouveau").addEventListener("input", pSummary);
   $("pane-nouveau").addEventListener("change", pSummary);
   $("pane-nouveau").addEventListener("submit", function (e) {
@@ -217,6 +224,7 @@
     hideNotice("pNotice");
     api("/api/forfaits", v).then(function (f) {
       $("pane-nouveau").reset();
+      $("pMoreBox").hidden = true;
       return loadForfaits().then(function () {
         S.forfait = S.forfaits.find(function (x) { return x.id === f.id; }) || null;
         renderForfaits();

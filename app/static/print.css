@@ -49,7 +49,7 @@ body {
 }
 .band {
   height: 12.5mm; flex: none; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 3.5mm; background: linear-gradient(135deg, var(--blue-700), var(--blue-600)); color: #fff;
+  padding: 0 3.5mm; background: linear-gradient(135deg, var(--c1, #0a3f8a), var(--c2, #0d4fa8)); color: #fff;
 }
 .brand { display: flex; align-items: center; gap: 1.8mm; }
 .brand img.mark { width: 6.2mm; height: 6.2mm; background: #fff; border-radius: 1.6mm; padding: 0.8mm; }
@@ -58,22 +58,22 @@ body {
 .brand-name b { color: var(--orange); }
 .ssid { font-size: 2.3mm; opacity: 0.85; margin-top: 0.6mm; letter-spacing: 0; font-weight: 500; }
 .price {
-  background: var(--orange); color: #fff; font-weight: 800; font-size: 3.6mm;
+  background: var(--chip, #f08a1c); color: #fff; font-weight: 800; font-size: 3.6mm;
   padding: 1.2mm 2.4mm; border-radius: 1.6mm; white-space: nowrap; line-height: 1.1;
 }
 .price small { font-size: 2.3mm; font-weight: 700; }
 .body { flex: 1; padding: 2.4mm 3.5mm 2mm; display: flex; flex-direction: column; }
 .code-box {
-  background: var(--blue-50); border-radius: 2mm; padding: 1.2mm 2mm 1.4mm; text-align: center;
+  background: var(--cs, #eef4fc); border-radius: 2mm; padding: 1.2mm 2mm 1.4mm; text-align: center;
 }
-.code-label { font-size: 2.1mm; font-weight: 700; letter-spacing: 0.12em; color: var(--blue-600); text-transform: uppercase; }
+.code-label { font-size: 2.1mm; font-weight: 700; letter-spacing: 0.12em; color: var(--c2, #0d4fa8); text-transform: uppercase; }
 .code {
   font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
   font-weight: 800; font-size: 8.2mm; letter-spacing: 0.9mm; line-height: 1.05; color: var(--ink);
 }
 .code.long { font-size: 6.6mm; letter-spacing: 0.5mm; }
 .specs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5mm; margin-top: 2mm; }
-.spec { border-left: 0.5mm solid var(--orange); padding-left: 1.5mm; }
+.spec { border-left: 0.5mm solid var(--c2, #f08a1c); padding-left: 1.5mm; }
 .spec-l { font-size: 1.9mm; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
 .spec-v { font-size: 2.9mm; font-weight: 750; line-height: 1.2; }
 .howto { margin-top: 2.2mm; font-size: 2.2mm; line-height: 1.35; color: var(--ink-2); }
@@ -92,3 +92,10 @@ body {
 @media screen and (max-width: 860px) {
   #sheets { overflow-x: auto; padding: 16px; }
 }
+
+/* couleur choisie dans le profil */
+.c-bleu { --c1: #0a3f8a; --c2: #0d4fa8; --cs: #eef4fc; --chip: #f08a1c; }
+.c-orange { --c1: #b85f05; --c2: #f08a1c; --cs: #fff1e2; --chip: #0a3f8a; }
+.c-nuit { --c1: #0b1320; --c2: #24344f; --cs: #eef1f5; --chip: #f08a1c; }
+.c-vert { --c1: #0b5e35; --c2: #13804a; --cs: #e6f4ec; --chip: #f08a1c; }
+.c-rouge { --c1: #8f1919; --c2: #c62828; --cs: #fdecec; --chip: #f08a1c; }

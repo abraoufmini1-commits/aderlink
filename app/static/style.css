@@ -768,3 +768,38 @@ body.no-scroll { overflow: hidden; }
 .stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .add-link { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 @media (max-width: 420px) { .stepper .lbl { font-size: 12px; } .stepper .dot-n { width: 38px; height: 38px; } .stepper li + li::before { top: 18px; width: calc(100% - 38px); margin-right: 19px; } }
+
+/* ===================== Couleurs des cartes (profils) ===================== */
+.c-bleu { --c1: #0a3f8a; --c2: #0d4fa8; --cs: #eef4fc; --chip: #f08a1c; }
+.c-orange { --c1: #b85f05; --c2: #f08a1c; --cs: #fff1e2; --chip: #0a3f8a; }
+.c-nuit { --c1: #0b1320; --c2: #24344f; --cs: #eef1f5; --chip: #f08a1c; }
+.c-vert { --c1: #0b5e35; --c2: #13804a; --cs: #e6f4ec; --chip: #f08a1c; }
+.c-rouge { --c1: #8f1919; --c2: #c62828; --cs: #fdecec; --chip: #f08a1c; }
+.avatar-ticket[class*="c-"] { background: var(--c2); color: #fff; }
+.np-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.np-ico { width: 48px; height: 48px; border-radius: 14px; background: var(--blue-600); color: #fff; display: grid; place-items: center; flex: none; }
+.np-ico svg { width: 24px; height: 24px; }
+.np-sub { margin: 2px 0 0; }
+.more-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 16px 0 4px; min-height: 44px; cursor: pointer; font-weight: 700; color: var(--blue-600); }
+.more-toggle input { width: 20px; height: 20px; accent-color: var(--blue-600); }
+@media (prefers-color-scheme: dark) { .more-toggle { color: var(--series); } }
+#pMoreBox { margin-top: 6px; }
+.colors { border: 0; padding: 0; margin: 18px 0 0; }
+.colors legend { font-weight: 700; margin-bottom: 10px; padding: 0; }
+.swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+.sw { position: relative; width: 48px; height: 48px; border-radius: 14px; cursor: pointer; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.sw-bleu { --c1: #0a3f8a; --c2: #0d4fa8; } .sw-orange { --c1: #b85f05; --c2: #f08a1c; } .sw-nuit { --c1: #0b1320; --c2: #24344f; }
+.sw-vert { --c1: #0b5e35; --c2: #13804a; } .sw-rouge { --c1: #8f1919; --c2: #c62828; }
+.sw input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.sw:has(input:checked) { outline: 3px solid var(--ink); outline-offset: 3px; }
+.sw:has(input:checked)::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 20px; }
+.sw:has(input:focus-visible) { outline: 3px solid var(--orange); outline-offset: 3px; }
+.preview-box { margin-top: 18px; padding: 16px; border-radius: 16px; background: var(--surface-2); }
+.preview-label { font-size: 13px; font-weight: 700; color: var(--ink-2); margin-bottom: 10px; }
+.mini-card { width: 260px; max-width: 100%; border-radius: 10px; overflow: hidden; background: #fff; color: #0f1d33; box-shadow: 0 4px 14px rgba(15,29,51,0.12); border: 1px solid #dfe6f0; }
+.mc-band { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.mc-band img { height: 12px; width: auto; }
+.mc-price { background: var(--chip); color: #fff; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 6px; }
+.mc-label { margin: 10px 12px 0; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--c2); text-align: center; }
+.mc-code { margin: 2px 12px 0; padding: 6px; border-radius: 8px; background: var(--cs); text-align: center; font: 800 24px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 2px; }
+.mc-specs { padding: 8px 12px 12px; font-size: 12px; color: #4a5a73; text-align: center; }

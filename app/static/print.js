@@ -28,9 +28,9 @@
   }
 
   function card(code, b) {
-    return '<div class="card">' +
+    return '<div class="card c-' + esc(b.color || "bleu") + '">' +
       '<div class="band"><div class="brand"><img class="mark" src="/static/logo-blue.svg" alt="">' +
-      '<div><div class="brand-name"><img class="word" src="/static/wordmark-white.svg" alt="ADER LINK">' + (b.demo ? '<span class="demo">Démo</span>' : "") + "</div>" +
+      '<div><div class="brand-name"><img class="word" src="/static/' + (b.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg") + '" alt="ADER LINK">' + (b.demo ? '<span class="demo">Démo</span>' : "") + "</div>" +
       '<div class="ssid">Wi-Fi : ' + esc(b.ssid) + "</div></div></div>" +
       '<div class="price">' + nf.format(b.price) + " <small>F CFA</small></div></div>" +
       '<div class="body"><div class="code-box"><div class="code-label">Code d\'accès</div>' +

@@ -64,35 +64,41 @@
 
     <!-- 2 bis. Nouveau forfait -->
     <form class="pane" id="pane-nouveau" hidden autocomplete="off" novalidate>
-      <h2>Nouveau forfait</h2>
-      <p class="pane-sub">Créé sur <span id="ctxRouter2"></span>. Laissez une case vide pour « illimité ».</p>
+      <div class="np-head"><span class="np-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z"/></svg></span>
+        <div><h2>Nouveau profil</h2><p class="pane-sub np-sub">Créé sur <span id="ctxRouter2"></span></p></div></div>
       <div class="form-grid form-grid-2">
-        <div class="f span2">
-          <label for="pName">Nom du forfait</label>
-          <input id="pName" maxlength="40" required placeholder="Ex. 1 heure, Journée, 100 F">
+        <div class="f">
+          <label for="pName">Nom du profil <span class="req">*</span></label>
+          <input id="pName" maxlength="40" required placeholder="Ex : 100F, 500F, Journée">
         </div>
         <div class="f">
-          <label for="pPrice">Prix</label>
-          <div class="unit-field"><input id="pPrice" type="number" min="0" step="any" inputmode="numeric" placeholder="200"><span class="unit">F CFA</span></div>
+          <label for="pPrice">Prix (F CFA) <span class="req">*</span></label>
+          <input id="pPrice" type="number" min="0" step="any" inputmode="numeric" placeholder="Ex : 100">
         </div>
         <div class="f">
-          <label for="pShared">Appareils par ticket</label>
-          <div class="unit-field"><input id="pShared" type="number" min="1" max="10" value="1" inputmode="numeric"><span class="unit">appareil(s)</span></div>
+          <label for="pDataN">Limite de données</label>
+          <div class="unit-field"><input id="pDataN" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitée">
+            <select id="pDataU" aria-label="Unité de données"><option value="1" selected>Mo</option><option value="1024">Go</option></select></div>
         </div>
+        <div class="f">
+          <label for="pValN">Validité</label>
+          <div class="unit-field"><input id="pValN" type="number" min="0" step="any" inputmode="decimal" placeholder="Sans limite">
+            <select id="pValU" aria-label="Unité de validité"><option value="3600" selected>heure(s)</option><option value="86400">jour(s)</option></select></div>
+          <div class="hint">Compte à partir de la 1re connexion</div>
+        </div>
+      </div>
+
+      <label class="more-toggle"><input type="checkbox" id="pMore"> <span>Plus de paramètres</span></label>
+      <div class="form-grid form-grid-2" id="pMoreBox" hidden>
         <div class="f">
           <label for="pUptimeN">Durée de connexion</label>
           <div class="unit-field"><input id="pUptimeN" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitée">
             <select id="pUptimeU" aria-label="Unité de durée"><option value="60">minutes</option><option value="3600" selected>heures</option><option value="86400">jours</option></select></div>
+          <div class="hint">Temps total de navigation</div>
         </div>
         <div class="f">
-          <label for="pDataN">Données</label>
-          <div class="unit-field"><input id="pDataN" type="number" min="0" step="any" inputmode="decimal" placeholder="Illimitées">
-            <select id="pDataU" aria-label="Unité de données"><option value="1">Mo</option><option value="1024" selected>Go</option></select></div>
-        </div>
-        <div class="f">
-          <label for="pValN">Validité après 1re connexion</label>
-          <div class="unit-field"><input id="pValN" type="number" min="0" step="any" inputmode="decimal" placeholder="Sans limite">
-            <select id="pValU" aria-label="Unité de validité"><option value="3600">heures</option><option value="86400" selected>jours</option></select></div>
+          <label for="pShared">Appareils par ticket</label>
+          <div class="unit-field"><input id="pShared" type="number" min="1" max="10" value="1" inputmode="numeric"><span class="unit">appareil(s)</span></div>
         </div>
         <div class="f">
           <label for="pDown">Vitesse téléchargement</label>
@@ -104,11 +110,30 @@
           <div class="hint">Vide = moitié du téléchargement</div>
         </div>
       </div>
-      <div class="summary-box" id="pSummary" aria-live="polite"></div>
+
+      <fieldset class="colors">
+        <legend>Couleur des cartes</legend>
+        <div class="swatches" id="swatches">
+          <label class="sw sw-bleu"><input type="radio" name="pColor" value="bleu" checked><span class="sr-only">Bleu ADER</span></label>
+          <label class="sw sw-orange"><input type="radio" name="pColor" value="orange"><span class="sr-only">Orange</span></label>
+          <label class="sw sw-nuit"><input type="radio" name="pColor" value="nuit"><span class="sr-only">Bleu nuit</span></label>
+          <label class="sw sw-vert"><input type="radio" name="pColor" value="vert"><span class="sr-only">Vert</span></label>
+          <label class="sw sw-rouge"><input type="radio" name="pColor" value="rouge"><span class="sr-only">Rouge</span></label>
+        </div>
+      </fieldset>
+      <div class="preview-box">
+        <div class="preview-label">Aperçu du ticket</div>
+        <div class="mini-card c-bleu" id="miniCard">
+          <div class="mc-band"><img src="/static/wordmark-white.svg" alt="ADER LINK"><span class="mc-price" id="mcPrice">– F</span></div>
+          <div class="mc-label">Code d'accès</div>
+          <div class="mc-code">123 456</div>
+          <div class="mc-specs" id="mcSpecs">–</div>
+        </div>
+      </div>
       <div class="notice" id="pNotice" role="status"></div>
       <div class="pane-foot">
-        <button class="btn-prev" type="button" data-back>← Précédent</button>
-        <button class="btn btn-big" type="submit" id="pSave">Enregistrer le forfait</button>
+        <button class="btn-prev" type="button" data-back>Annuler</button>
+        <button class="btn btn-big" type="submit" id="pSave">✓ Enregistrer</button>
       </div>
     </form>
 

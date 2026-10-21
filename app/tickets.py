@@ -69,9 +69,10 @@ class Tickets:
                     created_at INTEGER, archived INTEGER DEFAULT 0);
                 """
             )
-            for col in ("forfait_id INTEGER", "pos_id INTEGER"):  # base créée par une version précédente
+            for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
+                               ("forfaits", "color TEXT")):  # base créée par une version précédente
                 try:
-                    store.db.execute(f"ALTER TABLE batches ADD COLUMN {col}")
+                    store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
                     pass
             store.db.commit()
@@ -103,10 +104,12 @@ class Tickets:
 
     # --- forfaits (profils) -------------------------------------------------------
     FORFAIT_COLS = ("id", "zone_id", "name", "router_profile", "price", "uptime_s", "data_mb",
-                    "validity_s", "down_mbps", "up_mbps", "shared_users", "created_at", "archived")
+                    "validity_s", "down_mbps", "up_mbps", "shared_users", "created_at", "archived", "color")
+    COLORS = ("bleu", "orange", "nuit", "vert", "rouge")
 
     def _forfait(self, row):
         f = dict(zip(self.FORFAIT_COLS, row))
+        f["color"] = f.get("color") or "bleu"
         rows, _ = self._q("SELECT COUNT(*) FROM tickets t JOIN batches b ON b.id = t.batch_id "
                           "WHERE b.forfait_id = ? AND t.removed = 0 AND t.first_used IS NULL", (f["id"],))
         f["stock"] = rows[0][0]
@@ -145,6 +148,7 @@ class Tickets:
             raise TicketError("Valeurs invalides")
         if not 1 <= shared <= 10:
             raise TicketError("Appareils simultanés : entre 1 et 10")
+        color = data.get("color") if data.get("color") in self.COLORS else "bleu"
         rows, _ = self._q("SELECT id FROM forfaits WHERE zone_id = ? AND archived = 0 AND lower(name) = lower(?)",
                           (zone["id"], name))
         if rows:
@@ -169,9 +173,9 @@ class Tickets:
                 raise TicketError(f"Le routeur a refusé : {msg}") from e
         _, fid = self._q(
             "INSERT INTO forfaits (zone_id, name, router_profile, price, uptime_s, data_mb, validity_s, "
-            "down_mbps, up_mbps, shared_users, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "down_mbps, up_mbps, shared_users, created_at, color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (zone["id"], name, router_profile, price, uptime_s, data_mb, validity_s, down, up, shared,
-             int(time.time())), commit=True)
+             int(time.time()), color), commit=True)
         return self.get_forfait(fid)
 
     def archive_forfait(self, forfait_id):
@@ -286,7 +290,12 @@ class Tickets:
             "forfait_id": row[11] if len(row) > 11 else None,
             "pos_id": row[12] if len(row) > 12 else None,
             "pos_name": self._pos_name(row[12]) if len(row) > 12 and row[12] else None,
+            "color": self._forfait_color(row[11]) if len(row) > 11 and row[11] else "bleu",
         }
+
+    def _forfait_color(self, forfait_id):
+        rows, _ = self._q("SELECT color FROM forfaits WHERE id = ?", (forfait_id,))
+        return (rows[0][0] if rows else None) or "bleu"
 
     def _pos_name(self, pos_id):
         try:
