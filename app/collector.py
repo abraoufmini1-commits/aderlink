@@ -141,6 +141,13 @@ class Collector:
             for zone, snap in zip(zones, pool.map(self._poll_zone, zones)):
                 self._record(zone, snap)
 
+    def add_tickets(self, zone_id, n):
+        """Lot créé : on ajoute tout de suite les tickets au compteur du routeur (le relevé suivant confirme)."""
+        with self.lock:
+            st = self.state.get(zone_id)
+            if st and st.get("tickets") is not None:
+                st["tickets"] += n
+
     def snapshot(self):
         with self.lock:
             return {k: dict(v) for k, v in self.state.items()}

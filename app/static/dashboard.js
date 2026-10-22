@@ -103,11 +103,16 @@
       var st = STATUS[z.status] || STATUS.unknown, online = z.status === "online";
       var avatar = z.has_logo ? '<span class="ravatar ravatar-logo"><img alt="" src="/api/routers/' + encodeURIComponent(z.id) + '/logo"></span>'
         : '<span class="ravatar">' + esc(initials(z.name)) + "</span>";
-      var right = online
-        ? '<span class="rcount"><span class="n num">' + nf.format(z.active) + '</span><span class="l">connecté' + (z.active > 1 ? "s" : "") + "</span></span>"
-        : '<span class="rcount rcount-off">' + st[0] + "</span>";
-      var inner = avatar + '<span class="rid"><span class="rname" title="' + esc(z.name) + '">' + esc(z.name) + "</span>" +
-        '<span class="rmodel"><i class="rdot" aria-hidden="true"></i>' + esc(model(z) || (z.status === "pending" ? "Pas encore installé" : "MikroTik")) + "</span></span>" + right;
+      var head = '<span class="rtop">' + avatar + '<span class="rid"><span class="rname" title="' + esc(z.name) + '">' + esc(z.name) + "</span>" +
+        '<span class="rmodel">' + esc(model(z) || (z.status === "pending" ? "Pas encore installé" : "MikroTik")) + "</span></span>" +
+        '<span class="rstate"><i aria-hidden="true"></i>' + st[0] + "</span></span>";
+      var tile = function (cls, n, label) {
+        return '<span class="rtile ' + cls + '"><span class="n num">' + n + '</span><span class="l">' + label + "</span></span>";
+      };
+      var tiles = '<span class="rtiles">' +
+        tile("rtile-blue", online ? nf.format(z.active) : "–", "Connecté" + (online && z.active > 1 ? "s" : "")) +
+        tile("rtile-orange", z.tickets != null ? nf.format(z.tickets) : "–", "Tickets dans le MikroTik") + "</span>";
+      var inner = head + tiles;
       if (online) return '<button type="button" class="card rcard ' + st[1] + '" data-zone="' + esc(z.id) + '" aria-label="' + esc(z.name) + " : " + z.active + ' connectés — voir la liste">' + inner + "</button>";
       return '<a class="card rcard ' + st[1] + '" href="/routeurs">' + inner + "</a>";
     }).join("");

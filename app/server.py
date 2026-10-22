@@ -477,7 +477,10 @@ def make_handler(app):
                 elif body.get("pos_id") and R:
                     pv = R.get_pv(int(body["pos_id"]))
                     self.need(pv and pv["zone_id"] == zid, "Point de vente invalide")
-                return T.create_batch(body, created_by=who.username)
+                res = T.create_batch(body, created_by=who.username)
+                if app.collector and res.get("created"):
+                    app.collector.add_tickets(zid, res["created"])
+                return res
             if p == "/api/forfaits":
                 self.need(who.can("forfaits_write"))
                 self.need(who.can_zone(str(body.get("zone_id", ""))))
