@@ -47,7 +47,7 @@
     var line = [+b.data_mb ? data(b.data_mb) : "", b.validity_s ? "Validité " + longDur(b.validity_s) : "Sans limite de validité"].filter(Boolean).join(" • ");
     return '<div class="tk c-' + esc(b.color || "bleu") + '">' +
       '<div class="tk-band"><img class="tk-mark" src="/static/logo-blue.svg" alt="">' +
-      '<div class="tk-brand"><img class="tk-word" src="/static/' + (b.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg") + '" alt="ADER LINK">' +
+      '<div class="tk-brand"><img class="tk-word" src="/static/wordmark-blue.svg" alt="ADER LINK">' +
       '<div class="tk-ssid">' + esc(b.ssid) + "</div></div>" +
       '<div class="tk-price">' + nf.format(b.price) + "<small>" + esc(b.currency === "FCFA" ? "F" : (b.currency || "F")) + "</small></div></div>" +
       '<div class="tk-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +

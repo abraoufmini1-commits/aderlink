@@ -90,18 +90,18 @@ body {
 .sheet-small { padding: 11mm 10.5mm; }
 .grid-small { display: grid; grid-template-columns: repeat(3, 63mm); grid-auto-rows: 25mm; }
 .tk {
-  width: 63mm; height: 25mm; outline: 0.25mm dashed #9aa6b8; outline-offset: -0.125mm;
+  width: 63mm; height: 25mm; outline: 0.25mm solid #b8c2d1; outline-offset: -0.125mm;
   display: flex; flex-direction: column; overflow: hidden; background: #fff;
 }
 .tk-band {
   height: 8.5mm; flex: none; display: flex; align-items: center; gap: 1.6mm; padding: 0 2mm;
-  background: linear-gradient(135deg, var(--c1, #0a3f8a), var(--c2, #0d4fa8)); color: #fff;
+  background: #fff; color: var(--ink); border-bottom: 0.2mm solid #d5dbe5;
 }
-.tk-mark { width: 5mm; height: 5mm; background: #fff; border-radius: 1.2mm; padding: 0.6mm; flex: none; }
+.tk-mark { width: 5mm; height: 5mm; flex: none; }
 .tk-brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5mm; }
 .tk-word { height: 2.3mm; width: auto; display: block; align-self: flex-start; }
-.tk-ssid { font-size: 1.9mm; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
-.tk-price { background: var(--chip, #f08a1c); color: #fff; font-weight: 800; font-size: 2.9mm; padding: 0.8mm 1.5mm; border-radius: 1.2mm; white-space: nowrap; line-height: 1.1; flex: none; }
+.tk-ssid { font-size: 1.9mm; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+.tk-price { color: var(--orange, #f08a1c); font-weight: 800; font-size: 3.2mm; white-space: nowrap; line-height: 1.1; flex: none; }
 .tk-price small { font-size: 1.9mm; margin-left: 0.4mm; }
 .tk-code {
   margin: 0 2.2mm; background: var(--c2, #0d4fa8); border-radius: 0.8mm;
@@ -117,10 +117,10 @@ body {
 .grid-mini { grid-template-columns: repeat(5, 39.6mm); grid-auto-rows: 20.35mm; }
 .grid-mini .tk { width: 39.6mm; height: 20.35mm; }
 .grid-mini .tk-band { height: 6.4mm; gap: 1mm; padding: 0 1.2mm; }
-.grid-mini .tk-mark { width: 3.8mm; height: 3.8mm; border-radius: 0.9mm; padding: 0.45mm; }
+.grid-mini .tk-mark { width: 3.8mm; height: 3.8mm; }
 .grid-mini .tk-word { height: 1.7mm; }
 .grid-mini .tk-ssid { font-size: 1.45mm; }
-.grid-mini .tk-price { font-size: 2.2mm; padding: 0.6mm 1mm; border-radius: 0.9mm; }
+.grid-mini .tk-price { font-size: 2.5mm; }
 .grid-mini .tk-price small { font-size: 1.5mm; }
 .grid-mini .tk-code { margin: 0 1.4mm; font-size: 4.4mm; line-height: 1.35; letter-spacing: 0.1mm; }
 .grid-mini .tk-code.long { font-size: 3.4mm; }
