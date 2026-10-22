@@ -543,6 +543,12 @@ class UsersAndRolesTests(unittest.TestCase):
         mine = self.get(self.login("moussa", "nouveau-1"), "/api/report")
         self.assertEqual(mine["totals"]["amount"], 600)
         self.assertEqual(mine["commission"], 60)
+        an = self.get(admin, "/api/analytique?days=7")
+        self.assertEqual(an["insights"]["tickets"], 3)
+        self.assertEqual(len(an["hours"]), 24)
+        self.assertEqual(sum(x["tickets"] for x in an["weekdays"]), 3)
+        self.assertEqual(an["forfaits"][0]["sold"], 3)
+        self.assertEqual(self.get(self.login("moussa", "nouveau-1"), "/api/analytique")["insights"]["amount"], 600)
         g_rep = self.get(g, "/api/report")
         self.assertEqual(g_rep["totals"]["tickets"], 0)  # le gérant de la zone B ne voit pas la zone A
         self.assertEqual(self.post(admin, f"/api/users/{rev['id']}/delete", {})[0], 200)

@@ -1152,3 +1152,23 @@ button.rcard { border: 1px solid var(--border); }
 .ravatar { border-radius: 10px; }
 .kpi-accent { border-top: 1px solid var(--border); border-left: 4px solid var(--blue-600); }
 .router-card, .wizard { border-radius: 12px; }
+
+/* ===================== Analytique ===================== */
+.insights { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+@media (max-width: 900px) { .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.insight { display: flex; gap: 12px; padding: 14px; align-items: flex-start; }
+.ins-ico { width: 38px; height: 38px; border-radius: 10px; background: var(--blue-100); color: var(--blue-600); display: grid; place-items: center; flex: none; }
+.ins-ico svg { width: 20px; height: 20px; }
+.ins-l { font-size: 12px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
+.ins-v { font-size: 19px; font-weight: 800; margin-top: 3px; line-height: 1.2; overflow-wrap: anywhere; }
+.ins-s { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
+@media (max-width: 560px) { .insight { flex-direction: column; gap: 8px; } .ins-v { font-size: 17px; } }
+@media (prefers-color-scheme: dark) { .ins-ico { color: var(--series); } }
+.an-bars svg { height: 200px; }
+.an-bars .bar-best { fill: var(--orange); }
+.an-orange .bar { fill: color-mix(in srgb, var(--blue-600) 55%, var(--surface)); }
+.an-orange .bar-best { fill: var(--orange); }
+.an-rate { display: flex; align-items: center; gap: 8px; min-width: 140px; }
+.an-rate .rp-meter { flex: 1; margin: 0; }
+.an-rate span.num { font-size: 13px; font-weight: 700; min-width: 38px; text-align: right; }
+.an-table td, .an-table th { white-space: nowrap; }

@@ -163,6 +163,7 @@ def cmd_serve(args):
     if args.demo:
         _demo_batches(tickets)
         _demo_users(cfg, users, tickets)
+        _demo_samples(cfg, store)
     collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()
     if not args.demo:
@@ -171,6 +172,25 @@ def cmd_serve(args):
     serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
               users=users, save_config=save_config),
           args.host, args.port)
+
+
+def _demo_samples(cfg, store):
+    """30 jours de relevés fictifs (toutes les 15 min) : peu de monde la nuit, pointe le soir."""
+    import math
+    import random as _r
+    now = int(time.time())
+    curve = [3, 2, 1, 1, 1, 2, 5, 12, 20, 24, 26, 28, 33, 30, 26, 25, 28, 34, 42, 52, 55, 46, 30, 12]
+    rows = []
+    for z in cfg.get("zones", []):
+        scale = _r.uniform(0.6, 1.4)
+        for ts in range(now - 30 * 86400, now, 900):
+            h = ((ts + 3600) // 3600) % 24
+            weekend = ((ts + 3600) // 86400 + 3) % 7 >= 5
+            n = max(0, int(curve[h] * scale * (1.2 if weekend else 1) + _r.uniform(-3, 3)))
+            rows.append((ts, z["id"], 1, n, n * 90_000, n * 15_000))
+    with store.lock:
+        store.db.executemany("INSERT INTO samples (ts, zone_id, online, active, rx_bps, tx_bps) VALUES (?,?,?,?,?,?)", rows)
+        store.db.commit()
 
 
 def _demo_users(cfg, users, tickets):

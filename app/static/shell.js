@@ -43,6 +43,7 @@
     { id: "lots", href: "/lots", label: "Lots", icon: "layers" },
     { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
     { id: "rapports", href: "/rapports", label: "Rapport des ventes", icon: "chart" },
+    { id: "analytique", href: "/analytique", label: "Analytique", icon: "trend" },
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
     { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", roles: "admin client" },
     { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
@@ -50,7 +51,6 @@
   ];
   var soon = [
     { label: "Multi-zones", icon: "zones" },
-    { label: "Analytique", icon: "trend" }
   ];
   function need(m) { return m.need ? ' data-need="' + m.need + '"' : m.roles ? ' data-roles="' + m.roles + '"' : ""; }
   function link(m) {
@@ -65,7 +65,7 @@
     '<a class="brand" href="/"><span class="brand-mark"><img src="/static/logo-blue.svg" alt="" width="22" height="22"></span>' +
     '<span class="brand-text"><img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15">' +
     '<span class="brand-tag">Gestion de zones Wi-Fi</span></span></a>' +
-    '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 6).map(function (m) {
+    '<nav class="nav" aria-label="Menu principal">' + main.filter(function (m) { return m.id !== "analytique"; }).slice(0, 6).map(function (m) {
       return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +

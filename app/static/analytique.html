@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Analytique — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="analytique">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main>
+  <div class="page-head">
+    <div>
+      <h1>Analytique</h1>
+      <p class="subtitle" id="scope">Quand vos clients se connectent, quand ils achètent, et ce qu'ils achètent.</p>
+    </div>
+    <div class="chips rp-chips" id="periods">
+      <button type="button" data-d="7">7 jours</button>
+      <button type="button" data-d="30" aria-pressed="true">30 jours</button>
+      <button type="button" data-d="90">90 jours</button>
+    </div>
+  </div>
+
+  <section class="insights" id="insights" aria-label="À retenir"></section>
+
+  <section class="card chart-card" aria-labelledby="h1t">
+    <div class="chart-head"><h2 id="h1t">Heures de pointe</h2><span class="kpi-sub">Connectés en moyenne, heure par heure</span></div>
+    <div class="chart-wrap rp-bars an-bars" id="hoursChart"></div>
+  </section>
+
+  <div class="rp-grid">
+    <section class="card chart-card rp-table" aria-labelledby="h2t">
+      <div class="chart-head"><h2 id="h2t">Ventes par heure</h2><span class="kpi-sub">Tickets utilisés pour la 1re fois</span></div>
+      <div class="chart-wrap rp-bars an-bars an-orange" id="salesHourChart"></div>
+    </section>
+    <section class="card chart-card rp-table" aria-labelledby="h3t">
+      <div class="chart-head"><h2 id="h3t">Ventes par jour de la semaine</h2><span class="kpi-sub">Montant moyen par jour</span></div>
+      <div class="chart-wrap rp-bars an-bars" id="weekChart"></div>
+    </section>
+  </div>
+
+  <section class="card rp-table" aria-labelledby="h4t">
+    <h2 id="h4t">Vos forfaits</h2>
+    <div class="table-scroll"><table class="an-table"><thead><tr><th>Forfait</th><th class="r">Vendus</th><th class="r">Montant</th>
+      <th>Écoulement du stock</th><th class="r">Vendu en</th><th class="r">En stock</th></tr></thead><tbody id="fRows"></tbody></table></div>
+  </section>
+</main>
+
+<script src="/static/shell.js"></script>
+<script src="/static/analytique.js"></script>
+</body>
+</html>

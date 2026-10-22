@@ -216,7 +216,7 @@ class App:
 PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
-         "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/profil": ("profil.html", None)}
+         "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/analytique": ("analytique.html", None), "/profil": ("profil.html", None)}
 
 
 def make_handler(app):
@@ -426,6 +426,17 @@ def make_handler(app):
                     days = 30
                 zone_ids, mine = app.sales_scope(who)
                 return app.tickets.sales_history(days, app.offset(), zone_ids, mine)
+            if app.tickets and p == "/api/analytique":
+                from .analytics import analytics
+                try:
+                    days = int(q.get("days", ["30"])[0])
+                except ValueError:
+                    days = 30
+                days = days if days in (7, 30, 90) else 30
+                zone_ids, mine = app.sales_scope(who)
+                out = analytics(app.store, app.tickets, days, app.offset(), zone_ids, mine)
+                out.update(demo=app.demo, me=who.public())
+                return out
             if app.tickets and p == "/api/report":
                 return app.report(q, who)
             if app.tickets and p == "/api/tickets/find":
