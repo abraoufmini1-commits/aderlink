@@ -185,7 +185,7 @@ RULES=""
 while read -r port addr dport; do
   RULES="$RULES    tcp dport $port dnat to $addr:$dport
 "
-done < <(grep -E '^5[0-3][0-9]{3} 10\.6[67]\.0\.[0-9]{1,3} (8291|80)$' "$FW" 2>/dev/null || true)
+done < <(grep -E '^(5[0-2][0-9]{3} 10\.6[67]\.0\.[0-9]{1,3} (8291|80)|53[0-9]{3} 10\.6[67]\.0\.[0-9]{1,3} 53[0-9]{3})$' "$FW" 2>/dev/null || true)
 nft -f - <<NFT || true
 table ip aderlink
 delete table ip aderlink
@@ -251,7 +251,8 @@ ufw allow 51820/udp >/dev/null
 ufw allow 1194/tcp >/dev/null      # tunnel des routeurs RouterOS 6
 ufw allow 1812:1813/udp >/dev/null
 ufw route allow proto tcp to 10.66.0.0/23 port 8291 >/dev/null   # Winbox à distance (par le tunnel)
-ufw route allow proto tcp to 10.66.0.0/23 port 80 >/dev/null     # WebFig à distance (par le tunnel)   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
+ufw route allow proto tcp to 10.66.0.0/23 port 80 >/dev/null     # WebFig à distance (par le tunnel)
+ufw route allow proto tcp to 10.66.0.0/23 port 53000:53999 >/dev/null  # appareils derrière les routeurs (antennes…)   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
 ufw --force enable >/dev/null
 
 sleep 2

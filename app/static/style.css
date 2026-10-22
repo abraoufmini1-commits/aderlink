@@ -1277,3 +1277,7 @@ button.rcard { border: 1px solid var(--border); }
 .welcome-main { flex: 1 1 260px; min-width: 0; }
 .welcome-main h2 { margin: 0 0 4px; font-size: 18px; }
 .welcome-main p { margin: 0; color: var(--ink-2); line-height: 1.45; }
+.dev-form { display: grid; grid-template-columns: 1.3fr 1.2fr .9fr .6fr auto; gap: 8px; align-items: end; margin-top: 6px; }
+.dev-form .f { margin: 0; }
+.ra-ip { font-weight: 500; color: var(--ink-3); font-size: 12px; }
+@media (max-width: 640px) { .dev-form { grid-template-columns: 1fr 1fr; } .dev-form .btn { grid-column: span 2; } }

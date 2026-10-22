@@ -907,6 +907,17 @@ class TunnelTests(unittest.TestCase):
         self.assertIn("50010 10.66.0.10 8291\n", fw)
         self.assertIn("52011 10.67.0.11 80\n", fw)
         self.assertEqual(r.remote(z2)["kind"], "OpenVPN")
+        # appareil derrière le routeur (antenne) : redirection serveur -> routeur
+        r.demo = True
+        res = r.add_device("z1", {"name": "Antenne Grandstream", "ip": "192.168.88.20", "proto": "https"})
+        self.assertEqual(res["devices"][0]["public"], "https://169.58.168.195:53001")
+        self.assertEqual(res["devices"][0]["port"], 443)
+        self.assertIn("53001 10.66.0.10 53001\n", r.wg_file.with_name("forwards.conf").read_text())
+        with self.assertRaises(RouterError):
+            r.add_device("z1", {"name": "X", "ip": "8.8.8.8"})
+        r.remove_device("z1", 1)
+        self.assertNotIn("53001", r.wg_file.with_name("forwards.conf").read_text())
+        r.demo = False
         # le signal toutes les 5 min ne remplace plus l'adresse du tunnel
         r.installed(z1, "41.0.0.5")
         self.assertEqual(z1["router"]["host"], "10.66.0.10")

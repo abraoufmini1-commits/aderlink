@@ -677,9 +677,13 @@ def make_handler(app):
                 acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
                         "logo": lambda: R.set_logo(zid, body.get("image")),
                         "pv": lambda: R.create_pv(zid, body),
-                        "winbox": lambda: R.open_winbox(zid, self.client_ip() in ("127.0.0.1", "::1"))}
+                        "winbox": lambda: R.open_winbox(zid, self.client_ip() in ("127.0.0.1", "::1")),
+                        "devices": lambda: R.add_device(zid, body)}
                 if action in acts:
                     return acts[action]()
+            if R and len(parts) == 7 and parts[2] == "routers" and parts[4] == "devices" and parts[6] == "delete" and parts[5].isdigit():
+                self.need(who.can_zone(parts[3]) and who.can("routers_write"))
+                return R.remove_device(parts[3], int(parts[5]))
             if R and len(parts) == 5 and parts[2] == "pv" and parts[4] == "archive" and parts[3].isdigit():
                 pv = R.get_pv(int(parts[3]))
                 self.need(who.can("routers_write") and pv and who.can_zone(pv["zone_id"]))

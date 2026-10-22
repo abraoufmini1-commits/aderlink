@@ -102,6 +102,7 @@ class Routers:
         d["auto_host"] = bool(r.get("auto_host"))
         d["has_logo"] = self.logo(z["id"]) is not None
         d["remote"] = self.remote(z)
+        d["devices"] = self.devices(z)
         if not d["installed"]:
             d["status"] = "pending"
         return d
@@ -230,6 +231,84 @@ class Routers:
         return {"winbox": f"{ip}:{self.WINBOX_BASE + n}", "webfig": f"http://{ip}:{self.WEBFIG_BASE + n}",
                 "tunnel": r["host"], "kind": "WireGuard" if r["tunnel"] == "wg" else "OpenVPN"}
 
+    # --- appareils derrière un routeur (antenne, caméra…) : ouverts de partout par le tunnel ---
+    DEVICE_BASE = 53000
+
+    def devices(self, z):
+        wg = self.wg()
+        out = []
+        for d in z.get("devices", []):
+            port = self.DEVICE_BASE + d["id"]
+            out.append(dict(d, public=f"{d['proto']}://{wg['endpoint']}:{port}" if wg else ""))
+        return out
+
+    def _router_rules(self, z, d, api):
+        r = z["router"]
+        iface = "wg-aderlink" if r.get("tunnel") == "wg" else "ovpn-aderlink"
+        src = (self.wg() or {}).get("server" if r.get("tunnel") == "wg" else "ovpn_server", "10.66.0.1")
+        port, tag = self.DEVICE_BASE + d["id"], f"ADER LINK appareil {d['id']}"
+        api.query("/ip/firewall/nat/add", "=chain=dstnat", f"=in-interface={iface}", "=protocol=tcp",
+                  f"=dst-port={port}", "=action=dst-nat", f"=to-addresses={d['ip']}", f"=to-ports={d['port']}",
+                  f"=comment={tag}")
+        # l'appareil répond au routeur, qui renvoie dans le tunnel
+        api.query("/ip/firewall/nat/add", "=chain=srcnat", f"=src-address={src}", f"=dst-address={d['ip']}",
+                  "=protocol=tcp", f"=dst-port={d['port']}", "=action=masquerade", f"=comment={tag}")
+
+    def _remove_rules(self, api, did):
+        for n in api.query("/ip/firewall/nat/print", f"?comment=ADER LINK appareil {did}"):
+            api.query("/ip/firewall/nat/remove", f"=.id={n['.id']}")
+
+    def add_device(self, zone_id, data):
+        z = self.zone(zone_id)
+        if not self.remote(z):
+            raise RouterError("Ce routeur doit d'abord être relié au serveur par le tunnel (Installer)")
+        name = _clean(data.get("name"), 40)
+        ip = str(data.get("ip") or "").strip()
+        proto = "https" if data.get("proto") == "https" else "http"
+        try:
+            port = int(data.get("port") or (443 if proto == "https" else 80))
+        except (TypeError, ValueError):
+            raise RouterError("Port invalide")
+        if not name:
+            raise RouterError("Donnez un nom à l'appareil")
+        if not re.fullmatch(r"(10|172|192)\.\d{1,3}\.\d{1,3}\.\d{1,3}", ip) or any(int(x) > 255 for x in ip.split(".")):
+            raise RouterError("Adresse IP locale invalide (ex : 192.168.88.20)")
+        if not 1 <= port <= 65535:
+            raise RouterError("Port invalide")
+        with self.lock:
+            seq = int(self.config.get("device_seq", 0)) + 1
+            if seq > 999:
+                raise RouterError("Nombre maximum d'appareils atteint")
+            self.config["device_seq"] = seq
+        d = {"id": seq, "name": name, "ip": ip, "port": port, "proto": proto}
+        if not self.demo:
+            try:
+                with RouterOS(z["router"]["host"], z["router"]["username"], z["router"]["password"],
+                              port=z["router"].get("port", 8728), timeout=8) as api:
+                    self._router_rules(z, d, api)
+            except RouterOSError as e:
+                raise RouterError(f"Le routeur a refusé : {e}") from e
+        with self.lock:
+            z.setdefault("devices", []).append(d)
+            self._persist()
+        self.write_peers()
+        return {"devices": self.devices(z)}
+
+    def remove_device(self, zone_id, did):
+        z = self.zone(zone_id)
+        if not self.demo and self.remote(z):
+            try:
+                with RouterOS(z["router"]["host"], z["router"]["username"], z["router"]["password"],
+                              port=z["router"].get("port", 8728), timeout=8) as api:
+                    self._remove_rules(api, did)
+            except RouterOSError:
+                pass  # routeur injoignable : on retire quand même la redirection du serveur
+        with self.lock:
+            z["devices"] = [d for d in z.get("devices", []) if d["id"] != did]
+            self._persist()
+        self.write_peers()
+        return {"devices": self.devices(z)}
+
     def forwards_text(self):
         """« port-public adresse-tunnel port-routeur » : lu par l'aide système (redirections du serveur)."""
         out = []
@@ -239,6 +318,9 @@ class Routers:
                 n = int(r["tunnel_ip"].rsplit(".", 1)[1])
                 out.append(f"{self.WINBOX_BASE + n} {r['host']} 8291")
                 out.append(f"{self.WEBFIG_BASE + n} {r['host']} 80")
+                for d in z.get("devices", []):  # le routeur transmet ensuite à l'appareil
+                    port = self.DEVICE_BASE + d["id"]
+                    out.append(f"{port} {r['host']} {port}")
         return "\n".join(out) + ("\n" if out else "")
 
     def open_winbox(self, zone_id, local):
@@ -423,7 +505,7 @@ class Routers:
 
     def write_peers(self):
         """Le fichier est lu par l'aide système « aderlink-wg » (root), qui met le tunnel à jour."""
-        if self.demo or not self.wg_file:
+        if not self.wg_file:
             return
         # écrits sur place : l'aide système réagit à la fermeture du fichier
         Path(self.wg_file).with_name("ovpn-users.conf").write_text(self.ovpn_text())

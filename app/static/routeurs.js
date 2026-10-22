@@ -262,12 +262,50 @@
       row("Winbox", x.winbox, "<button type='button' class='btn btn-sm' id='raWb'>" + ic("winbox") + " Ouvrir</button>") +
       row("WebFig (navigateur)", x.webfig, "<a class='btn btn-sm btn-outline' href='" + esc(x.webfig) + "' target='_blank' rel='noopener'>Ouvrir</a>") +
       row("Adresse dans le tunnel", x.tunnel, "") + "</div>" +
+      "<h3 class='sub-h'>Appareils derrière ce routeur</h3>" +
+      "<p class='pane-sub'>Antenne (Grandstream, Ubiquiti…), caméra, imprimante : ouvrez leur page de réglage de partout.</p>" +
+      "<div class='ra-list' id='devList'></div>" +
+      "<form class='dev-form' id='devForm' autocomplete='off' novalidate>" +
+      "<div class='f'><label for='dName'>Nom</label><input id='dName' maxlength='40' placeholder='Ex : Antenne Grandstream'></div>" +
+      "<div class='f'><label for='dIp'>Adresse IP locale</label><input id='dIp' inputmode='decimal' placeholder='Ex : 192.168.88.20'></div>" +
+      "<div class='f'><label for='dProto'>Page</label><select id='dProto'><option value='http'>http (port 80)</option><option value='https'>https (port 443)</option></select></div>" +
+      "<div class='f'><label for='dPort'>Port</label><input id='dPort' type='number' min='1' max='65535' placeholder='80'></div>" +
+      "<button class='btn' type='submit' id='dAdd'>+ Ajouter</button></form>" +
+      "<div class='notice' id='bsMsg' role='status'></div>" +
       "<div class='info-box'>Dans Winbox, collez l'adresse <strong class='mono'>" + esc(x.winbox) + "</strong> dans <strong>Connect To</strong>, puis votre identifiant et mot de passe du MikroTik.<br>" +
       "<small>Gardez un mot de passe solide sur vos MikroTik : cette adresse est joignable depuis Internet.</small></div>");
     $("bsBody").onclick = function (e) {
       var c = e.target.closest("[data-copy]");
       if (c) { copyText(c.dataset.copy); toast("Adresse copiée", true); }
     };
+    function devices(list) {
+      r.devices = list;
+      $("devList").innerHTML = list.length ? list.map(function (d) {
+        return "<div class='ra-row'><div class='ra-main'><div class='ra-label'>" + esc(d.name) + " <span class='mono ra-ip'>" + esc(d.ip) + ":" + d.port + "</span></div>" +
+          "<div class='ra-value mono'>" + esc(d.public) + "</div></div>" +
+          "<button type='button' class='icon-btn ra-copy' data-copy='" + esc(d.public) + "' aria-label='Copier'>" + ic("copy") + "</button>" +
+          "<a class='btn btn-sm btn-outline' href='" + esc(d.public) + "' target='_blank' rel='noopener'>Ouvrir</a>" +
+          "<button type='button' class='icon-btn ra-copy' data-del='" + d.id + "' aria-label='Retirer " + esc(d.name) + "'>" + ic("trash") + "</button></div>";
+      }).join("") : "<p class='pane-sub'>Aucun appareil pour l'instant.</p>";
+    }
+    devices(r.devices || []);
+    $("dProto").addEventListener("change", function () { $("dPort").placeholder = this.value === "https" ? "443" : "80"; });
+    $("devForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var b = $("dAdd"); b.disabled = true;
+      api("/api/routers/" + encodeURIComponent(r.id) + "/devices", { name: $("dName").value, ip: $("dIp").value.trim(),
+        proto: $("dProto").value, port: $("dPort").value || ($("dProto").value === "https" ? 443 : 80) })
+        .then(function (d) { devices(d.devices); $("devForm").reset(); $("bsMsg").className = "notice";
+          toast("Appareil ajouté : il s'ouvre maintenant de partout", true); })
+        .catch(function (err) { var n = $("bsMsg"); n.className = "notice show notice-err"; n.textContent = err.message; })
+        .then(function () { b.disabled = false; });
+    });
+    $("devList").addEventListener("click", function (e) {
+      var del = e.target.closest("[data-del]");
+      if (!del) return;
+      if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; toast("Touchez encore pour retirer cet appareil"); return; }
+      api("/api/routers/" + encodeURIComponent(r.id) + "/devices/" + del.dataset.del + "/delete", {}).then(function (d) { devices(d.devices); });
+    });
     $("raWb").addEventListener("click", function () {
       copyText(x.winbox);
       if (winboxReady()) launch(x.winbox); else setupWinbox(x.winbox);
