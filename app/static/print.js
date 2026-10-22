@@ -3,8 +3,13 @@
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var nf = new Intl.NumberFormat("fr-FR");
-  var PER_PAGE = 10;
+  var FORMATS = { cartes: 10, petits: 33 };
+  var format = "cartes";
+  try { format = localStorage.getItem("aderlink-print-format") || "cartes"; } catch (e) { /* ignoré */ }
+  if (!FORMATS[format]) format = "cartes";
   var batch = null;
+  var WIFI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a14.5 14.5 0 0 1 20 0"/><path d="M12 19.5h.01"/></svg>';
+  var ROUTER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0"/></svg>';
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -25,6 +30,26 @@
   }
   function spaced(code) {
     return code.length >= 8 ? code.replace(/(\d{4})(?=\d)/g, "$1 ") : code.replace(/(\d{3})(?=\d)/g, "$1 ");
+  }
+
+  function longDur(sec) {
+    var n, u;
+    if (sec % 86400 === 0) { n = sec / 86400; u = "jour"; }
+    else if (sec % 3600 === 0) { n = sec / 3600; u = "heure"; }
+    else { n = Math.round(sec / 60); u = "minute"; }
+    return n + " " + u + (n > 1 ? "s" : "");
+  }
+  function money(b) { return nf.format(b.price) + " " + (b.currency || "FCFA"); }
+  function pairs(code) { return code.replace(/(\d{2})(?=\d)/g, "$1 "); }
+
+  // Petit ticket : nom du réseau, code dans un cadre coloré, « durée • prix • validité »
+  function small(code, b) {
+    var main = b.uptime_s ? dur(b.uptime_s) : b.data_mb ? data(b.data_mb) : "Illimité";
+    var line = [main, money(b), b.validity_s ? longDur(b.validity_s) : ""].filter(Boolean).join(" • ");
+    return '<div class="tk c-' + esc(b.color || "bleu") + '">' +
+      '<div class="tk-head"><span class="tk-ico">' + WIFI + '</span><span class="tk-name">' + esc(b.ssid) + '</span><span class="tk-ico tk-ico-r">' + ROUTER + "</span></div>" +
+      '<div class="tk-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +
+      '<div class="tk-line">' + esc(line) + "</div></div>";
   }
 
   function card(code, b) {
@@ -49,7 +74,8 @@
     var only = $("onlyNew").checked;
     var codes = batch.tickets.filter(function (t) { return !t.removed && (!only || !t.first_used); })
       .map(function (t) { return t.code; });
-    $("sub").textContent = nf.format(codes.length) + " carte" + (codes.length > 1 ? "s" : "") + " · " +
+    var PER_PAGE = FORMATS[format];
+    $("sub").textContent = nf.format(codes.length) + (format === "petits" ? " ticket" : " carte") + (codes.length > 1 ? "s" : "") + " · " +
       Math.max(1, Math.ceil(codes.length / PER_PAGE)) + " page" + (codes.length > PER_PAGE ? "s" : "") + " A4 · " +
       nf.format(batch.price) + " " + (batch.currency === "FCFA" ? "F CFA" : (batch.currency || "F CFA")) + " l'unité";
     if (!codes.length) {
@@ -60,8 +86,8 @@
     $("printBtn").disabled = false;
     var html = "";
     for (var i = 0; i < codes.length; i += PER_PAGE) {
-      html += '<section class="sheet"><div class="grid">' +
-        codes.slice(i, i + PER_PAGE).map(function (c) { return card(c, batch); }).join("") + "</div></section>";
+      html += '<section class="sheet' + (format === "petits" ? " sheet-small" : "") + '"><div class="' + (format === "petits" ? "grid-small" : "grid") + '">' +
+        codes.slice(i, i + PER_PAGE).map(function (c) { return format === "petits" ? small(c, batch) : card(c, batch); }).join("") + "</div></section>";
     }
     $("sheets").innerHTML = html;
   }
@@ -80,5 +106,11 @@
       render();
     });
   $("onlyNew").addEventListener("change", function () { if (batch) render(); });
+  $("format").value = format;
+  $("format").addEventListener("change", function () {
+    format = this.value;
+    try { localStorage.setItem("aderlink-print-format", format); } catch (e) { /* ignoré */ }
+    if (batch) render();
+  });
   $("printBtn").addEventListener("click", function () { window.print(); });
 })();

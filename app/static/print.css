@@ -81,6 +81,31 @@ body {
 .foot { margin-top: auto; border-top: 0.2mm solid #e3e9f2; padding-top: 1.2mm; font-size: 1.95mm; color: var(--ink-2); display: flex; justify-content: space-between; gap: 2mm; }
 .demo { background: #fff; color: var(--orange); font-weight: 800; font-size: 2.1mm; padding: 0.4mm 1.4mm; border-radius: 1mm; margin-left: 1.5mm; }
 
+/* --- Petits tickets 63 × 25 mm (3 × 11 par page) --- */
+.sheet-small { padding: 11mm 10.5mm; }
+.grid-small { display: grid; grid-template-columns: repeat(3, 63mm); grid-auto-rows: 25mm; }
+.tk {
+  width: 63mm; height: 25mm; border: 0.3mm solid #333c4a; padding: 1.4mm 2.2mm 1.2mm;
+  display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: #fff;
+}
+.tk-head { display: flex; align-items: center; gap: 1.5mm; }
+.tk-name {
+  flex: 1; text-align: center; font-weight: 800; font-size: 2.9mm; letter-spacing: 0.02em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink);
+}
+.tk-ico { width: 4.2mm; height: 4.2mm; color: var(--c2, #0d4fa8); flex: none; }
+.tk-ico-r { color: var(--chip, #f08a1c); }
+.tk-ico svg { width: 100%; height: 100%; display: block; }
+.tk-code {
+  border: 0.35mm dashed var(--c2, #0d4fa8); background: var(--cs, #eef4fc); border-radius: 1mm;
+  text-align: center; font-weight: 800; font-size: 6.4mm; line-height: 1.25; letter-spacing: 0.3mm;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace; color: var(--ink);
+}
+.tk-code.long { font-size: 5mm; }
+.tk-line { text-align: center; font-size: 2.35mm; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-format { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.tb-format select { min-height: 40px; border: 1px solid #cfd8e5; border-radius: 10px; padding: 0 10px; font: inherit; color: var(--ink); background: #fff; }
+
 @page { size: A4 portrait; margin: 0; }
 @media print {
   body { background: #fff; }
