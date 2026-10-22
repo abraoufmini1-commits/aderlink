@@ -288,7 +288,7 @@
     lenUi();
     var tile = function (cls, label, value) { return "<div class='tile " + cls + "'><strong>" + value + "</strong><span>" + label + "</span></div>"; };
     $("tiles").innerHTML = tile("t-price", "Prix unité", nf.format(f.price) + " F") +
-      tile("t-time", "Durée", esc(dur(f.uptime_s))) +
+      (f.uptime_s ? tile("t-time", "Durée", esc(dur(f.uptime_s))) : "") +
       tile("t-val", "Validité", esc(f.validity_s ? dur(f.validity_s) : "Sans limite")) +
       tile("t-data", "Données", esc(data(f.data_mb)));
     hideNotice("createNotice");

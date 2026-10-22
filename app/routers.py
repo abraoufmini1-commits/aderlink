@@ -55,6 +55,7 @@ class Routers:
                     id INTEGER PRIMARY KEY AUTOINCREMENT, zone_id TEXT, name TEXT, code TEXT,
                     created_at INTEGER, archived INTEGER DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS zone_logos (zone_id TEXT PRIMARY KEY, mime TEXT, data BLOB);
+                UPDATE points_vente SET name = 'Profil principal' WHERE name = 'Boutique principale';
                 """
             )
             store.db.commit()
@@ -330,7 +331,7 @@ class Routers:
 
     def ensure_default_pv(self, zone_id):
         if not self.list_pv(zone_id):
-            self.create_pv(zone_id, {"name": "Boutique principale"})
+            self.create_pv(zone_id, {"name": "Profil principal"})
 
     def create_pv(self, zone_id, data):
         self.zone(zone_id)
