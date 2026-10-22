@@ -255,7 +255,7 @@
       "</form><div class='notice' id='bsMsg' role='status'></div>";
     sheet(u ? "Modifier " + u.name : "Nouvel utilisateur", u ? "pencil" : "users", body,
       "<button class='btn-prev' type='button' data-close>Annuler</button>" + (u ? "<button class='btn btn-danger' type='button' id='uDel'>Supprimer</button>" : "") +
-      "<button class='btn btn-big' type='button' id='uSave'>Enregistrer</button>");
+      "<button class='btn btn-big' type='button' id='uSave'>" + (u ? "Enregistrer" : ic("check") + " Créer le compte") + "</button>");
     if (u) $("uDel").addEventListener("click", function () { remove(u); });
     else if ($("uSubFree")) $("uSubFree").addEventListener("change", function () { $("uSubN").disabled = $("uSubU").disabled = this.checked; });
     function syncRole() {
