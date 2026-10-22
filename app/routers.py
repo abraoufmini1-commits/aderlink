@@ -303,6 +303,9 @@ class Routers:
         return {"ok": True}
 
     def _base(self, z, request_host):
+        wg = self.wg()
+        if wg:  # serveur en ligne : les routeurs parlent toujours à son adresse IP, en http (même avec un nom de domaine)
+            return wg["endpoint"], wg["endpoint"]
         host, _, port = (request_host or "").partition(":")
         if not host or host in ("127.0.0.1", "localhost", "::1"):
             host = self.server_ip_for(z)
@@ -311,10 +314,7 @@ class Routers:
     def install_info(self, zone_id, request_host):
         z = self.zone(zone_id)
         token = self.ensure_token(z)
-        host, _, port = (request_host or "").partition(":")
-        if not host or host in ("127.0.0.1", "localhost", "::1"):
-            host = self.server_ip_for(z)
-        base = f"{host}:{port}" if port else host
+        base, _ = self._base(z, request_host)
         url = f"http://{base}/install/{token}.rsc"
         line = (f'/tool fetch url="{url}" dst-path=aderlink.rsc; :delay 1s; '
                 f'/import file-name=aderlink.rsc; /file remove aderlink.rsc')

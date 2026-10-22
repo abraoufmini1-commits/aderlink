@@ -288,6 +288,10 @@ def make_handler(app):
                 headers["Set-Cookie"] = cookie
             self.send(HTTPStatus.SEE_OTHER, headers=headers)
 
+        def https(self):
+            """Vrai si le visiteur est en HTTPS (derrière Caddy, avec un nom de domaine)."""
+            return bool(app.config.get("behind_proxy")) and self.headers.get("X-Forwarded-Proto", "") == "https"
+
         def static(self, name):
             path = (STATIC / name).resolve()
             if STATIC.resolve() not in path.parents or not path.is_file():
@@ -398,6 +402,8 @@ def make_handler(app):
             q = parse_qs(url.query)
             if p == "/favicon.ico":
                 return self.static("favicon.ico")
+            if p == "/sw.js":  # application installable (téléphone, PC)
+                return self.static("sw.js")
             if p == "/api/version":
                 from .updater import local_version
                 return self.json({"version": app.updater.state["current"] if app.updater else local_version()})
@@ -749,7 +755,7 @@ def make_handler(app):
             if ok:
                 app.throttle.reset(ip)
                 cookie = (f"{COOKIE}={make_token(secret, ok)}; Path=/; HttpOnly; SameSite=Strict; "
-                          f"Max-Age={SESSION_HOURS * 3600}" + ("; Secure" if secure else ""))
+                          f"Max-Age={SESSION_HOURS * 3600}" + ("; Secure" if secure or self.https() else ""))
                 return self.redirect("/", cookie)
             app.throttle.fail(ip)
             self.redirect("/login?e=1")

@@ -179,3 +179,8 @@
 
   window.AderShell = { icon: icon, me: me };
 })();
+(function () {
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    try { navigator.serviceWorker.register("/sw.js").catch(function () {}); } catch (e) { /* ignoré */ }
+  }
+})();

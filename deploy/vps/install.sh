@@ -70,11 +70,27 @@ systemctl daemon-reload
 systemctl enable --now aderlink >/dev/null
 systemctl restart aderlink
 
-say "5/7 Adresse web (port 80)"
-if ! grep -q "ADER LINK" /etc/caddy/Caddyfile 2>/dev/null; then  # on ne touche pas à un Caddyfile déjà réglé
+say "5/7 Adresse web (port 80, et HTTPS avec un nom de domaine)"
+DOMAIN="${ADERLINK_DOMAIN:-}"
+[ -z "$DOMAIN" ] && [ -f "$DEST/domain" ] && DOMAIN=$(cat "$DEST/domain")
+DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-')
+if [ -n "$DOMAIN" ]; then
+  echo "$DOMAIN" > "$DEST/domain"
+  # le nom de domaine en HTTPS (certificat automatique) ; l'adresse IP reste en http pour les routeurs
+  cat > /etc/caddy/Caddyfile <<CADDY
+# ADER LINK
+$DOMAIN {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+:80 {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+CADDY
+elif ! grep -q "ADER LINK" /etc/caddy/Caddyfile 2>/dev/null; then  # on ne touche pas à un Caddyfile déjà réglé
   cat > /etc/caddy/Caddyfile <<'CADDY'
-# ADER LINK. Avec un nom de domaine : remplacez « :80 » par le domaine (ex. app.aderlink.com),
-# puis « systemctl reload caddy » : le certificat HTTPS est obtenu automatiquement.
+# ADER LINK. Avec un nom de domaine : relancez l'installation avec ADERLINK_DOMAIN=votre.domaine
 :80 {
 	encode gzip
 	reverse_proxy 127.0.0.1:8080
@@ -217,7 +233,7 @@ if systemctl is-active --quiet aderlink; then STATE="EN MARCHE"; else STATE="PRO
 echo
 echo "================================================================"
 echo "  ADER LINK est installé : $STATE"
-echo "  Ouvrez :  http://$IP"
+if [ -n "$DOMAIN" ]; then echo "  Ouvrez :  https://$DOMAIN   (installable comme une application)"; else echo "  Ouvrez :  http://$IP"; fi
 if [ "$FIRST" = 1 ]; then
   echo "  Identifiant : admin"
   echo "  Mot de passe : $ADMIN_PW"
