@@ -91,45 +91,28 @@
 
   // --- zones -------------------------------------------------------------------------
   function model(z) {
-    var board = String(z.board || "").replace(/\^2/g, "²").replace(/\^3/g, "³");
-    var ver = String(z.version || "").replace(/\s*\(.*\)$/, "");
-    return [board, ver ? "v" + ver : ""].filter(Boolean).join(" · ");
+    return String(z.board || "").replace(/\^2/g, "²").replace(/\^3/g, "³");
   }
   function initials(name) {
     var w = String(name).replace(/^(zone|wifi)\s+/i, "").split(/\s+/).filter(Boolean);
     return ((w[0] || "?")[0] + (w[1] ? w[1][0] : (w[0] || "")[1] || "")).toUpperCase();
   }
-  function bar(label, v) {
-    var x = v == null ? null : Math.max(0, Math.min(100, v));
-    return '<div class="rbar"><span class="rbar-l">' + label + '</span><span class="rbar-track"><span data-w="' + (x || 0) + '"' +
-      (x >= 80 ? ' class="high"' : "") + '></span></span><span class="rbar-v num">' + (x == null ? "–" : x + " %") + "</span></div>";
-  }
-  var STATUS = { online: ["En ligne", "is-online"], offline: ["Hors ligne", "is-offline"], pending: ["À installer", "is-pending"], unknown: ["Vérification…", "is-unknown"] };
+  var STATUS = { online: ["En ligne", "is-online"], offline: ["Hors ligne", "is-offline"], pending: ["À installer", "is-pending"], unknown: ["…", "is-unknown"] };
   function renderZones(zones) {
     var html = zones.map(function (z) {
       var st = STATUS[z.status] || STATUS.unknown, online = z.status === "online";
       var avatar = z.has_logo ? '<span class="ravatar ravatar-logo"><img alt="" src="/api/routers/' + encodeURIComponent(z.id) + '/logo"></span>'
         : '<span class="ravatar">' + esc(initials(z.name)) + "</span>";
-      var mid;
-      if (online) {
-        mid = '<div class="rmid"><div class="rusers"><span class="n num">' + nf.format(z.active) + '</span><span class="l">connecté' + (z.active > 1 ? "s" : "") + "</span></div>" +
-          '<div class="rbars">' + bar("CPU", z.cpu) + bar("RAM", z.memory) + "</div></div>" +
-          '<div class="rinfo"><span>↓ ' + bps(z.rx_bps) + '</span><span>Allumé ' + duration(z.uptime_s) + "</span>" +
-          (z.tickets != null ? "<span>" + nf.format(z.tickets) + " tickets</span>" : "") + "</div>";
-      } else if (z.status === "pending") {
-        mid = '<p class="rnote">Ce routeur n\'est pas encore installé.</p><a class="btn btn-sm btn-block" href="/routeurs">Installer</a>';
-      } else {
-        mid = '<p class="rnote">' + esc(z.error || "Aucune réponse pour l'instant") + "</p>" +
-          '<div class="rinfo"><span>Dernier contact : ' + (z.last_seen ? ago(z.last_seen) : "–") + "</span></div>";
-      }
-      return '<article class="card rcard ' + st[1] + '">' +
-        '<div class="rtop">' + avatar + '<div class="rid"><div class="rname">' + esc(z.name) + '</div><div class="rmodel">' +
-        esc(model(z) || z.location || "Modèle inconnu") + '</div></div><span class="rstatus"><i aria-hidden="true"></i>' + st[0] + "</span></div>" +
-        mid + (online ? '<button class="rlink" type="button" data-zone="' + esc(z.id) + '">Voir les connectés →</button>' : "") + "</article>";
+      var right = online
+        ? '<span class="rcount"><span class="n num">' + nf.format(z.active) + '</span><span class="l">connecté' + (z.active > 1 ? "s" : "") + "</span></span>"
+        : '<span class="rcount rcount-off">' + st[0] + "</span>";
+      var inner = avatar + '<span class="rid"><span class="rname" title="' + esc(z.name) + '">' + esc(z.name) + "</span>" +
+        '<span class="rmodel"><i class="rdot" aria-hidden="true"></i>' + esc(model(z) || (z.status === "pending" ? "Pas encore installé" : "MikroTik")) + "</span></span>" + right;
+      if (online) return '<button type="button" class="card rcard ' + st[1] + '" data-zone="' + esc(z.id) + '" aria-label="' + esc(z.name) + " : " + z.active + ' connectés — voir la liste">' + inner + "</button>";
+      return '<a class="card rcard ' + st[1] + '" href="/routeurs">' + inner + "</a>";
     }).join("");
     var box = $("zones");
     box.innerHTML = html || '<div class="card empty">Aucun routeur pour l\'instant. <a href="/routeurs">Ajouter un routeur</a></div>';
-    box.querySelectorAll("[data-w]").forEach(function (s) { s.style.width = s.dataset.w + "%"; });
   }
 
   // --- activité ----------------------------------------------------------------------
