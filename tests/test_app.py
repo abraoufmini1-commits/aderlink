@@ -621,6 +621,8 @@ class UsersAndRolesTests(unittest.TestCase):
         info = self.get(t, f"/api/routers/{r['id']}/install")
         script = urllib.request.urlopen(info["url"]).read().decode()
         self.assertIn("/ok", script)
+        for part in ('/system scheduler add name="ADER LINK"', 'name="aderlink-login"', 'name="aderlink-ping"'):
+            self.assertIn(part, script)
         self.assertEqual(urllib.request.urlopen(info["url"][:-4] + "/ok").read(), b"ok")  # le routeur se signale
         mine = self.get(t, "/api/routers")["routers"][0]
         self.assertEqual((mine["installed"], mine["host"]), (True, "127.0.0.1"))
@@ -673,3 +675,21 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertFalse([u for u in self.get(admin, "/api/users")["users"] if u["username"] == "issa"])  # équipe supprimée
         for z in [z for z in self.config["zones"] if z["id"] not in ("a", "b")]:
             self.config["zones"].remove(z)
+
+
+class MikrotikScriptTests(unittest.TestCase):
+    def test_script(self):
+        from app.mikrotik import duration, install_script, on_login, q
+        self.assertEqual(duration(3600), "01:00:00")
+        self.assertEqual(duration(86400 * 3 + 90), "3d00:01:30")
+        self.assertEqual(on_login(0), "")
+        self.assertIn('v="1d00:00:00"', on_login(86400))
+        self.assertEqual(q('a"b$c\\d'), '"a\\"b\\$c\\\\d"')
+        s = install_script("Zone; /system reset", 'p"w', "10.0.0.2", 8728, "http://10.0.0.2:8080/install/T/ok",
+                           [{"profile": "AL-1h", "shared": 1, "rate": "1M/2M", "validity_s": 3600}])
+        self.assertNotIn("/system reset", s)  # le nom ne peut pas injecter de commande
+        self.assertIn('password="p\\"w"', s)
+        self.assertIn('/ip hotspot user profile set [find name="AL-1h"] shared-users=1 rate-limit="1M/2M"', s)
+        self.assertIn('v=\\"01:00:00\\"', s)
+        self.assertIn("keep-result=no", s)
+        self.assertIn("output=none", s)

@@ -293,8 +293,13 @@
         "<div class='info-box'><strong>Comment faire</strong><ol><li>Ouvrir <strong>Winbox</strong> et se connecter au routeur</li><li>Aller dans <strong>New Terminal</strong></li>" +
         "<li>Coller la ligne, puis <strong>Entrée</strong></li><li>C'est tout : le routeur se signale tout seul et apparaît <strong>En ligne</strong> ici</li></ol></div>" +
         "<div class='wait-box' id='waitBox'>" + (r.installed ? "" : "<span class='spin' aria-hidden='true'></span> En attente du routeur…") + "</div>" +
-        "<div class='info-box ok-box'><strong>Ce que le routeur installe</strong><ul><li>Le groupe « aderlink-api » : lecture, écriture, API (pas de Winbox ni SSH)</li>" +
-        "<li>Le compte « aderlink » avec un mot de passe généré par ADER LINK</li><li>Le service API ouvert seulement à l'adresse " + esc(d.server_ip) + "</li></ul></div>" +
+        "<div class='info-box ok-box'><strong>Ce que le routeur installe</strong><ul>" +
+        "<li><strong>L'accès d'ADER LINK</strong> : le compte « aderlink » (lecture, écriture, API — pas de Winbox ni SSH), l'API ouverte seulement pour " + esc(d.server_ip) + "</li>" +
+        "<li><strong>Vos forfaits</strong> : un profil hotspot « AL-… » par forfait, avec sa vitesse et ses appareils</li>" +
+        "<li><strong>L'expiration des tickets</strong> : à la 1re connexion, le routeur lance le compte à rebours et supprime le ticket à la fin, même si ADER LINK est éteint</li>" +
+        "<li><strong>La liaison</strong> : le routeur se signale à ADER LINK toutes les 5 minutes</li></ul>" +
+        "Dans Winbox, vous verrez <strong>ADER LINK</strong> dans <strong>System → Scheduler</strong> et <strong>aderlink-login</strong>, <strong>aderlink-ping</strong> dans <strong>System → Scripts</strong>.<br>" +
+        "<small>Déjà installé ? Recollez la ligne après avoir ajouté des forfaits : c'est sans danger.</small></div>" +
         "<div class='notice' id='bsMsg' role='status'></div>";
       $("bsFoot").innerHTML = "<button class='btn-prev' type='button' data-close>Fermer</button><button class='btn btn-big' type='button' id='verify'>Vérifier la connexion</button>";
       clearInterval(watch);

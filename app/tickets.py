@@ -124,6 +124,12 @@ class Tickets:
         rows, _ = self._q("SELECT * FROM forfaits WHERE id = ?", (forfait_id,))
         return self._forfait(rows[0]) if rows else None
 
+    def profile_specs(self, zone_id):
+        """Profils à créer sur le routeur par le script d'installation."""
+        return [{"profile": f["router_profile"], "shared": f["shared_users"] or 1,
+                 "rate": self._rate(f["down_mbps"], f["up_mbps"]), "validity_s": f["validity_s"] or 0}
+                for f in self.list_forfaits(zone_id)]
+
     @staticmethod
     def _rate(down, up):
         if not down and not up:
@@ -160,7 +166,8 @@ class Tickets:
         if not self.demo:
             try:
                 with open_router(zone) as api:
-                    args = [f"=shared-users={shared}", f"=rate-limit={rate}"]
+                    from .mikrotik import on_login
+                    args = [f"=shared-users={shared}", f"=rate-limit={rate}", f"=on-login={on_login(validity_s)}"]
                     found = api.query("/ip/hotspot/user/profile/print", f"?name={router_profile}")
                     if found:
                         api.query("/ip/hotspot/user/profile/set", f"=.id={found[0]['.id']}", *args)

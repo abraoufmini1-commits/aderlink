@@ -326,7 +326,8 @@ def make_handler(app):
                 z = app.routers.by_token(p[len("/install/"):-4])
                 if not z:
                     return self.send(404, b"# Lien d'installation inconnu")
-                return self.send(200, app.routers.install_script(z, self.headers.get("Host", "")).encode(),
+                profiles = app.tickets.profile_specs(z["id"]) if app.tickets else []
+                return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles).encode(),
                                  "text/plain; charset=utf-8")
             if p.startswith("/install/") and p.endswith("/ok") and app.routers:
                 z = app.routers.by_token(p[len("/install/"):-3])

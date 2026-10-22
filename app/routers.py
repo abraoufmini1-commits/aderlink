@@ -263,26 +263,12 @@ class Routers:
                 f'/import file-name=aderlink.rsc; /file remove aderlink.rsc')
         return {"line": line, "url": url, "server_ip": self.server_ip_for(z), "router": self.public(z)}
 
-    def install_script(self, z, request_host=""):
+    def install_script(self, z, request_host="", profiles=()):
+        from .mikrotik import install_script
         r = z["router"]
         base, srv = self._base(z, request_host)
-        ok = f"http://{base}/install/{z['install_token']}/ok"
-        pwd = r["password"]
-        name = re.sub(r'[^A-Za-z0-9 \-]', "", z["name"])
-        return "\r\n".join([
-            f"# ADER LINK - installation automatique : {name}",
-            ':if ([:len [/user group find name="aderlink-api"]] = 0) do={ /user group add name="aderlink-api" '
-            'policy=read,write,api comment="ADER LINK" } else={ /user group set [find name="aderlink-api"] policy=read,write,api }',
-            f':if ([:len [/user find name="aderlink"]] = 0) do={{ /user add name="aderlink" group="aderlink-api" '
-            f'password="{pwd}" address={srv}/32 comment="ADER LINK" }} else={{ /user set [find name="aderlink"] '
-            f'group="aderlink-api" password="{pwd}" address={srv}/32 }}',
-            f'/ip service set api disabled=no port={int(r.get("port", 8728))} address={srv}/32',
-            # le routeur se signale : ADER LINK retient son adresse (RouterOS 7 puis 6)
-            f':do {{ /tool fetch url="{ok}" output=none }} on-error={{ :do {{ /tool fetch url="{ok}" keep-result=no }} on-error={{}} }}',
-            ':log info "ADER LINK installe"',
-            f':put "ADER LINK : installation terminee ({name}). Le routeur apparait maintenant en ligne dans ADER LINK."',
-            "",
-        ])
+        return install_script(z["name"], r["password"], srv, r.get("port", 8728),
+                              f"http://{base}/install/{z['install_token']}/ok", profiles, r.get("username") or "aderlink")
 
     # --- points de vente ------------------------------------------------------------------
     def list_pv(self, zone_id):
