@@ -123,7 +123,9 @@ def cmd_wg_setup(args):
     """Appelé par l'installation du serveur : réglages du tunnel des routeurs."""
     cfg = load_config()
     cfg["wireguard"] = {"enabled": True, "endpoint": args.endpoint, "port": args.port, "pubkey": args.pubkey,
-                        "server": "10.66.0.1", "net": "10.66.0"}
+                        "server": "10.66.0.1", "net": "10.66.0",
+                        # RouterOS 6 : OpenVPN (TCP) vers le même serveur
+                        "ovpn_port": 1194, "ovpn_server": "10.67.0.1", "ovpn_net": "10.67.0"}
     save_config(cfg)
     print("Tunnel des routeurs : prêt")
 

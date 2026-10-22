@@ -126,13 +126,18 @@ class Roaming:
         r = self.config.get("radius") or {}
         return int(r.get("auth_port", 1812)), int(r.get("acct_port", 1813))
 
-    def script_lines(self, group, server):
+    def script_lines(self, group, server, server_v6=None):
+        """server_v6 : adresse du serveur pour un RouterOS 6 (autre tunnel) ; choisie sur le routeur."""
         auth, acct = self.ports()
+        add = (f'/radius add service=hotspot address=$rs secret="{group["secret"]}" '
+               f'authentication-port={auth} accounting-port={acct} timeout=3s comment="ADER Roaming"')
+        pick = f':local rs "{server}"; '
+        if server_v6:
+            pick += f':if ([:pick [/system resource get version] 0 1] = "6") do={{ :set rs "{server_v6}" }}; '
         return [
             "# ADER Roaming : les tickets du reseau sont verifies par ADER LINK",
             '/radius remove [find comment="ADER Roaming"]',
-            f'/radius add service=hotspot address={server} secret="{group["secret"]}" '
-            f'authentication-port={auth} accounting-port={acct} timeout=3s comment="ADER Roaming"',
+            pick + add,
             f"/ip hotspot profile set [find] use-radius=yes radius-interim-update={INTERIM_S}s",
             f':put "ADER Roaming active : reseau {_ascii(group["name"])}"',
         ]

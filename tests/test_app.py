@@ -874,6 +874,15 @@ class TunnelTests(unittest.TestCase):
         self.assertIn("10.66.0.10/24", s)
         self.assertIn("/install/%s/wg" % z1["install_token"], s)
         self.assertIn(':if ([:pick [/system resource get version] 0 1] = "7")', s)
+        self.assertIn("address=10.66.0.1/32,10.67.0.1/32", s)  # RouterOS 6 : par OpenVPN
+        self.assertIn('ovpn-client add name=\\"ovpn-aderlink\\" connect-to=169.58.168.195 port=1194', s)
+        self.assertIn('user=\\"al10\\"', s)
+        self.assertIn("/install/%s/ovpn" % z1["install_token"], s)
+        users = (r.wg_file.with_name("ovpn-users.conf")).read_text()
+        self.assertRegex(users, r"^al10 [0-9a-f]{24} 10\.67\.0\.10\n$")
+        import re as _re, subprocess
+        line = users.strip()
+        self.assertTrue(_re.fullmatch(r"al[0-9]{1,3} [A-Za-z0-9]{8,64} 10\.67\.0\.[0-9]{1,3}", line))  # filtre de l'aide système
         self.assertEqual(r.tunnel_ip(cfg["zones"][1]), "10.66.0.11")
         with self.assertRaises(RouterError):
             r.tunnel_up(z1, "PostUp = rm -rf /")
@@ -883,6 +892,13 @@ class TunnelTests(unittest.TestCase):
         self.assertFalse(z1["router"]["auto_host"])
         self.assertIn("AllowedIPs = 10.66.0.10/32", r.wg_file.read_text())
         self.assertIn("PublicKey = " + "A" * 20 + "+", r.wg_file.read_text())
+        # RouterOS 6 : le routeur signale son tunnel OpenVPN
+        z2 = cfg["zones"][1]
+        r.ensure_token(z2)
+        r.install_script(z2, "169.58.168.195", [])
+        self.assertEqual(r.ovpn_up(z2), "10.67.0.11")
+        self.assertEqual(z2["router"]["tunnel"], "ovpn")
+        self.assertIn("al11 ", r.wg_file.with_name("ovpn-users.conf").read_text())
         # le signal toutes les 5 min ne remplace plus l'adresse du tunnel
         r.installed(z1, "41.0.0.5")
         self.assertEqual(z1["router"]["host"], "10.66.0.10")

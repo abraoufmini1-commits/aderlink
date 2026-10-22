@@ -349,11 +349,44 @@ class Routers:
         ip = self.tunnel_ip(z)
         with self.lock:
             r["wg_pub"] = pubkey
-            r["host"], r["auto_host"] = ip, False  # ADER LINK passe désormais par le tunnel
+            r["host"], r["auto_host"], r["tunnel"] = ip, False, "wg"  # ADER LINK passe désormais par le tunnel
             z["installed_at"] = int(time.time())
             self._persist()
         self.write_peers()
         return r["host"]
+
+    def vpn_login(self, z):
+        """Identifiant OpenVPN (RouterOS 6) propre à ce routeur."""
+        r = z["router"]
+        if not r.get("vpn_password"):
+            with self.lock:
+                r["vpn_password"] = secrets.token_hex(12)
+                self._persist()
+        return "al" + self.tunnel_ip(z).rsplit(".", 1)[1], r["vpn_password"]
+
+    def ovpn_ip(self, z):
+        return (self.wg() or {}).get("ovpn_net", "10.67.0") + "." + self.tunnel_ip(z).rsplit(".", 1)[1]
+
+    def ovpn_up(self, z):
+        """Un RouterOS 6 a créé son tunnel OpenVPN : ADER LINK passe désormais par lui."""
+        ip = self.ovpn_ip(z)
+        r = z["router"]
+        with self.lock:
+            r["host"], r["auto_host"], r["tunnel"] = ip, False, "ovpn"
+            z["installed_at"] = int(time.time())
+            self._persist()
+        self.write_peers()
+        return ip
+
+    def ovpn_text(self):
+        """« identifiant mot-de-passe adresse » : lu par l'aide système, qui crée les accès OpenVPN."""
+        out = []
+        for z in self.zones():
+            r = z.get("router") or {}
+            if r.get("vpn_password") and r.get("tunnel_ip"):
+                user, pwd = self.vpn_login(z)
+                out.append(f"{user} {pwd} {self.ovpn_ip(z)}")
+        return "\n".join(out) + ("\n" if out else "")
 
     def peers_text(self):
         out = []
@@ -367,7 +400,9 @@ class Routers:
         """Le fichier est lu par l'aide système « aderlink-wg » (root), qui met le tunnel à jour."""
         if self.demo or not self.wg_file:
             return
-        Path(self.wg_file).write_text(self.peers_text())  # écrit sur place : l'aide système réagit à la fermeture
+        # écrits sur place : l'aide système réagit à la fermeture du fichier
+        Path(self.wg_file).with_name("ovpn-users.conf").write_text(self.ovpn_text())
+        Path(self.wg_file).write_text(self.peers_text())
 
     def install_script(self, z, request_host="", profiles=(), roaming=None):
         from .mikrotik import install_script, tunnel_lines
@@ -376,13 +411,17 @@ class Routers:
         wg = self.wg()
         extra = []
         if wg:
-            extra += tunnel_lines(wg, self.tunnel_ip(z), f"http://{base}/install/{z['install_token']}/wg")
+            user, pwd = self.vpn_login(z)
+            self.write_peers()  # l'accès OpenVPN existe avant que le routeur ne se connecte
+            extra += tunnel_lines(wg, self.tunnel_ip(z).rsplit(".", 1)[1], f"http://{base}/install/{z['install_token']}", user, pwd)
         g = roaming.group_of_zone(z["id"]) if roaming else None
         if g:  # par le tunnel s'il existe : le serveur reconnaît le routeur à son adresse de tunnel
-            extra += roaming.script_lines(g, wg.get("server", "10.66.0.1") if wg else srv)
+            extra += (roaming.script_lines(g, wg.get("server", "10.66.0.1"), wg.get("ovpn_server", "10.67.0.1")) if wg
+                      else roaming.script_lines(g, srv))
+        api_from = f'{wg.get("server", "10.66.0.1")}/32,{wg.get("ovpn_server", "10.67.0.1")}' if wg else None
         return install_script(z["name"], r["password"], srv, r.get("port", 8728),
                               f"http://{base}/install/{z['install_token']}/ok", profiles, r.get("username") or "aderlink",
-                              extra=extra, api_from=wg.get("server", "10.66.0.1") if wg else None)
+                              extra=extra, api_from=api_from)
 
     # --- points de vente ------------------------------------------------------------------
     def list_pv(self, zone_id):

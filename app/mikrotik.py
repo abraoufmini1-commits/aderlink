@@ -55,15 +55,18 @@ def q(text):
     return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$") + '"'
 
 
-def tunnel_lines(wg, tunnel_ip, report_url):
-    """Tunnel WireGuard vers le serveur ADER LINK (RouterOS 7 seulement).
+def tunnel_lines(wg, n, report_base, vpn_user, vpn_password):
+    """Tunnel vers le serveur ADER LINK, quelle que soit la version de RouterOS.
 
-    Le routeur crée sa propre clé ; il l'envoie au serveur, qui l'ajoute aussitôt.
-    Les commandes sont lues au moment de l'exécution (:parse) : un RouterOS 6 ne bloque pas le script.
+    - RouterOS 7 : WireGuard (10.66.0.n). Le routeur crée sa clé et l'envoie au serveur.
+    - RouterOS 6 : OpenVPN en TCP (10.67.0.n), avec un identifiant propre à ce routeur.
+    Les commandes sont lues au moment de l'exécution (:parse) : chaque version ne lit que les siennes.
     """
     pub = re.sub(r"[^A-Za-z0-9+/=]", "", wg["pubkey"])
     endpoint = re.sub(r"[^A-Za-z0-9.\-:]", "", wg["endpoint"])
     server = wg.get("server", "10.66.0.1")
+    lan = (':if (([:len [/interface list find name="LAN"]] > 0) && ([:len [/interface list member find interface="{i}"]] = 0)) do={{ '
+           '/interface list member add list=LAN interface="{i}" comment="ADER LINK" }}; ')
     v7 = (
         ':if ([:len [/interface wireguard find name="wg-aderlink"]] = 0) do={ '
         '/interface wireguard add name="wg-aderlink" listen-port=13231 comment="ADER LINK" }; '
@@ -71,16 +74,25 @@ def tunnel_lines(wg, tunnel_ip, report_url):
         f'/interface wireguard peers add interface="wg-aderlink" public-key="{pub}" endpoint-address={endpoint} '
         f'endpoint-port={int(wg.get("port", 51820))} allowed-address={server}/32 persistent-keepalive=25s comment="ADER LINK"; '
         '/ip address remove [find comment="ADER LINK tunnel"]; '
-        f'/ip address add address={tunnel_ip}/24 interface="wg-aderlink" comment="ADER LINK tunnel"; '
-        ':if (([:len [/interface list find name="LAN"]] > 0) && ([:len [/interface list member find interface="wg-aderlink"]] = 0)) do={ '
-        '/interface list member add list=LAN interface="wg-aderlink" comment="ADER LINK" }; '
-        f'/tool fetch url=("{report_url}?pub=" . [/interface wireguard get [find name="wg-aderlink"] public-key]) output=none; '
-        ':put "Tunnel ADER LINK : OK"'
+        f'/ip address add address={wg.get("net", "10.66.0")}.{n}/24 interface="wg-aderlink" comment="ADER LINK tunnel"; '
+        + lan.format(i="wg-aderlink") +
+        f'/tool fetch url=("{report_base}/wg?pub=" . [/interface wireguard get [find name="wg-aderlink"] public-key]) output=none; '
+        ':put "Tunnel ADER LINK (WireGuard) : OK"'
+    )
+    user = re.sub(r"[^A-Za-z0-9]", "", vpn_user)
+    pwd = re.sub(r"[^A-Za-z0-9]", "", vpn_password)
+    v6 = (
+        '/interface ovpn-client remove [find name="ovpn-aderlink"]; '
+        f'/interface ovpn-client add name="ovpn-aderlink" connect-to={endpoint} port={int(wg.get("ovpn_port", 1194))} '
+        f'mode=ip user="{user}" password="{pwd}" cipher=aes256 auth=sha1 add-default-route=no comment="ADER LINK"; '
+        + lan.format(i="ovpn-aderlink") +
+        f'/tool fetch url="{report_base}/ovpn" keep-result=no; '
+        ':put "Tunnel ADER LINK (OpenVPN) : OK"'
     )
     return [
-        "# 6. Tunnel securise vers le serveur ADER LINK (RouterOS 7)",
-        ':if ([:pick [/system resource get version] 0 1] = "7") do={ :local t [:parse ' + q(v7) + ']; $t } else={ '
-        ':put "ATTENTION : RouterOS 6 detecte. Le tunnel ADER LINK demande RouterOS 7 : mettez le routeur a jour." }',
+        "# 6. Tunnel securise vers le serveur ADER LINK (WireGuard en RouterOS 7, OpenVPN en RouterOS 6)",
+        ':if ([:pick [/system resource get version] 0 1] = "7") do={ :local t [:parse ' + q(v7) + ']; $t } '
+        'else={ :local t [:parse ' + q(v6) + ']; $t }',
     ]
 
 

@@ -357,7 +357,7 @@ def make_handler(app):
                     and db[:16] == b"SQLite format 3\x00"):
                 return self.json({"error": "Sauvegarde incomplète ou abîmée"}, 400)
             # le serveur garde ses propres réglages de réseau (adresse, HTTPS, proxy)
-            for k in ("secure_cookies", "behind_proxy", "server_ip_for_routers", "wireguard"):
+            for k in ("secure_cookies", "behind_proxy", "server_ip_for_routers", "wireguard"):  # (OpenVPN : dans « wireguard »)
                 if k in app.config:
                     cfg[k] = app.config[k]
                 else:
@@ -408,6 +408,14 @@ def make_handler(app):
                 profiles = app.tickets.profile_specs(z["id"]) if app.tickets else []
                 return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles, app.roaming).encode(),
                                  "text/plain; charset=utf-8")
+            if p.startswith("/install/") and p.endswith("/ovpn") and app.routers:
+                z = app.routers.by_token(p[len("/install/"):-5])
+                if not z or not app.routers.wg():
+                    return self.send(404, b"inconnu")
+                app.routers.ovpn_up(z)
+                if app.collector and not app.demo:
+                    threading.Thread(target=lambda: (time.sleep(15), app.collector.poll_all()), daemon=True).start()
+                return self.send(200, b"ok")
             if p.startswith("/install/") and p.endswith("/wg") and app.routers:
                 z = app.routers.by_token(p[len("/install/"):-3])
                 if not z or not app.routers.wg():

@@ -14,7 +14,7 @@ say() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 
 say "1/7 Paquets système"
 apt-get update -qq
-apt-get install -y -qq python3 curl unzip ufw wireguard-tools debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
+apt-get install -y -qq python3 curl unzip ufw wireguard-tools openvpn openssl debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
 
 say "2/7 Caddy (serveur web)"
 if ! command -v caddy >/dev/null; then
@@ -84,11 +84,62 @@ fi
 systemctl enable --now caddy >/dev/null
 systemctl reload caddy || systemctl restart caddy
 
-say "6/7 Tunnel des routeurs (WireGuard)"
+say "6/7 Tunnel des routeurs (WireGuard pour RouterOS 7, OpenVPN pour RouterOS 6)"
 umask 077
 mkdir -p /etc/wireguard
 [ -f /etc/wireguard/vps.key ] || wg genkey | tee /etc/wireguard/vps.key | wg pubkey > /etc/wireguard/vps.pub
 umask 022
+OV=/etc/openvpn/aderlink
+mkdir -p "$OV/ccd"
+if [ ! -f "$OV/server.crt" ]; then  # certificats créés une seule fois (les routeurs ne les vérifient pas)
+  openssl req -x509 -newkey rsa:2048 -nodes -days 7300 -subj "/CN=ADER LINK CA" -keyout "$OV/ca.key" -out "$OV/ca.crt" 2>/dev/null
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=aderlink-server" -keyout "$OV/server.key" -out "$OV/server.csr" 2>/dev/null
+  printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' > "$OV/ext.cnf"
+  openssl x509 -req -in "$OV/server.csr" -CA "$OV/ca.crt" -CAkey "$OV/ca.key" -CAcreateserial -days 7300 -extfile "$OV/ext.cnf" -out "$OV/server.crt" 2>/dev/null
+  chmod 600 "$OV/ca.key" "$OV/server.key"
+fi
+[ -f "$OV/dh.pem" ] || openssl dhparam -out "$OV/dh.pem" 2048 2>/dev/null
+touch "$OV/users"; chgrp nogroup "$OV/users"; chmod 640 "$OV/users"
+cat > /usr/local/sbin/aderlink-ovpn-auth <<'AUTH'
+#!/bin/sh
+# OpenVPN donne un fichier : 1re ligne = identifiant, 2e = mot de passe
+u=$(sed -n 1p "$1"); p=$(sed -n 2p "$1")
+case "$u$p" in *[!A-Za-z0-9]*|"") exit 1 ;; esac
+grep -qx "$u $p" /etc/openvpn/aderlink/users
+AUTH
+chmod 755 /usr/local/sbin/aderlink-ovpn-auth
+mkdir -p /etc/openvpn/server
+cat > /etc/openvpn/server/aderlink.conf <<CONF
+# ADER LINK : tunnel des routeurs RouterOS 6
+port 1194
+proto tcp-server
+dev tun-aderlink
+dev-type tun
+mode server
+tls-server
+topology subnet
+ifconfig 10.67.0.1 255.255.255.0
+ca $OV/ca.crt
+cert $OV/server.crt
+key $OV/server.key
+dh $OV/dh.pem
+verify-client-cert none
+username-as-common-name
+script-security 2
+auth-user-pass-verify /usr/local/sbin/aderlink-ovpn-auth via-file
+client-config-dir $OV/ccd
+ccd-exclusive
+data-ciphers AES-256-CBC:AES-128-CBC
+data-ciphers-fallback AES-256-CBC
+auth SHA1
+tls-cipher DEFAULT:@SECLEVEL=0
+keepalive 10 60
+persist-key
+persist-tun
+user nobody
+group nogroup
+verb 2
+CONF
 # Aide système : l'application (sans droits) écrit la liste des routeurs dans data/wg-peers.conf,
 # cette aide (root) la vérifie ligne par ligne puis met le tunnel à jour.
 cat > /usr/local/sbin/aderlink-wg-sync <<'HELPER'
@@ -103,6 +154,15 @@ umask 077
   [ -f "$PEERS" ] && grep -E '^(\[Peer\]|PublicKey = [A-Za-z0-9+/]{43}=|AllowedIPs = 10\.66\.0\.[0-9]{1,3}/32|)$' "$PEERS" || true
 } > "$CONF.new"
 mv "$CONF.new" "$CONF"
+# OpenVPN (RouterOS 6) : « identifiant mot-de-passe 10.67.0.n », vérifié ligne par ligne
+OVU=/opt/aderlink/data/ovpn-users.conf
+OV=/etc/openvpn/aderlink
+grep -E '^al[0-9]{1,3} [A-Za-z0-9]{8,64} 10\.67\.0\.[0-9]{1,3}$' "$OVU" 2>/dev/null > "$OV/users.new" || true
+rm -f "$OV"/ccd/al*
+while read -r u p a; do printf 'ifconfig-push %s 255.255.255.0\n' "$a" > "$OV/ccd/$u"; done < "$OV/users.new"
+cut -d' ' -f1,2 "$OV/users.new" > "$OV/users.tmp"; chgrp nogroup "$OV/users.tmp"; chmod 640 "$OV/users.tmp"
+mv "$OV/users.tmp" "$OV/users"; rm -f "$OV/users.new"
+chmod 755 "$OV/ccd"; chmod 644 "$OV"/ccd/* 2>/dev/null || true
 if ip link show wg0 >/dev/null 2>&1; then
   wg syncconf wg0 <(wg-quick strip wg0)
 else
@@ -122,11 +182,13 @@ cat > /etc/systemd/system/aderlink-wg.path <<'UNIT'
 Description=ADER LINK - surveille la liste des routeurs du tunnel
 [Path]
 PathChanged=/opt/aderlink/data/wg-peers.conf
+PathChanged=/opt/aderlink/data/ovpn-users.conf
 [Install]
 WantedBy=multi-user.target
 UNIT
-touch "$DEST/data/wg-peers.conf"
-chown aderlink:aderlink "$DEST/data/wg-peers.conf"
+touch "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf"
+chown aderlink:aderlink "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf"
+chmod 600 "$DEST/data/ovpn-users.conf"
 IP=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 systemctl stop aderlink  # l'application ne doit pas réécrire la configuration pendant ce réglage
 (cd "$DEST" && ADERLINK_CONFIG="$DEST/config.json" ADERLINK_DATA="$DEST/data" \
@@ -137,6 +199,8 @@ systemctl daemon-reload
 systemctl enable wg-quick@wg0 >/dev/null 2>&1 || true
 /usr/local/sbin/aderlink-wg-sync || true
 systemctl enable --now aderlink-wg.path >/dev/null
+systemctl enable openvpn-server@aderlink >/dev/null 2>&1 || true
+systemctl restart openvpn-server@aderlink || echo "  (OpenVPN : voir journalctl -u openvpn-server@aderlink)"
 systemctl restart aderlink
 
 say "7/7 Pare-feu"
@@ -144,6 +208,7 @@ ufw allow OpenSSH >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw allow 51820/udp >/dev/null
+ufw allow 1194/tcp >/dev/null      # tunnel des routeurs RouterOS 6
 ufw allow 1812:1813/udp >/dev/null   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
 ufw --force enable >/dev/null
 
