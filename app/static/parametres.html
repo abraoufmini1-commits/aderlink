@@ -22,6 +22,18 @@
     </div>
   </div>
 
+  <section class="card wizard" aria-labelledby="ctTitle">
+    <h2 id="ctTitle">Contact pour les abonnements</h2>
+    <p class="pane-sub">Quand l'abonnement d'un gérant ou d'un revendeur est terminé, ADER LINK lui affiche ce contact avec un bouton WhatsApp.</p>
+    <form id="ctForm" class="form-grid form-grid-2" autocomplete="off" novalidate>
+      <div class="f"><label for="ctName">Nom affiché</label><input id="ctName" maxlength="60" placeholder="ex : ADER TECHNOLOGIE"></div>
+      <div class="f"><label for="ctPhone">Téléphone WhatsApp</label><input id="ctPhone" inputmode="tel" maxlength="20" placeholder="ex : +227 90 00 00 00">
+        <div class="hint">Avec l'indicatif +227</div></div>
+    </form>
+    <div class="notice" id="ctMsg" role="status"></div>
+    <div class="pane-foot"><button class="btn btn-big" type="button" id="ctSave">Enregistrer le contact</button></div>
+  </section>
+
   <section class="card wizard" aria-labelledby="upTitle">
     <h2 id="upTitle">Mise à jour automatique</h2>
     <p class="pane-sub">ADER LINK vérifie toutes les 10 minutes s'il existe une nouvelle version sur GitHub, l'installe toute seule (sans toucher à vos réglages ni à vos ventes) et recharge les pages ouvertes.</p>

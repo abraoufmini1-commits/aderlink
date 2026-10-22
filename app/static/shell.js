@@ -24,6 +24,7 @@
     terminal: '<path d="m5 7 5 5-5 5M12 18h7"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
@@ -152,6 +153,18 @@
     Array.prototype.forEach.call(document.querySelectorAll("[data-only]"), function (el) {
       el.hidden = el.dataset.only !== u.role;
     });
+    if (u.expires_at) {
+      var rest = u.expires_at - u.now, warn = document.createElement("div");
+      if (rest < 3 * 86400) {
+        var d = Math.floor(rest / 86400), h = Math.floor(rest % 86400 / 3600);
+        warn.className = "sub-warn";
+        warn.setAttribute("role", "status");
+        warn.textContent = "Votre abonnement se termine dans " + (d ? d + " jour" + (d > 1 ? "s" : "") + " " : "") + h + " h. Contactez votre fournisseur pour le renouveler.";
+        header.parentNode.insertBefore(warn, header.nextSibling);
+      }
+      // déconnexion automatique à l'heure de fin
+      setTimeout(function () { location.href = "/login"; }, Math.min(rest * 1000 + 2000, 2147000000));
+    }
   });
 
   window.AderShell = { icon: icon, me: me };

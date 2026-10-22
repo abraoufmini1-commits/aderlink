@@ -176,9 +176,11 @@ def cmd_serve(args):
 def _demo_users(cfg, users, tickets):
     zones = [z["id"] for z in cfg.get("zones", [])]
     users.create({"name": "Awa Gérante", "username": "gerant", "password": "aderlink", "role": "gerant",
-                  "zones": zones[:2]})
+                  "zones": zones[:2], "subscription": {"n": 1, "unit": "mois"}})
     rev = users.create({"name": "Moussa Revendeur", "username": "revendeur", "password": "aderlink",
-                        "role": "revendeur", "zones": zones[:1], "commission": 10, "phone": "+227 90 00 00 00"})
+                        "role": "revendeur", "zones": zones[:1], "commission": 10, "phone": "+227 90 00 00 00",
+                        "subscription": {"n": 2, "unit": "jour"}})
+    cfg["contact"] = {"name": "ADER TECHNOLOGIE", "phone": "+227 90 00 00 00"}
     who = users.principal(rev["username"])
     f = next((f for f in tickets.list_forfaits(zones[0])), None) if zones else None
     if f:

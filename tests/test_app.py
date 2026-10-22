@@ -545,3 +545,53 @@ class UsersAndRolesTests(unittest.TestCase):
         g_rep = self.get(g, "/api/report")
         self.assertEqual(g_rep["totals"]["tickets"], 0)  # le gérant de la zone B ne voit pas la zone A
         self.assertEqual(self.post(admin, f"/api/users/{rev['id']}/delete", {})[0], 200)
+
+    def test_subscription(self):
+        from app.users import add_months
+        # mois de calendrier : 31 janvier + 1 mois = 28 février ; + 1 an
+        jan31 = 1769817600 - 3600  # 31/01/2026 00:00 heure du Niger
+        self.assertEqual(time.strftime("%Y-%m-%d", time.gmtime(add_months(jan31, 1) + 3600)), "2026-02-28")
+        self.assertEqual(time.strftime("%Y-%m-%d", time.gmtime(add_months(jan31, 12) + 3600)), "2027-01-31")
+
+        admin = self.login("admin", "admin-secret-1")
+        code, u = self.post(admin, "/api/users", {"name": "Ali", "username": "ali", "role": "revendeur", "zones": ["a"],
+                                                  "password": "ali-123456", "subscription": {"n": 1, "unit": "mois"}})
+        self.assertEqual(code, 200, u)
+        self.assertGreater(u["expires_at"], time.time() + 27 * 86400)
+        first = u["expires_at"]
+        # ajout à partir de la fin actuelle
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "add", "n": 16, "unit": "heure", "note": "payé"})
+        self.assertEqual(r["expires_at"], first + 16 * 3600)
+        self.assertEqual(r["history"][0]["label"], "+ 16 heures")
+        for bad in ({"action": "add", "n": 0, "unit": "jour"}, {"action": "add", "n": "x", "unit": "jour"},
+                    {"action": "add", "n": 2, "unit": "semaine"}, {"action": "set", "until": 5}):
+            self.assertEqual(self.post(admin, f"/api/users/{u['id']}/subscription", bad)[0], 400, bad)
+
+        ali = self.login("ali", "ali-123456")
+        me = self.get(ali, "/api/me")
+        self.assertEqual(me["expires_at"], first + 16 * 3600)
+        self.assertEqual(self.post(ali, f"/api/users/{u['id']}/subscription", {"action": "unlimited"})[0], 403)
+
+        # arrêt : la session tombe et la connexion affiche « abonnement terminé »
+        self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "stop"})
+        time.sleep(1.1)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            ali.open(self.base + "/api/me")
+        self.assertEqual(ctx.exception.code, 401)
+        self.assertIn("e=expire", ali.open(self.base + "/login").geturl())
+        land = lambda pwd: urllib.request.urlopen(self.base + "/login", data=f"username=ali&password={pwd}".encode()).geturl()
+        self.assertIn("e=expire", land("ali-123456"))
+        self.assertIn("e=1", land("mauvais"))  # pas d'indice sans le bon mot de passe
+
+        # renouvellement après la fin : on repart de maintenant
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "add", "n": 3, "unit": "jour"})
+        self.assertAlmostEqual(r["expires_at"], time.time() + 3 * 86400, delta=5)
+        self.assertEqual(self.get(self.login("ali", "ali-123456"), "/api/me")["username"], "ali")
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "unlimited"})
+        self.assertIsNone(r["expires_at"])
+        self.assertEqual(len(self.get(admin, f"/api/users/{u['id']}/history")["history"]), 5)
+        # contact affiché sur la page de connexion
+        self.post(admin, "/api/settings/contact", {"name": "ADER TECHNOLOGIE", "phone": "+227 90 11 22 33"})
+        pub = json.loads(urllib.request.urlopen(self.base + "/api/public").read())
+        self.assertEqual(pub["contact"]["phone"], "+227 90 11 22 33")
+        self.post(admin, f"/api/users/{u['id']}/delete", {})

@@ -21,6 +21,14 @@
     </div>
     <p class="lead">Gestion de vos zones Wi-Fi</p>
     <div class="alert alert-error" id="err" role="alert"></div>
+    <div class="alert alert-expired" id="expired" role="alert">
+      <strong>Votre abonnement est terminé.</strong>
+      <span>Pour continuer à utiliser ADER LINK, contactez <span id="expWho">votre fournisseur</span> pour le renouveler.</span>
+      <span class="exp-contact" id="expContact" hidden>
+        <a class="btn btn-sm" id="expWa" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="btn btn-sm btn-outline" id="expCall" href="#">Appeler</a>
+      </span>
+    </div>
     <div class="alert alert-info" id="demo">Mode démonstration : identifiant <strong>admin</strong>, mot de passe <strong>aderlink</strong></div>
     <label class="field"><span>Identifiant</span>
       <input name="username" autocomplete="username" required autofocus></label>

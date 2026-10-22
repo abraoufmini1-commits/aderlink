@@ -236,10 +236,13 @@ def make_handler(app):
                     return fwd.split(",")[0].strip()
             return self.client_address[0]
 
-        def who(self):
+        def token_user(self):
             cookie = SimpleCookie(self.headers.get("Cookie", ""))
             morsel = cookie.get(COOKIE)
-            username = read_token(secret, morsel.value) if morsel else None
+            return read_token(secret, morsel.value) if morsel else None
+
+        def who(self):
+            username = self.token_user()
             if not username:
                 return None
             if app.users:
@@ -318,9 +321,12 @@ def make_handler(app):
             if p == "/healthz":
                 return self.send(200, b"ok")
             if p == "/login":
+                if "e" not in q and app.users and app.users.is_expired(self.token_user()):
+                    return self.redirect("/login?e=expire",
+                                         f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
                 return self.static("login.html")
             if p == "/api/public":
-                return self.json({"demo": app.demo})
+                return self.json({"demo": app.demo, "contact": app.config.get("contact") or {}})
             if p.startswith("/static/"):
                 return self.static(p[len("/static/"):])
             if p == "/logout":
@@ -389,13 +395,16 @@ def make_handler(app):
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
                 return {"users": app.users.list(since), "zones": [{"id": z["id"], "name": z["name"]}
                                                                   for z in app.config.get("zones", [])]}
+            if app.users and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit() and parts[4] == "history":
+                self.need(who.can("users"))
+                return {"history": app.users.history(int(parts[3]))}
             if app.updater and p == "/api/settings":
                 self.need(who.can("settings"))
                 from .routers import local_ip_towards
                 zones = app.config.get("zones", [])
                 lan = local_ip_towards(zones[0]["router"]["host"] if zones and zones[0].get("router") else "8.8.8.8")
                 port = (self.headers.get("Host", "").partition(":")[2]) or "8080"
-                return {"update": app.updater.info(), "demo": app.demo,
+                return {"update": app.updater.info(), "demo": app.demo, "contact": app.config.get("contact") or {},
                         "phone_url": f"http://{lan}:{port}" if lan else None}
             raise Forbidden("Introuvable")
 
@@ -472,6 +481,7 @@ def make_handler(app):
                 uid, action = int(parts[3]), parts[4]
                 acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),
                         "enable": lambda: U.set_active(uid, True), "disable": lambda: U.set_active(uid, False),
+                        "subscription": lambda: U.subscription(uid, body),
                         "delete": lambda: U.delete(uid)}
                 if action in acts:
                     return acts[action]()
@@ -487,6 +497,14 @@ def make_handler(app):
                                         "auto": bool(body.get("auto", True))}
                 app.save_config(app.config)
                 return {"update": app.updater.info()}
+            if p == "/api/settings/contact":
+                self.need(who.can("settings"))
+                import re as _re
+                name = " ".join(str(body.get("name") or "").split())[:60]
+                phone = _re.sub(r"[^0-9+ ]", "", str(body.get("phone") or ""))[:20].strip()
+                app.config["contact"] = {"name": name, "phone": phone}
+                app.save_config(app.config)
+                return {"contact": app.config["contact"]}
             if app.updater and p == "/api/settings/check":
                 self.need(who.can("settings"))
                 return {"update": app.updater.check(install=bool(body.get("install")))}
@@ -506,7 +524,12 @@ def make_handler(app):
             username = form.get("username", [""])[0].strip()
             password = form.get("password", [""])[0]
             if app.users:
-                ok = app.users.authenticate(username, password)
+                from .users import SubscriptionExpired
+                try:
+                    ok = app.users.authenticate(username, password)
+                except SubscriptionExpired:
+                    app.throttle.reset(ip)
+                    return self.redirect("/login?e=expire")
             else:
                 admin = app.config["admin"]
                 ok = admin["username"] if (hmac.compare_digest(username, admin["username"])

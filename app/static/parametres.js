@@ -38,10 +38,20 @@
   function load() {
     return api("/api/settings").then(function (d) {
       show(d.update, d.demo);
+      if (!$("ctName").dataset.loaded) {
+        $("ctName").value = (d.contact || {}).name || ""; $("ctPhone").value = (d.contact || {}).phone || "";
+        $("ctName").dataset.loaded = "1";
+      }
       var host = location.hostname === "127.0.0.1" || location.hostname === "localhost" ? null : "http://" + location.host;
       $("phoneUrl").textContent = host || d.phone_url || "Adresse introuvable : tapez ipconfig sur le PC.";
     });
   }
+  $("ctSave").addEventListener("click", function () {
+    var m = $("ctMsg");
+    api("/api/settings/contact", { name: $("ctName").value, phone: $("ctPhone").value }).then(function () {
+      m.className = "notice show notice-ok"; m.textContent = "Contact enregistré.";
+    }).catch(function (e) { m.className = "notice show notice-err"; m.textContent = e.message; });
+  });
   function run(install) {
     note("ok", install ? "Installation… la page se rechargera toute seule." : "Vérification…");
     api("/api/settings/check", { install: install }).then(function (d) {

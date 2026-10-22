@@ -26,6 +26,18 @@
   api("/api/me").then(function (me) {
     $("demoBanner").hidden = !me.demo;
     $("who").innerHTML = "<strong>" + esc(me.name) + "</strong> · " + esc(me.role_label) + " · <span class='mono'>" + esc(me.username) + "</span>";
+    if (me.role !== "admin") {
+      var box = $("subState");
+      if (!me.expires_at) { box.className = "sub-state sub-free"; box.innerHTML = "<div><strong>Sans limite</strong><span>Votre accès n'a pas de date de fin.</span></div>"; }
+      else {
+        var rest = me.expires_at - me.now, d = Math.floor(rest / 86400), h = Math.floor(rest % 86400 / 3600);
+        var end = new Date(me.expires_at * 1000).toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+        box.className = "sub-state " + (rest < 3 * 86400 ? "sub-soon" : "sub-ok");
+        box.innerHTML = "<div><strong>Reste " + (d ? d + " jour" + (d > 1 ? "s" : "") + " " : "") + h + " h</strong><span>Jusqu'au " + esc(end) +
+          ". Pour prolonger, contactez votre fournisseur.</span></div>";
+      }
+      $("subCard").hidden = false;
+    }
     if (me.role === "admin") $("pwHint").textContent = "Administrateur : 10 caractères minimum";
     if (me.role === "revendeur") {
       api("/api/sales?days=30").then(function (s) {

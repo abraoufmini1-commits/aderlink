@@ -18,16 +18,34 @@ class UserError(Exception):
     pass
 
 
+class SubscriptionExpired(Exception):
+    """Mot de passe correct, mais l'abonnement du compte est terminé."""
+
+
+UNITS = {"heure": 3600, "jour": 86400, "mois": None, "an": None}  # mois et ans : calendrier réel
+
+
+def add_months(ts, months, utc_offset_s=3600):
+    """Ajoute des mois de calendrier (le 31 janvier + 1 mois = 28/29 février), en heure locale."""
+    import calendar
+    t = time.gmtime(ts + utc_offset_s)
+    m = t.tm_mon - 1 + months
+    year, month = t.tm_year + m // 12, m % 12 + 1
+    day = min(t.tm_mday, calendar.monthrange(year, month)[1])
+    return calendar.timegm((year, month, day, t.tm_hour, t.tm_min, t.tm_sec)) - utc_offset_s
+
+
 class Principal:
     """L'utilisateur connecté et ce qu'il a le droit de voir ou faire."""
 
-    def __init__(self, username, name, role, zones=None, user_id=None, commission=0):
+    def __init__(self, username, name, role, zones=None, user_id=None, commission=0, expires_at=None):
         self.username = username
         self.name = name or username
         self.role = role
         self.zones = zones  # None = tous les routeurs
         self.user_id = user_id
         self.commission = commission
+        self.expires_at = expires_at  # None = sans limite
 
     @property
     def is_admin(self):
@@ -50,7 +68,8 @@ class Principal:
 
     def public(self):
         return {"username": self.username, "name": self.name, "role": self.role,
-                "role_label": ROLE_LABEL[self.role], "zones": self.zones, "commission": self.commission}
+                "role_label": ROLE_LABEL[self.role], "zones": self.zones, "commission": self.commission,
+                "expires_at": self.expires_at, "now": int(time.time())}
 
 
 class Users:
@@ -69,10 +88,20 @@ class Users:
                     active INTEGER DEFAULT 1, created_at INTEGER, last_login INTEGER);
                 """
             )
-            try:
-                store.db.execute("ALTER TABLE points_vente ADD COLUMN user_id INTEGER")
-            except Exception:
-                pass
+            store.db.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS subscription_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, at INTEGER, action TEXT,
+                    label TEXT, old_expires INTEGER, new_expires INTEGER, note TEXT);
+                CREATE INDEX IF NOT EXISTS idx_sub_user ON subscription_log(user_id);
+                """
+            )
+            for sql in ("ALTER TABLE points_vente ADD COLUMN user_id INTEGER",
+                        "ALTER TABLE users ADD COLUMN expires_at INTEGER"):
+                try:
+                    store.db.execute(sql)
+                except Exception:
+                    pass
             store.db.commit()
 
     def _q(self, sql, params=(), commit=False):
@@ -84,7 +113,7 @@ class Users:
             return rows, cur.lastrowid
 
     COLS = ("id", "username", "name", "phone", "role", "password_hash", "zones", "commission",
-            "active", "created_at", "last_login")
+            "active", "created_at", "last_login", "expires_at")
 
     def _row(self, row):
         u = dict(zip(self.COLS, row))
@@ -92,11 +121,11 @@ class Users:
         return u
 
     def _get(self, username):
-        rows, _ = self._q("SELECT * FROM users WHERE lower(username) = lower(?)", (username,))
+        rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users WHERE lower(username) = lower(?)", (username,))
         return self._row(rows[0]) if rows else None
 
     def get(self, user_id):
-        rows, _ = self._q("SELECT * FROM users WHERE id = ?", (user_id,))
+        rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users WHERE id = ?", (user_id,))
         return self._row(rows[0]) if rows else None
 
     # --- connexion ---------------------------------------------------------------------
@@ -106,9 +135,19 @@ class Users:
             return admin["username"] if self.verify(password, admin["password_hash"]) else None
         u = self._get(username)
         if u and u["active"] and self.verify(password, u["password_hash"]):
+            if self.expired(u):
+                raise SubscriptionExpired(u["username"])
             self._q("UPDATE users SET last_login = ? WHERE id = ?", (int(time.time()), u["id"]), commit=True)
             return u["username"]
         return None
+
+    @staticmethod
+    def expired(u):
+        return bool(u.get("expires_at")) and time.time() >= u["expires_at"]
+
+    def is_expired(self, username):
+        u = self._get(username) if username else None
+        return bool(u and u["active"] and self.expired(u))
 
     def principal(self, username):
         if not username:
@@ -116,11 +155,11 @@ class Users:
         if username == self.config["admin"]["username"]:
             return Principal(username, "Administrateur", "admin")
         u = self._get(username)
-        if not u or not u["active"]:
-            return None  # compte supprimé ou désactivé : la session tombe
+        if not u or not u["active"] or self.expired(u):
+            return None  # compte supprimé, désactivé ou abonnement terminé : la session tombe
         known = {z["id"] for z in self.config.get("zones", [])}
         return Principal(u["username"], u["name"], u["role"], [z for z in u["zones"] if z in known],
-                         u["id"], u["commission"] or 0)
+                         u["id"], u["commission"] or 0, u["expires_at"])
 
     # --- gestion -----------------------------------------------------------------------
     def _validate(self, data, current=None):
@@ -188,6 +227,9 @@ class Users:
             "INSERT INTO users (username, name, phone, role, password_hash, zones, commission, created_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
             (username, name, phone, role, self.hash(pwd), json.dumps(zones), commission, int(time.time())), commit=True)
+        sub = data.get("subscription") or {}
+        if sub.get("unlimited") is False or sub.get("n"):
+            self.subscription(uid, dict(sub, action="add"), note="Création du compte")
         user = self.get(uid)
         self._sync_pv(user)
         return dict(self.public(user), password=pwd)
@@ -202,6 +244,78 @@ class Users:
         user = self.get(user_id)
         self._sync_pv(user)
         return self.public(user)
+
+    # --- abonnement -------------------------------------------------------------------
+    def offset(self):
+        return int(float(self.config.get("utc_offset_hours", 1)) * 3600)
+
+    def extend(self, ts, n, unit):
+        if unit == "mois":
+            return add_months(ts, n, self.offset())
+        if unit == "an":
+            return add_months(ts, 12 * n, self.offset())
+        return ts + n * UNITS[unit]
+
+    @staticmethod
+    def label(n, unit):
+        if unit == "mois":
+            return f"{n} mois"
+        plural = "s" if n > 1 else ""
+        return f"{n} {unit}{plural}"
+
+    def subscription(self, user_id, data, note=None):
+        """Gère l'abonnement d'un compte.
+
+        action = add   : ajoute n heures / jours / mois / ans (à partir de la fin actuelle, ou de maintenant si terminé)
+        action = set   : fixe la date de fin (horodatage « until »)
+        action = stop  : termine l'abonnement tout de suite
+        action = unlimited : plus de date de fin
+        """
+        user = self.get(user_id)
+        if not user:
+            raise UserError("Utilisateur introuvable")
+        now = int(time.time())
+        old = user["expires_at"]
+        action = data.get("action")
+        if action == "add":
+            try:
+                n = int(str(data.get("n", "")).strip())
+            except ValueError:
+                raise UserError("Indiquez un nombre entier (ex : 1, 3, 16)")
+            unit = data.get("unit")
+            if unit not in UNITS:
+                raise UserError("Choisissez l'unité : heures, jours, mois ou ans")
+            limits = {"heure": 24 * 366 * 10, "jour": 366 * 10, "mois": 120, "an": 10}
+            if not 1 <= n <= limits[unit]:
+                raise UserError(f"Nombre entre 1 et {limits[unit]} pour cette unité")
+            start = old if old and old > now else now
+            new, label = self.extend(start, n, unit), "+ " + self.label(n, unit)
+        elif action == "set":
+            try:
+                new = int(data.get("until"))
+            except (TypeError, ValueError):
+                raise UserError("Date de fin invalide")
+            if new <= now:
+                raise UserError("La date de fin doit être dans le futur (utilisez « Arrêter maintenant »)")
+            if new > now + 10 * 366 * 86400:
+                raise UserError("10 ans au maximum")
+            label = "Date de fin fixée"
+        elif action == "stop":
+            new, label = now, "Arrêté"
+        elif action == "unlimited":
+            new, label = None, "Sans limite"
+        else:
+            raise UserError("Action inconnue")
+        self._q("UPDATE users SET expires_at = ? WHERE id = ?", (new, user_id), commit=True)
+        self._q("INSERT INTO subscription_log (user_id, at, action, label, old_expires, new_expires, note) "
+                "VALUES (?,?,?,?,?,?,?)", (user_id, now, action, label, old, new,
+                                           (note or str(data.get("note") or ""))[:80] or None), commit=True)
+        return dict(self.public(self.get(user_id)), history=self.history(user_id))
+
+    def history(self, user_id, limit=30):
+        rows, _ = self._q("SELECT at, action, label, old_expires, new_expires, note FROM subscription_log "
+                          "WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
+        return [dict(zip(("at", "action", "label", "old_expires", "new_expires", "note"), r)) for r in rows]
 
     def reset_password(self, user_id, data):
         user = self.get(user_id)
@@ -227,6 +341,7 @@ class Users:
         user["active"] = 0
         self._sync_pv(user)  # archive ses points de vente ; ses lots et ventes restent dans l'historique
         self._q("DELETE FROM users WHERE id = ?", (user_id,), commit=True)
+        self._q("DELETE FROM subscription_log WHERE user_id = ?", (user_id,), commit=True)
         return {"ok": True}
 
     def change_own_password(self, principal, data, save_admin):
@@ -253,10 +368,11 @@ class Users:
         return {"id": u["id"], "username": u["username"], "name": u["name"], "phone": u["phone"] or "",
                 "role": u["role"], "role_label": ROLE_LABEL[u["role"]], "zones": u["zones"],
                 "zone_names": [zones[z] for z in u["zones"] if z in zones], "commission": u["commission"] or 0,
-                "active": bool(u["active"]), "created_at": u["created_at"], "last_login": u["last_login"]}
+                "active": bool(u["active"]), "created_at": u["created_at"], "last_login": u["last_login"],
+                "expires_at": u["expires_at"], "expired": self.expired(u), "now": int(time.time())}
 
     def list(self, since):
-        rows, _ = self._q("SELECT * FROM users ORDER BY active DESC, role, name")
+        rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users ORDER BY active DESC, role, name")
         out = []
         for r in rows:
             u = self.public(self._row(r))
