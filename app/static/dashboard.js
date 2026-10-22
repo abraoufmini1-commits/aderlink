@@ -76,7 +76,7 @@
     $("updated").textContent = "Mis à jour à " + clock(d.generated_at);
     $("kActive").textContent = nf.format(t.active);
     var peak = d.history.reduce(function (m, p) { return Math.max(m, p.active); }, 0);
-    $("kActiveSub").textContent = "Pic sur la période : " + nf.format(peak);
+    $("kActiveSub").textContent = "Au maximum : " + nf.format(peak) + " connectés en même temps";
     $("kZones").innerHTML = nf.format(t.zones_online) + " <small>/ " + nf.format(t.zones) + "</small>";
     var off = t.zones - t.zones_online;
     $("kZonesSub").textContent = off ? off + " routeur" + (off > 1 ? "s" : "") + " hors ligne" : "Tous en ligne";
