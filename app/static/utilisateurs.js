@@ -59,8 +59,64 @@
       render();
     }).catch(function (e) { $("list").innerHTML = "<div class='card empty'>" + esc(e.message) + "</div>"; });
   }
+  var tab = "clients";
+  try { tab = localStorage.getItem("aderlink-users-tab") || "clients"; } catch (e) { /* ignoré */ }
+  function setTab(t) {
+    tab = t;
+    $("tabClients").setAttribute("aria-pressed", t === "clients");
+    $("tabStaff").setAttribute("aria-pressed", t === "staff");
+    $("clientsBox").hidden = t !== "clients";
+    $("staffBox").hidden = t !== "staff";
+    try { localStorage.setItem("aderlink-users-tab", t); } catch (e) { /* ignoré */ }
+  }
+  $("tabClients").addEventListener("click", function () { setTab("clients"); });
+  $("tabStaff").addEventListener("click", function () { setTab("staff"); });
+  setTab(tab);
+  $("cSearch").addEventListener("input", function () { renderClients(); });
+
+  function renderClients() {
+    var all = S.users.filter(function (u) { return u.role === "client"; });
+    var q = $("cSearch").value.trim().toLowerCase();
+    var list = all.filter(function (u) { return !q || (u.name + " " + u.username + " " + u.phone).toLowerCase().indexOf(q) >= 0; });
+    $("nClients").textContent = all.length ? "(" + all.length + ")" : "";
+    var active = all.filter(function (u) { return u.active && !u.expired; }).length;
+    var soon = all.filter(function (u) { return u.active && u.expires_at && !u.expired && u.expires_at - Date.now() / 1000 < 3 * 86400; }).length;
+    var over = all.filter(function (u) { return u.expired; }).length;
+    var used = all.reduce(function (n, u) { return n + u.routers_used; }, 0), max = all.reduce(function (n, u) { return n + u.max_routers; }, 0);
+    var tile = function (k, v, cls) { return "<div class='card u-tile" + (cls ? " " + cls : "") + "'><span>" + k + "</span><strong class='num'>" + v + "</strong></div>"; };
+    $("cSummary").innerHTML = tile("Clients actifs", nf.format(active) + " / " + nf.format(all.length)) +
+      tile("Finissent sous 3 jours", nf.format(soon), soon ? "u-tile-soon" : "") + tile("Abonnements terminés", nf.format(over), over ? "u-tile-over" : "") +
+      tile("Routeurs utilisés", nf.format(used) + " / " + nf.format(max));
+    $("cRows").innerHTML = list.length ? list.map(function (u) {
+      var x = sub(u), full = u.routers_used >= u.max_routers;
+      var btn = function (a, label, cls) { return "<button type='button' class='btn btn-sm " + cls + "' data-act='" + a + "' data-id='" + u.id + "'>" + label + "</button>"; };
+      return "<tr class='" + (u.active ? "" : "is-off") + "'>" +
+        "<td data-label='Client'><div class='c-who'><span class='avatar av-blue'>" + esc(initials(u.name)) + "</span><div><strong>" + esc(u.name) + "</strong>" +
+        (u.active ? "" : " <span class='pill pill-offline'>Désactivé</span>") +
+        "<div class='rp-sub'><span class='mono'>" + esc(u.username) + "</span>" + (u.phone ? " · " + esc(u.phone) : "") + "</div></div></div></td>" +
+        "<td data-label='Routeurs'><div class='c-quota" + (full ? " is-full" : "") + "'><strong class='num'>" + nf.format(u.routers_used) + " / " + nf.format(u.max_routers) + "</strong>" +
+        "<div class='quota-meter'><span data-w='" + Math.min(100, u.max_routers ? u.routers_used / u.max_routers * 100 : 100) + "'></span></div>" +
+        "<div class='rp-sub'>" + (full ? "limite atteinte" : nf.format(u.max_routers - u.routers_used) + " libre" + (u.max_routers - u.routers_used > 1 ? "s" : "")) + "</div></div></td>" +
+        "<td data-label='Abonnement'><span class='c-sub " + x.cls + "'>" + esc(x.title) + "</span><div class='rp-sub'>" + esc(x.text) + "</div></td>" +
+        "<td data-label='Ventes du mois' class='r'><strong class='num'>" + money(u.stats.amount) + "</strong><div class='rp-sub'>" + nf.format(u.stats.sold) + " tickets</div></td>" +
+        "<td data-label='Actions' class='r'><div class='c-acts'>" + btn("routers", "+ Routeurs", "") + btn("subscription", "+ Temps", "") +
+        btn("more", "•••", "btn-outline c-more") + "</div></td></tr>";
+    }).join("") : "<tr><td colspan='5' class='pane-sub'>" + (all.length ? "Aucun client ne correspond." :
+      "Aucun client pour l'instant. Cliquez sur <strong>+ Ajouter</strong> et choisissez <strong>Client</strong>.") + "</td></tr>";
+    Array.prototype.forEach.call($("cRows").querySelectorAll("[data-w]"), function (el) { el.style.width = el.dataset.w + "%"; });
+  }
+  $("cRows").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-act]");
+    if (!b) return;
+    var u = byId(+b.dataset.id);
+    ({ routers: routers, subscription: subscription, more: more })[b.dataset.act](u);
+  });
+
   function render() {
-    $("list").innerHTML = S.users.length ? S.users.map(function (u) {
+    renderClients();
+    var staff = S.users.filter(function (u) { return u.role !== "client"; });
+    $("nStaff").textContent = staff.length ? "(" + staff.length + ")" : "";
+    $("list").innerHTML = staff.length ? staff.map(function (u) {
       var st = u.active ? "<span class='pill " + (u.role === "gerant" ? "pill-role" : "pill-online") + "'>" + esc(u.role_label) + "</span>"
         : "<span class='pill pill-offline'>Désactivé</span>";
       var act = function (a, label, icon) { return "<button type='button' class='act' data-act='" + a + "' data-id='" + u.id + "'>" + ic(icon) + "<span>" + label + "</span></button>"; };
@@ -78,7 +134,7 @@
         "<div class='rc-meta u-last'>Dernière connexion : " + when(u.last_login) + "</div>" +
         "<div class='act-grid act-grid-4'>" + act("subscription", "Abonnement", "clock") + act("edit", "Modifier", "pencil") + act("password", "Mot de passe", "key") +
         act("toggle", u.active ? "Désactiver" : "Activer", u.active ? "x" : "check") + "</div></article>";
-    }).join("") : "<div class='card empty'>Aucun utilisateur pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour créer le compte d'un gérant ou d'un revendeur.</div>";
+    }).join("") : "<div class='card empty'>Aucun gérant ni revendeur pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour en créer un.</div>";
   }
   $("list").addEventListener("click", function (e) {
     var b = e.target.closest("[data-act]");
@@ -86,7 +142,7 @@
     var u = byId(+b.dataset.id);
     ({ edit: edit, password: password, toggle: toggle, delete: remove, subscription: subscription })[b.dataset.act](u);
   });
-  $("addBtn").addEventListener("click", function () { edit(null); });
+  $("addBtn").addEventListener("click", function () { edit(null, tab === "clients" ? "client" : "revendeur"); });
 
   // --- feuille ------------------------------------------------------------------------
   var lastFocus = null;
@@ -96,6 +152,7 @@
     $("bsIco").innerHTML = ic(icon);
     $("bsClose").innerHTML = ic("x");
     $("bsBody").innerHTML = body;
+    $("bsBody").onclick = null;
     $("bsFoot").innerHTML = foot || "<button class='btn-prev' type='button' data-close>Fermer</button>";
     $("bs").hidden = false; $("bsShade").classList.add("open");
     document.body.classList.add("no-scroll");
@@ -138,8 +195,8 @@
   }
 
   // --- ajouter / modifier --------------------------------------------------------------
-  function edit(u) {
-    var v = u || { name: "", username: "", phone: "", role: "revendeur", zones: S.zones.length === 1 ? [S.zones[0].id] : [], commission: 0 };
+  function edit(u, defRole) {
+    var v = u || { name: "", username: "", phone: "", role: defRole || "client", max_routers: 1, zones: S.zones.length === 1 ? [S.zones[0].id] : [], commission: 0 };
     var f = function (id, label, value, attrs, hint) {
       return "<div class='f'><label for='" + id + "'>" + label + "</label><input id='" + id + "' value='" + esc(value) + "' " + (attrs || "") + ">" +
         (hint ? "<div class='hint'>" + hint + "</div>" : "") + "</div>";
@@ -153,9 +210,12 @@
       f("uLogin", "Identifiant de connexion <span class='req'>*</span>", v.username, "maxlength='32' autocapitalize='off' spellcheck='false' placeholder='ex : moussa'", "Lettres minuscules et chiffres, sans espace") +
       (u ? "" : f("uPwd", "Mot de passe", "", "type='text' autocapitalize='off' spellcheck='false' placeholder='Laisser vide = créé automatiquement'", "6 caractères minimum")) +
       "<fieldset class='span2 role-pick'><legend>Rôle <span class='req'>*</span></legend>" +
+      role("client", "Client", "Ajoute et gère ses propres routeurs, jusqu'à sa limite") +
       role("revendeur", "Revendeur", "Crée et imprime ses tickets, voit ses ventes") +
-      role("gerant", "Gérant", "Tickets, profils et lots de ses routeurs") + "</fieldset>" +
-      "<fieldset class='span2 zone-pick'><legend>Routeurs autorisés <span class='req'>*</span></legend>" +
+      role("gerant", "Gérant", "Tickets, profils et lots de vos routeurs") + "</fieldset>" +
+      "<div class='f' id='uMaxBox'><label for='uMax'>Routeurs autorisés</label><div class='unit-field'><input id='uMax' type='number' min='0' max='1000' step='1' inputmode='numeric' value='" + esc(v.max_routers || 1) + "'><span class='unit'>routeur(s)</span></div>" +
+      "<div class='hint'>Nombre de MikroTik que le client peut ajouter</div></div>" +
+      "<fieldset class='span2 zone-pick' id='uZoneBox'><legend>Routeurs autorisés <span class='req'>*</span></legend>" +
       (S.zones.length ? S.zones.map(function (z) {
         return "<label class='check-opt'><input type='checkbox' name='uZone' value='" + esc(z.id) + "'" + (v.zones.indexOf(z.id) >= 0 ? " checked" : "") + "><span>" + esc(z.name) + "</span></label>";
       }).join("") : "<p class='pane-sub'>Ajoutez d'abord un routeur.</p>") + "</fieldset>" +
@@ -174,6 +234,8 @@
     function syncRole() {
       var r = document.querySelector("input[name=uRole]:checked").value;
       $("uComBox").hidden = r !== "revendeur";
+      $("uMaxBox").hidden = r !== "client";
+      $("uZoneBox").hidden = r === "client";
     }
     Array.prototype.forEach.call(document.querySelectorAll("input[name=uRole]"), function (el) { el.addEventListener("change", syncRole); });
     syncRole();
@@ -187,7 +249,8 @@
         name: $("uName").value, phone: $("uPhone").value, username: $("uLogin").value,
         role: document.querySelector("input[name=uRole]:checked").value,
         zones: Array.prototype.map.call(document.querySelectorAll("input[name=uZone]:checked"), function (el) { return el.value; }),
-        commission: +$("uCom").value || 0
+        commission: +$("uCom").value || 0,
+        max_routers: $("uMax").value
       };
       if (!u) {
         data.password = $("uPwd").value;
@@ -203,6 +266,77 @@
     }
     $("uSave").addEventListener("click", save);
     $("uForm").addEventListener("submit", function (e) { e.preventDefault(); save(); });
+  }
+
+  // --- routeurs autorisés (clients) --------------------------------------------------------------
+  function routers(u) {
+    var body =
+      "<div class='sub-state sub-free'>" + ic("router") + "<div><strong>" + nf.format(u.routers_used) + " / " + nf.format(u.max_routers) + " routeurs</strong>" +
+      "<span>" + nf.format(u.routers_used) + " installé" + (u.routers_used > 1 ? "s" : "") + " · " + nf.format(u.max_routers) + " autorisé" + (u.max_routers > 1 ? "s" : "") + "</span></div></div>" +
+      "<form id='qForm' autocomplete='off' novalidate><h3 class='sub-h'>Nombre total de routeurs autorisés</h3>" +
+      "<div class='qty'><button type='button' class='qty-btn' id='qMinus' aria-label='Moins'>−</button>" +
+      "<input id='qN' type='number' min='0' max='1000' step='1' inputmode='numeric' value='" + u.max_routers + "' aria-label='Routeurs autorisés'>" +
+      "<button type='button' class='qty-btn' id='qPlus' aria-label='Plus'>+</button></div>" +
+      "<div class='chips' id='qChips'><button type='button' data-add='1'>+1</button><button type='button' data-add='2'>+2</button>" +
+      "<button type='button' data-add='5'>+5</button><button type='button' data-add='10'>+10</button></div>" +
+      "<div class='f sub-note'><label for='qNote'>Note (facultatif)</label><input id='qNote' maxlength='80' placeholder='ex : payé 10 000 F pour 2 routeurs'></div>" +
+      "<div class='sub-preview' id='qPrev'></div>" +
+      "<button class='btn btn-big btn-block' type='submit' id='qSave'>Enregistrer</button></form>" +
+      "<div class='notice' id='bsMsg' role='status'></div>" +
+      "<h3 class='sub-h'>Historique</h3><ul class='sub-hist' id='sHist'><li class='pane-sub'>Chargement…</li></ul>";
+    sheet("Routeurs de " + u.name, "router", body);
+    function val() { var n = parseInt($("qN").value, 10); return isNaN(n) ? null : n; }
+    function update() {
+      var n = val();
+      var ok = n !== null && n >= 0 && n <= 1000 && String(n) === $("qN").value.trim();
+      $("qSave").disabled = !ok || n === u.max_routers;
+      $("qPrev").innerHTML = !ok ? "Saisissez un nombre entier entre 0 et 1000."
+        : n === u.max_routers ? "Aucun changement."
+        : "Avant : <strong>" + u.max_routers + "</strong> → après : <strong>" + n + "</strong> routeur" + (n > 1 ? "s" : "") +
+          (n < u.routers_used ? "<br><span class='warn-txt'>Le client a déjà " + u.routers_used + " routeurs : il les garde, mais ne pourra plus en ajouter.</span>" : "");
+    }
+    $("qN").addEventListener("input", update);
+    $("qMinus").addEventListener("click", function () { $("qN").value = Math.max(0, (val() || 0) - 1); update(); });
+    $("qPlus").addEventListener("click", function () { $("qN").value = Math.min(1000, (val() || 0) + 1); update(); });
+    $("qChips").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-add]");
+      if (b) { $("qN").value = Math.min(1000, u.max_routers + +b.dataset.add); update(); }
+    });
+    $("qForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      if ($("qSave").disabled) return;
+      $("qSave").disabled = true;
+      api("/api/users/" + u.id + "/routers", { max_routers: val(), note: $("qNote").value }).then(function (res) {
+        return load().then(function () {
+          routers(byId(u.id));
+          msg("ok", "Enregistré : " + esc(res.name) + " peut maintenant avoir " + res.max_routers + " routeur" + (res.max_routers > 1 ? "s" : "") + ".");
+        });
+      }).catch(function (err) { msg("err", esc(err.message)); $("qSave").disabled = false; });
+    });
+    update();
+    loadHistory(u);
+  }
+
+  function loadHistory(u) {
+    api("/api/users/" + u.id + "/history").then(function (d) {
+      $("sHist").innerHTML = d.history.length ? d.history.map(function (h) {
+        var detail = h.action === "routers" ? "" : (h.new_expires ? "Fin : " + esc(fullWhen(h.new_expires)) : "Sans date de fin");
+        return "<li><div class='rp-row'><span>" + esc(h.label) + "</span><span class='rp-sub'>" + esc(when(h.at)) + "</span></div>" +
+          "<div class='rp-sub'>" + detail + (h.note ? (detail ? " · " : "") + esc(h.note) : "") + "</div></li>";
+      }).join("") : "<li class='pane-sub'>Rien pour l'instant.</li>";
+    });
+  }
+
+  function more(u) {
+    var item = function (a, label, icon, cls) { return "<button type='button' class='menu-item" + (cls ? " " + cls : "") + "' data-m='" + a + "'>" + ic(icon) + "<span>" + label + "</span></button>"; };
+    sheet(u.name, "user", "<div class='menu-list'>" + item("edit", "Modifier les informations", "pencil") + item("password", "Nouveau mot de passe", "key") +
+      item("toggle", u.active ? "Désactiver le compte" : "Activer le compte", u.active ? "x" : "check") +
+      item("delete", "Supprimer le compte", "trash", "is-danger") + "</div>");
+    $("bsBody").onclick = function (e) {
+      var b = e.target.closest("[data-m]");
+      if (!b) return;
+      ({ edit: function () { edit(u); }, password: function () { password(u); }, toggle: function () { close(); toggle(u); }, delete: function () { remove(u); } })[b.dataset.m]();
+    };
   }
 
   // --- abonnement --------------------------------------------------------------------------
@@ -283,12 +417,7 @@
       if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Confirmer l'arrêt ?"; return; }
       send({ action: "stop" }, b);
     });
-    api("/api/users/" + u.id + "/history").then(function (d) {
-      $("sHist").innerHTML = d.history.length ? d.history.map(function (h) {
-        return "<li><div class='rp-row'><span>" + esc(h.label) + "</span><span class='rp-sub'>" + esc(when(h.at)) + "</span></div>" +
-          "<div class='rp-sub'>" + (h.new_expires ? "Fin : " + esc(fullWhen(h.new_expires)) : "Sans date de fin") + (h.note ? " · " + esc(h.note) : "") + "</div></li>";
-      }).join("") : "<li class='pane-sub'>Rien pour l'instant.</li>";
-    });
+    loadHistory(u);
   }
 
   // --- mot de passe ----------------------------------------------------------------------
@@ -316,7 +445,7 @@
   function remove(u) {
     sheet("Supprimer " + u.name + " ?", "trash",
       "<p class='pane-sub'>Le compte <strong>" + esc(u.username) + "</strong> ne pourra plus se connecter. Ses lots et ses ventes restent dans l'historique." +
-      (u.role === "revendeur" ? " Son point de vente sera retiré." : "") + "</p><p class='pane-sub'>Pour couper l'accès juste un moment, utilisez plutôt <strong>Désactiver</strong>.</p>" +
+      (u.role === "revendeur" ? " Son point de vente sera retiré." : "") + (u.role === "client" && u.routers_used ? " Ses " + u.routers_used + " routeur(s) restent dans ADER LINK et passent sous votre gestion." : "") + "</p><p class='pane-sub'>Pour couper l'accès juste un moment, utilisez plutôt <strong>Désactiver</strong>.</p>" +
       "<div class='notice' id='bsMsg' role='status'></div>",
       "<button class='btn-prev' type='button' data-close>Annuler</button><button class='btn btn-danger' type='button' id='dGo'>Supprimer</button>");
     $("dGo").addEventListener("click", function () {

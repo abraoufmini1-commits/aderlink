@@ -10,8 +10,8 @@ import re
 import secrets
 import time
 
-ROLES = ("admin", "gerant", "revendeur")
-ROLE_LABEL = {"admin": "Administrateur", "gerant": "Gérant", "revendeur": "Revendeur"}
+ROLES = ("admin", "client", "gerant", "revendeur")
+ROLE_LABEL = {"admin": "Administrateur", "client": "Client", "gerant": "Gérant", "revendeur": "Revendeur"}
 
 
 class UserError(Exception):
@@ -38,7 +38,7 @@ def add_months(ts, months, utc_offset_s=3600):
 class Principal:
     """L'utilisateur connecté et ce qu'il a le droit de voir ou faire."""
 
-    def __init__(self, username, name, role, zones=None, user_id=None, commission=0, expires_at=None):
+    def __init__(self, username, name, role, zones=None, user_id=None, commission=0, expires_at=None, max_routers=0):
         self.username = username
         self.name = name or username
         self.role = role
@@ -46,6 +46,7 @@ class Principal:
         self.user_id = user_id
         self.commission = commission
         self.expires_at = expires_at  # None = sans limite
+        self.max_routers = max_routers  # clients : nombre de routeurs autorisés
 
     @property
     def is_admin(self):
@@ -60,16 +61,16 @@ class Principal:
 
     def can(self, action):
         rules = {
-            "users": ("admin",), "settings": ("admin",), "routers_write": ("admin",),
-            "routers_read": ("admin", "gerant"), "forfaits_write": ("admin", "gerant"),
-            "lots_manage": ("admin", "gerant"), "dashboard_full": ("admin", "gerant"),
+            "users": ("admin",), "settings": ("admin",), "routers_write": ("admin", "client"),
+            "routers_read": ("admin", "client", "gerant"), "forfaits_write": ("admin", "client", "gerant"),
+            "lots_manage": ("admin", "client", "gerant"), "dashboard_full": ("admin", "client", "gerant"),
         }
         return self.role in rules.get(action, ROLES)
 
     def public(self):
         return {"username": self.username, "name": self.name, "role": self.role,
                 "role_label": ROLE_LABEL[self.role], "zones": self.zones, "commission": self.commission,
-                "expires_at": self.expires_at, "now": int(time.time())}
+                "expires_at": self.expires_at, "now": int(time.time()), "max_routers": self.max_routers}
 
 
 class Users:
@@ -97,7 +98,8 @@ class Users:
                 """
             )
             for sql in ("ALTER TABLE points_vente ADD COLUMN user_id INTEGER",
-                        "ALTER TABLE users ADD COLUMN expires_at INTEGER"):
+                        "ALTER TABLE users ADD COLUMN expires_at INTEGER",
+                        "ALTER TABLE users ADD COLUMN max_routers INTEGER DEFAULT 0"):
                 try:
                     store.db.execute(sql)
                 except Exception:
@@ -113,7 +115,7 @@ class Users:
             return rows, cur.lastrowid
 
     COLS = ("id", "username", "name", "phone", "role", "password_hash", "zones", "commission",
-            "active", "created_at", "last_login", "expires_at")
+            "active", "created_at", "last_login", "expires_at", "max_routers")
 
     def _row(self, row):
         u = dict(zip(self.COLS, row))
@@ -157,9 +159,13 @@ class Users:
         u = self._get(username)
         if not u or not u["active"] or self.expired(u):
             return None  # compte supprimé, désactivé ou abonnement terminé : la session tombe
-        known = {z["id"] for z in self.config.get("zones", [])}
-        return Principal(u["username"], u["name"], u["role"], [z for z in u["zones"] if z in known],
-                         u["id"], u["commission"] or 0, u["expires_at"])
+        if u["role"] == "client":  # un client voit les routeurs qu'il a lui-même ajoutés
+            zones = [z["id"] for z in self.config.get("zones", []) if z.get("owner") == u["username"]]
+        else:
+            known = {z["id"] for z in self.config.get("zones", [])}
+            zones = [z for z in u["zones"] if z in known]
+        return Principal(u["username"], u["name"], u["role"], zones,
+                         u["id"], u["commission"] or 0, u["expires_at"], u["max_routers"] or 0)
 
     # --- gestion -----------------------------------------------------------------------
     def _validate(self, data, current=None):
@@ -175,11 +181,11 @@ class Users:
         if other and (not current or other["id"] != current["id"]):
             raise UserError("Cet identifiant est déjà utilisé")
         role = data.get("role")
-        if role not in ("gerant", "revendeur"):
-            raise UserError("Choisissez le rôle : gérant ou revendeur")
+        if role not in ("client", "gerant", "revendeur"):
+            raise UserError("Choisissez le type de compte : client, gérant ou revendeur")
         known = {z["id"] for z in self.config.get("zones", [])}
-        zones = [z for z in (data.get("zones") or []) if z in known]
-        if not zones:
+        zones = [z for z in (data.get("zones") or []) if z in known] if role != "client" else []
+        if role != "client" and not zones:
             raise UserError("Choisissez au moins un routeur")
         try:
             commission = float(data.get("commission") or 0)
@@ -189,6 +195,15 @@ class Users:
             raise UserError("Commission entre 0 et 100 %")
         phone = re.sub(r"[^0-9+ ]", "", str(data.get("phone") or ""))[:20].strip()
         return name, username, role, zones, commission if role == "revendeur" else 0, phone
+
+    def _max_routers(self, data, default=0):
+        try:
+            n = int(str(data.get("max_routers", default) or 0).strip())
+        except ValueError:
+            raise UserError("Nombre de routeurs : un nombre entier")
+        if not 0 <= n <= 1000:
+            raise UserError("Nombre de routeurs entre 0 et 1000")
+        return n
 
     def _password(self, data, required):
         pwd = str(data.get("password") or "")
@@ -223,10 +238,12 @@ class Users:
     def create(self, data):
         name, username, role, zones, commission, phone = self._validate(data)
         pwd = self._password(data, required=True)
+        max_routers = self._max_routers(data, 1) if role == "client" else 0
         _, uid = self._q(
-            "INSERT INTO users (username, name, phone, role, password_hash, zones, commission, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (username, name, phone, role, self.hash(pwd), json.dumps(zones), commission, int(time.time())), commit=True)
+            "INSERT INTO users (username, name, phone, role, password_hash, zones, commission, created_at, max_routers) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (username, name, phone, role, self.hash(pwd), json.dumps(zones), commission, int(time.time()),
+             max_routers), commit=True)
         sub = data.get("subscription") or {}
         if sub.get("unlimited") is False or sub.get("n"):
             self.subscription(uid, dict(sub, action="add"), note="Création du compte")
@@ -239,8 +256,15 @@ class Users:
         if not user:
             raise UserError("Utilisateur introuvable")
         name, username, role, zones, commission, phone = self._validate(data, current=user)
-        self._q("UPDATE users SET username=?, name=?, phone=?, role=?, zones=?, commission=? WHERE id=?",
-                (username, name, phone, role, json.dumps(zones), commission, user_id), commit=True)
+        max_routers = self._max_routers(data, user["max_routers"]) if role == "client" else 0
+        if user["role"] == "client" and role != "client" and self.routers and self.routers.owned(user["username"]):
+            raise UserError("Ce client a des routeurs : il doit rester client")
+        self._q("UPDATE users SET username=?, name=?, phone=?, role=?, zones=?, commission=?, max_routers=? WHERE id=?",
+                (username, name, phone, role, json.dumps(zones), commission, max_routers, user_id), commit=True)
+        if username != user["username"] and self.routers:  # les routeurs du client suivent son nouvel identifiant
+            for z in self.routers.owned(user["username"]):
+                z["owner"] = username
+            self.routers._persist()
         user = self.get(user_id)
         self._sync_pv(user)
         return self.public(user)
@@ -312,6 +336,18 @@ class Users:
                                            (note or str(data.get("note") or ""))[:80] or None), commit=True)
         return dict(self.public(self.get(user_id)), history=self.history(user_id))
 
+    def set_max_routers(self, user_id, data):
+        user = self.get(user_id)
+        if not user or user["role"] != "client":
+            raise UserError("Seuls les clients ont un nombre de routeurs")
+        old, new = user["max_routers"] or 0, self._max_routers(data)
+        self._q("UPDATE users SET max_routers = ? WHERE id = ?", (new, user_id), commit=True)
+        self._q("INSERT INTO subscription_log (user_id, at, action, label, old_expires, new_expires, note) "
+                "VALUES (?,?,?,?,?,?,?)", (user_id, int(time.time()), "routers", f"Routeurs : {old} → {new}",
+                                           user["expires_at"], user["expires_at"],
+                                           str(data.get("note") or "")[:80] or None), commit=True)
+        return dict(self.public(self.get(user_id)), history=self.history(user_id))
+
     def history(self, user_id, limit=30):
         rows, _ = self._q("SELECT at, action, label, old_expires, new_expires, note FROM subscription_log "
                           "WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
@@ -339,6 +375,10 @@ class Users:
         if not user:
             raise UserError("Utilisateur introuvable")
         user["active"] = 0
+        if self.routers and self.routers.owned(user["username"]):  # ses routeurs reviennent à l'administrateur
+            for z in self.routers.owned(user["username"]):
+                z.pop("owner", None)
+            self.routers._persist()
         self._sync_pv(user)  # archive ses points de vente ; ses lots et ventes restent dans l'historique
         self._q("DELETE FROM users WHERE id = ?", (user_id,), commit=True)
         self._q("DELETE FROM subscription_log WHERE user_id = ?", (user_id,), commit=True)
@@ -369,17 +409,24 @@ class Users:
                 "role": u["role"], "role_label": ROLE_LABEL[u["role"]], "zones": u["zones"],
                 "zone_names": [zones[z] for z in u["zones"] if z in zones], "commission": u["commission"] or 0,
                 "active": bool(u["active"]), "created_at": u["created_at"], "last_login": u["last_login"],
-                "expires_at": u["expires_at"], "expired": self.expired(u), "now": int(time.time())}
+                "expires_at": u["expires_at"], "expired": self.expired(u), "now": int(time.time()),
+                "max_routers": u["max_routers"] or 0,
+                "routers_used": len(self.routers.owned(u["username"])) if self.routers else 0}
 
     def list(self, since):
         rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users ORDER BY active DESC, role, name")
         out = []
         for r in rows:
             u = self.public(self._row(r))
+            if u["role"] == "client":  # client : toutes les ventes de ses routeurs
+                zs = [z["id"] for z in self.routers.owned(u["username"])] if self.routers else []
+                cond, args = "b.zone_id IN (%s)" % (",".join("?" * len(zs)) or "NULL"), zs
+            else:
+                cond, args = "b.created_by = ?", [u["username"]]
             stats, _ = self._q(
                 "SELECT COUNT(t.code), COALESCE(SUM(b.price), 0) FROM tickets t JOIN batches b ON b.id = t.batch_id "
-                "WHERE b.created_by = ? AND t.first_used >= ?", (u["username"], since))
-            gen, _ = self._q("SELECT COALESCE(SUM(count), 0), COUNT(*) FROM batches WHERE created_by = ?", (u["username"],))
+                f"WHERE {cond} AND t.first_used >= ?", args + [since])
+            gen, _ = self._q(f"SELECT COALESCE(SUM(b.count), 0), COUNT(*) FROM batches b WHERE {cond}", args)
             u["stats"] = {"sold": stats[0][0], "amount": stats[0][1], "generated": gen[0][0], "lots": gen[0][1],
                           "commission_due": round(stats[0][1] * u["commission"] / 100)}
             out.append(u)

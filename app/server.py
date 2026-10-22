@@ -362,10 +362,18 @@ def make_handler(app):
                     return {"profiles": app.tickets.profiles(zid)}
             if app.routers and p == "/api/routers":
                 self.need(who.can("routers_read"))
-                return {"routers": [r for r in app.routers.list() if who.can_zone(r["id"])], "demo": app.demo,
-                        "can_write": who.can("routers_write")}
+                out = {"routers": [r for r in app.routers.list() if who.can_zone(r["id"])], "demo": app.demo,
+                       "can_write": who.can("routers_write"), "role": who.role}
+                if who.role == "client":
+                    out["quota"] = {"max": who.max_routers, "used": len(app.routers.owned(who.username))}
+                elif who.is_admin and app.users:
+                    rows, _ = app.users._q("SELECT username, name FROM users WHERE role = 'client'")
+                    names = dict(rows)
+                    for r in out["routers"]:
+                        r["owner_name"] = names.get(r["owner"], r["owner"]) if r.get("owner") else None
+                return out
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
-                self.need(who.can("routers_write"))
+                self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))
             if app.tickets and p == "/api/batches":
                 zid = q.get("zone", [None])[0]
@@ -455,6 +463,14 @@ def make_handler(app):
             # routeurs
             if R and p == "/api/routers":
                 self.need(who.can("routers_write"))
+                if who.role == "client":
+                    used = len(R.owned(who.username))
+                    if used >= who.max_routers:
+                        c = app.config.get("contact") or {}
+                        raise Forbidden(f"Votre abonnement permet {who.max_routers} routeur{'s' if who.max_routers > 1 else ''}. "
+                                        f"Pour en ajouter, contactez {c.get('name') or 'votre fournisseur'}"
+                                        + (f" au {c['phone']}" if c.get("phone") else "") + ".")
+                    return R.create(body, owner=who.username)
                 return R.create(body)
             if R and len(parts) == 5 and parts[2] == "routers":
                 zid, action = parts[3], parts[4]
@@ -468,7 +484,8 @@ def make_handler(app):
                 if action in acts:
                     return acts[action]()
             if R and len(parts) == 5 and parts[2] == "pv" and parts[4] == "archive" and parts[3].isdigit():
-                self.need(who.can("routers_write"))
+                pv = R.get_pv(int(parts[3]))
+                self.need(who.can("routers_write") and pv and who.can_zone(pv["zone_id"]))
                 return R.archive_pv(int(parts[3]))
             # utilisateurs
             if U and p == "/api/me/password":
@@ -482,6 +499,7 @@ def make_handler(app):
                 acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),
                         "enable": lambda: U.set_active(uid, True), "disable": lambda: U.set_active(uid, False),
                         "subscription": lambda: U.subscription(uid, body),
+                        "routers": lambda: U.set_max_routers(uid, body),
                         "delete": lambda: U.delete(uid)}
                 if action in acts:
                     return acts[action]()

@@ -595,3 +595,41 @@ class UsersAndRolesTests(unittest.TestCase):
         pub = json.loads(urllib.request.urlopen(self.base + "/api/public").read())
         self.assertEqual(pub["contact"]["phone"], "+227 90 11 22 33")
         self.post(admin, f"/api/users/{u['id']}/delete", {})
+
+    def test_client_routers(self):
+        admin = self.login("admin", "admin-secret-1")
+        code, c = self.post(admin, "/api/users", {"name": "Wifi Tassi", "username": "tassi", "role": "client",
+                                                  "max_routers": 1, "password": "tassi-1234"})
+        self.assertEqual(code, 200, c)
+        self.assertEqual((c["max_routers"], c["routers_used"], c["zones"]), (1, 0, []))
+        t = self.login("tassi", "tassi-1234")
+        d = self.get(t, "/api/routers")
+        self.assertEqual((d["routers"], d["quota"]), ([], {"max": 1, "used": 0}))
+        self.assertEqual(self.get(t, "/api/zones")["zones"], [])  # ne voit pas les routeurs des autres
+        code, r = self.post(t, "/api/routers", {"name": "Zone A", "host": "10.0.0.9"})  # même nom qu'ailleurs : permis
+        self.assertEqual(code, 200, r)
+        self.assertEqual(r["owner"], "tassi")
+        code, err = self.post(t, "/api/routers", {"name": "Deuxième", "host": "10.0.0.10"})
+        self.assertEqual(code, 403)
+        self.assertIn("1 routeur", err["error"])
+        self.assertEqual(self.post(t, "/api/routers/a/update", {"name": "Pirate", "host": "1.1.1.1"})[0], 403)
+        with self.assertRaises(urllib.error.HTTPError):
+            t.open(self.base + "/api/routers/a/install")
+        self.assertEqual(len(self.get(t, f"/api/routers/{r['id']}/install")["line"]) > 10, True)
+        self.assertEqual(self.post(t, "/api/forfaits", {"zone_id": r["id"], "name": "1H", "price": 100})[0], 200)
+        self.assertEqual(self.post(t, "/api/users", {})[0], 403)
+        # l'administrateur augmente la limite à la main
+        code, up = self.post(admin, f"/api/users/{c['id']}/routers", {"max_routers": 3, "note": "payé"})
+        self.assertEqual((up["max_routers"], up["routers_used"]), (3, 1))
+        self.assertEqual(up["history"][0]["label"], "Routeurs : 1 → 3")
+        self.assertEqual(self.post(admin, f"/api/users/{c['id']}/routers", {"max_routers": -1})[0], 400)
+        self.assertEqual(self.post(t, "/api/routers", {"name": "Deuxième", "host": "10.0.0.10"})[0], 200)
+        self.assertEqual(self.get(t, "/api/routers")["quota"], {"max": 3, "used": 2})
+        # l'administrateur voit tout, avec le nom du client
+        mine = [x for x in self.get(admin, "/api/routers")["routers"] if x.get("owner") == "tassi"]
+        self.assertEqual({x["owner_name"] for x in mine}, {"Wifi Tassi"})
+        # suppression du client : ses routeurs reviennent à l'administrateur
+        self.post(admin, f"/api/users/{c['id']}/delete", {})
+        self.assertFalse([z for z in self.config["zones"] if z.get("owner") == "tassi"])
+        for z in [z for z in self.config["zones"] if z["id"] not in ("a", "b")]:
+            self.config["zones"].remove(z)

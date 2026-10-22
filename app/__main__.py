@@ -181,6 +181,16 @@ def _demo_users(cfg, users, tickets):
                         "role": "revendeur", "zones": zones[:1], "commission": 10, "phone": "+227 90 00 00 00",
                         "subscription": {"n": 2, "unit": "jour"}})
     cfg["contact"] = {"name": "ADER TECHNOLOGIE", "phone": "+227 90 00 00 00"}
+    # Clients : chacun possède ses routeurs, dans la limite que l'administrateur lui donne
+    for name, login, n_max, own, sub in (("Wifi Tassi", "tassi", 3, zones[2:3], {"n": 3, "unit": "mois"}),
+                                          ("Hamza Net", "hamza", 1, zones[3:4], {"n": 1, "unit": "jour"}),
+                                          ("Zone Koira", "koira", 2, [], {"n": 1, "unit": "an"})):
+        c = users.create({"name": name, "username": login, "password": "aderlink", "role": "client",
+                          "max_routers": n_max, "phone": "+227 96 00 00 0" + str(n_max), "subscription": sub})
+        for z in cfg["zones"]:
+            if z["id"] in own:
+                z["owner"] = login
+    users.subscription(users._get("koira")["id"], {"action": "stop"})
     who = users.principal(rev["username"])
     f = next((f for f in tickets.list_forfaits(zones[0])), None) if zones else None
     if f:
@@ -191,7 +201,7 @@ def _demo_users(cfg, users, tickets):
         for i, (code,) in enumerate(rows):  # quelques ventes réparties sur 10 jours
             tickets._q("UPDATE tickets SET first_used = ? WHERE batch_id = ? AND code = ?",
                        (now - (i % 10) * 86400 - 3600, lot["id"], code), commit=True)
-    print("Comptes démo : gerant / aderlink · revendeur / aderlink")
+    print("Comptes démo : gerant, revendeur, tassi (client) — mot de passe aderlink")
 
 
 def _demo_batches(tickets):

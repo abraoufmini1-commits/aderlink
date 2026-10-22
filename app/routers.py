@@ -89,13 +89,17 @@ class Routers:
         for k in ("board", "version", "uptime_s", "cpu", "memory", "tickets", "active", "error", "last_seen", "identity"):
             d[k] = s.get(k)
         d["points_vente"] = self.list_pv(z["id"])
+        d["owner"] = z.get("owner")
         return d
 
     # --- routeurs ---------------------------------------------------------------------
     def list(self):
         return [self.public(z) for z in self.zones()]
 
-    def _validate(self, data, current=None):
+    def owned(self, owner):
+        return [z for z in self.zones() if z.get("owner") == owner]
+
+    def _validate(self, data, current=None, owner=None):
         name = _clean(data.get("name"), 40)
         if not name:
             raise RouterError("Donnez un nom au site")
@@ -111,14 +115,15 @@ class Routers:
             raise RouterError("Port API invalide")
         if not 4 <= code_length <= 12:
             raise RouterError("Longueur des codes : entre 4 et 12")
-        for z in self.zones():
-            if z is not current and z["name"].lower() == name.lower():
+        owner = current.get("owner") if current else owner
+        for z in self.zones():  # le nom doit être unique chez un même propriétaire
+            if z is not current and z.get("owner") == owner and z["name"].lower() == name.lower():
                 raise RouterError("Un routeur porte déjà ce nom")
         wan = _clean(data.get("wan_interface") or "ether1", 32).replace(" ", "")
         return name, host, port, code_length, wan
 
-    def create(self, data):
-        name, host, port, code_length, wan = self._validate(data)
+    def create(self, data, owner=None):
+        name, host, port, code_length, wan = self._validate(data, owner=owner)
         with self.lock:
             zid = f"{_slug(name)}-{secrets.token_hex(2)}"
             z = {
@@ -129,6 +134,8 @@ class Routers:
                            "password": secrets.token_urlsafe(15).replace("-", "x").replace("_", "y"),
                            "wan_interface": wan},
             }
+            if owner:
+                z["owner"] = owner  # routeur d'un client
             self.zones().append(z)
             self._persist()
         self.ensure_default_pv(zid)

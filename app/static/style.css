@@ -928,3 +928,61 @@ body[data-role="revendeur"] .need-gerant { display: none !important; }
 .exp-contact { display: flex; gap: 8px; margin-top: 4px; }
 .exp-contact[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { .sub-free { color: var(--series); } }
+
+/* ===================== Clients et routeurs autorisés ===================== */
+.quota { padding: 14px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.quota strong { font-size: 20px; }
+.quota-sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.quota-meter { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.quota-meter span { display: block; height: 100%; background: var(--blue-600); border-radius: 99px; }
+.quota-full .quota-meter span { background: var(--orange); }
+.quota-full .quota-sub { color: var(--orange-hover); font-weight: 650; }
+.rc-owner { margin-top: 10px; }
+.rc-owner svg { width: 14px; height: 14px; vertical-align: -2px; }
+.u-tabs { margin: 0 0 14px; }
+.u-tabs button { padding: 8px 14px; }
+.u-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.u-tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.u-tile span { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.u-tile strong { font-size: 22px; }
+.u-tile-soon strong { color: var(--orange-hover); }
+.u-tile-over strong { color: var(--critical); }
+.ctable-card { padding: 4px 0; margin-top: 4px; }
+.ctable th, .ctable td { vertical-align: middle; }
+.ctable th:first-child, .ctable td:first-child { padding-left: 16px; }
+.ctable th:last-child, .ctable td:last-child { padding-right: 16px; }
+.ctable tr.is-off td { opacity: 0.6; }
+.c-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.c-who .avatar { width: 40px; height: 40px; font-size: 14px; flex: none; }
+.c-quota { min-width: 120px; }
+.c-quota .quota-meter { height: 6px; margin: 5px 0 3px; }
+.c-quota.is-full strong { color: var(--orange-hover); }
+.c-quota.is-full .quota-meter span { background: var(--orange); }
+.c-sub { display: inline-block; font-weight: 700; font-size: 13px; padding: 3px 10px; border-radius: 99px; }
+.c-acts { display: inline-flex; gap: 6px; flex-wrap: nowrap; }
+.c-acts .btn { white-space: nowrap; }
+.c-more { min-width: 44px; padding-left: 10px; padding-right: 10px; }
+.warn-txt { color: var(--orange-hover); font-weight: 600; }
+.menu-list { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }
+.menu-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--surface); font: inherit; font-weight: 650; color: var(--ink); cursor: pointer; text-align: left;
+}
+.menu-item svg { width: 22px; height: 22px; color: var(--blue-600); }
+.menu-item:hover { background: var(--surface-2); }
+.menu-item.is-danger, .menu-item.is-danger svg { color: var(--critical); }
+@media (max-width: 760px) {
+  .u-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ctable thead { display: none; }
+  .ctable, .ctable tbody, .ctable tr, .ctable td { display: block; width: 100%; }
+  .ctable tr { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .ctable td { border: 0; padding: 6px 0 !important; text-align: left; }
+  .ctable td[data-label]:not(:first-child)::before {
+    content: attr(data-label); display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-3); margin-bottom: 3px;
+  }
+  .ctable td[data-label="Actions"]::before { display: none; }
+  .c-acts { display: flex; width: 100%; margin-top: 4px; }
+  .c-acts .btn { flex: 1; }
+  .c-acts .c-more { flex: none; }
+  .ctable-card .table-scroll { overflow: visible; }
+}

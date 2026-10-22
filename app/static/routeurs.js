@@ -4,7 +4,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var nf = new Intl.NumberFormat("fr-FR");
   var ic = window.AderShell.icon;
-  var S = { routers: [], demo: false };
+  var S = { routers: [], demo: false, canWrite: true, quota: null, role: "admin" };
   var COLORS = ["av-blue", "av-orange", "av-navy", "av-teal"];
 
   function esc(s) {
@@ -38,8 +38,19 @@
   // --- liste ---------------------------------------------------------------------------
   function load() {
     return api("/api/routers").then(function (d) {
-      S.routers = d.routers; S.demo = d.demo;
+      S.routers = d.routers; S.demo = d.demo; S.canWrite = d.can_write; S.quota = d.quota || null; S.role = d.role;
       $("demoBanner").hidden = !d.demo;
+      $("addBtn").hidden = !S.canWrite;
+      var q = $("quota");
+      if (S.quota) {
+        var full = S.quota.used >= S.quota.max;
+        q.className = "card quota" + (full ? " quota-full" : "");
+        q.innerHTML = "<div>Mes routeurs : <strong class='num'>" + nf.format(S.quota.used) + " / " + nf.format(S.quota.max) + "</strong>" +
+          "<div class='quota-sub'>" + (full ? "Limite atteinte : contactez votre fournisseur pour ajouter des routeurs." : "Vous pouvez encore en ajouter " + nf.format(S.quota.max - S.quota.used) + ".") + "</div></div>" +
+          "<div class='quota-meter'><span data-w='" + Math.min(100, S.quota.max ? S.quota.used / S.quota.max * 100 : 100) + "'></span></div>";
+        q.querySelector("[data-w]").style.width = q.querySelector("[data-w]").dataset.w + "%";
+        q.hidden = false;
+      } else q.hidden = true;
       render();
     });
   }
@@ -56,8 +67,9 @@
         "<div class='rc-meta'>Wi-Fi " + esc(r.ssid) + (r.location ? " · " + esc(r.location) : "") + "</div>" +
         "<div class='rc-meta'>" + esc(r.board || "Modèle inconnu") + " · " + esc(r.host) + (r.status === "online" ? " · " + nf.format(r.active || 0) + " connectés" : "") + "</div></div>" +
         st + "</div>" +
-        "<div class='act-grid'>" + act("details", "Détails", "info") + act("edit", "Modifier", "pencil") + act("forfaits", "Forfaits", "ticket") +
-        act("pv", "Points de vente", "store") + act("sessions", "Connectés", "wifi") + act("install", "Installer", "terminal") + "</div></article>";
+        (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
+        "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Forfaits", "ticket") +
+        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
   $("search").addEventListener("input", render);
@@ -67,7 +79,14 @@
     var r = byId(b.dataset.id);
     ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install })[b.dataset.act](r);
   });
-  $("addBtn").addEventListener("click", function () { edit(null); });
+  $("addBtn").addEventListener("click", function () {
+    if (S.quota && S.quota.used >= S.quota.max) {
+      sheet("Limite atteinte", "router", "<p class='pane-sub'>Votre abonnement permet <strong>" + nf.format(S.quota.max) + " routeur" + (S.quota.max > 1 ? "s" : "") +
+        "</strong> et vous les utilisez tous. Pour en ajouter, contactez votre fournisseur : il peut augmenter votre limite en une minute.</p>");
+      return;
+    }
+    edit(null);
+  });
 
   // --- feuille (bas de l'écran sur téléphone, fenêtre au centre sur ordinateur) -------------------------
   var lastFocus = null;

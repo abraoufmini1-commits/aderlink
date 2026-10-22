@@ -140,7 +140,7 @@
   setInterval(checkVersion, 30000);
 
   // Compte connecté : on masque ce que son rôle ne permet pas
-  var rank = { revendeur: 1, gerant: 2, admin: 3 };
+  var rank = { revendeur: 1, gerant: 2, client: 2, admin: 3 };
   var me = fetch("/api/me", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
   me.then(function (u) {
     if (!u) return;
