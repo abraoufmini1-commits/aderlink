@@ -635,6 +635,9 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertEqual(t.open(self.base + f"/api/routers/{r['id']}/logo").read()[:4], b"\x89PNG")
         self.assertEqual(self.post(t, f"/api/routers/{r['id']}/logo", {"image": "data:text/html;base64,AAAA"})[0], 400)
         self.assertEqual(self.post(t, "/api/routers/a/logo", {"image": png})[0], 403)
+        code, wb = self.post(t, f"/api/routers/{r['id']}/winbox", {})
+        self.assertEqual((code, wb["host"]), (200, "127.0.0.1"))  # hors Windows : l'adresse est rendue pour être copiée
+        self.assertEqual(self.post(t, "/api/routers/a/winbox", {})[0], 403)
         self.assertEqual(self.post(t, "/api/forfaits", {"zone_id": r["id"], "name": "1H", "price": 100})[0], 200)
         self.assertEqual(self.post(t, "/api/users", {})[0], 400)  # formulaire vide
         # équipe du client : seulement sur ses routeurs, jamais un autre client

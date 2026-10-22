@@ -27,6 +27,7 @@
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
     upload: '<path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
     coins: '<circle cx="9" cy="9" r="6"/><path d="M15.5 9.5a6 6 0 1 1-6 6"/>',
+    winbox: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01M8 14l2 2-2 2M13 18h3"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/>',
@@ -61,7 +62,8 @@
   header.innerHTML =
     '<div class="topbar-inner">' +
     '<a class="brand" href="/"><span class="brand-mark"><img src="/static/logo-blue.svg" alt="" width="22" height="22"></span>' +
-    '<img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15"></a>' +
+    '<span class="brand-text"><img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15">' +
+    '<span class="brand-tag">Gestion de zones Wi-Fi</span></span></a>' +
     '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 6).map(function (m) {
       return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
     }).join("") + "</nav>" +

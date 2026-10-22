@@ -72,7 +72,7 @@
         st + "</div>" +
         (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
         "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Forfaits", "ticket") +
-        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") : "") + "</div></article>";
+        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", "Winbox", "winbox") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
   $("search").addEventListener("input", render);
@@ -80,7 +80,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var r = byId(b.dataset.id);
-    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install })[b.dataset.act](r);
+    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install, winbox: winbox })[b.dataset.act](r, b);
   });
   $("addBtn").addEventListener("click", function () {
     if (S.quota && S.quota.used >= S.quota.max) {
@@ -222,6 +222,34 @@
       api("/api/routers/" + encodeURIComponent(r.id) + "/delete", {}).then(function () { close(); load(); })
         .catch(function (err) { msg("err", esc(err.message)); });
     });
+  }
+
+  // --- Winbox : ADER LINK l'ouvre sur ce PC, l'adresse du routeur déjà remplie ---------------------
+  function copyOld(text) {
+    var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); } catch (e) { /* ignoré */ }
+    t.remove();
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () { copyOld(text); });
+    }
+    copyOld(text);
+    return Promise.resolve();
+  }
+  function toast(text, ok) {
+    var t = document.createElement("div");
+    t.className = "toast" + (ok ? " toast-ok" : ""); t.setAttribute("role", "status"); t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 6000);
+  }
+  function winbox(r, btn) {
+    if (btn) btn.disabled = true;
+    api("/api/routers/" + encodeURIComponent(r.id) + "/winbox", {}).then(function (d) {
+      if (!d.ok && d.host) copyText(d.host);
+      toast(d.message, d.ok);
+    }).catch(function (err) { toast(err.message); })
+      .then(function () { if (btn) btn.disabled = false; });
   }
 
   // --- forfaits : on ouvre l'assistant de création sur ce routeur ------------------------------

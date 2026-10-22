@@ -180,6 +180,47 @@ class Routers:
         self._q("DELETE FROM zone_logos WHERE zone_id = ?", (zone_id,), commit=True)
         return {"ok": True}
 
+    # --- Winbox ------------------------------------------------------------------------------
+    def find_winbox(self):
+        """winbox64.exe / winbox.exe : réglage, dossier d'ADER LINK, Téléchargements, Bureau, Documents, Program Files."""
+        import glob
+        import os
+        from pathlib import Path
+        own = self.config.get("winbox_path")
+        if own and os.path.isfile(own):
+            return own
+        home = Path.home()
+        places = [Path(__file__).resolve().parent.parent, home / "Downloads", home / "Téléchargements", home / "Desktop",
+                  home / "Bureau", home / "Documents", Path(os.environ.get("ProgramFiles", "C:/Program Files")),
+                  Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")),
+                  Path(os.environ.get("LOCALAPPDATA", str(home))) / "Programs"]
+        for base in places:
+            for depth in ("", "*/", "*/*/"):
+                hits = sorted(glob.glob(str(base / f"{depth}[Ww]in[Bb]ox*.exe")), key=lambda x: ("64" not in x, x))
+                if hits:
+                    return hits[0]
+        return None
+
+    def open_winbox(self, zone_id, local):
+        """Ouvre Winbox sur le PC où tourne ADER LINK, l'adresse du routeur déjà remplie."""
+        import os
+        import subprocess
+        z = self.zone(zone_id)
+        host = (z.get("router") or {}).get("host")
+        if not host:
+            return {"ok": False, "host": "", "message": "Ce routeur n'est pas encore installé."}
+        if self.demo:
+            return {"ok": False, "host": host, "message": "Indisponible en démonstration. Adresse copiée."}
+        if not local or os.name != "nt":
+            return {"ok": False, "host": host,
+                    "message": "Winbox ne s'ouvre que sur le PC où tourne ADER LINK. L'adresse est copiée : collez-la dans Winbox."}
+        exe = self.find_winbox()
+        if not exe:
+            return {"ok": False, "host": host,
+                    "message": "Winbox introuvable. Mettez winbox64.exe dans le dossier aderlink, puis recommencez. L'adresse est copiée."}
+        subprocess.Popen([exe, host], close_fds=True)
+        return {"ok": True, "host": host, "message": "Winbox s'ouvre avec l'adresse " + host + "."}
+
     def test(self, zone_id):
         z = self.zone(zone_id)
         if self.demo:
