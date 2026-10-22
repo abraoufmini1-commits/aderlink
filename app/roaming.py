@@ -315,4 +315,6 @@ class Roaming:
 
 
 def _ascii(s):
-    return "".join(c for c in str(s) if c.isalnum() or c in " -_")[:40]
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s)).encode("ascii", "ignore").decode()
+    return "".join(c for c in s if c.isalnum() or c in " -_")[:40]

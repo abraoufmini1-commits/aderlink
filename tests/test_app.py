@@ -848,7 +848,8 @@ class RoamingTests(unittest.TestCase):
         resp.raw = data[:4] + ra + data[20:]  # le Message-Authenticator de la réponse se calcule avec l'authentificateur de la demande
         self.assertTrue(R.check_message_authenticator(resp, self.secret))
         lines = "\n".join(self.r.script_lines(self.r.group(self.g["id"]), "5.6.7.8"))
-        self.assertIn('address=5.6.7.8 secret="%s"' % self.secret.decode(), lines)
+        self.assertIn(':local rs "5.6.7.8"; /radius add service=hotspot address=$rs secret="%s"' % self.secret.decode(), lines)
+        self.assertIn('= "6") do={ :set rs "10.67.0.1" }', "\n".join(self.r.script_lines(self.r.group(self.g["id"]), "10.66.0.1", "10.67.0.1")))
         self.assertIn("use-radius=yes", lines)
 
 
