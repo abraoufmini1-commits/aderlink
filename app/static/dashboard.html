@@ -18,10 +18,18 @@
 <main>
   <div class="page-head">
     <div>
-      <h1>Tableau de bord</h1>
-      <p class="subtitle">Vue d'ensemble de vos zones Wi-Fi en temps réel</p>
+      <h1 id="dashTitle">Tableau de bord</h1>
+      <p class="subtitle" id="dashSub">Vue d'ensemble de vos zones Wi-Fi en temps réel</p>
     </div>
   </div>
+  <section class="card welcome" id="welcome" hidden>
+    <span class="welcome-ico" aria-hidden="true" id="welcomeIco"></span>
+    <div class="welcome-main">
+      <h2 id="welcomeTitle">Bienvenue !</h2>
+      <p>Ceci est <strong>votre espace</strong> : vous ne voyez que vos routeurs, vos tickets et vos ventes. Commencez par ajouter votre premier MikroTik.</p>
+    </div>
+    <a class="btn btn-big" href="/routeurs#nouveau">+ Ajouter mon routeur</a>
+  </section>
 
   <section class="stub" aria-labelledby="heroLabel">
     <div class="stub-main">

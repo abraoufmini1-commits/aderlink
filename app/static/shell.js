@@ -69,6 +69,7 @@
       return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +
+    '<a class="me-chip" href="/profil" id="meChip" hidden><span class="me-av" id="meAv"></span><span class="me-txt"><b id="meChipName"></b><small id="meChipRole"></small></span></a>' +
     '<button class="icon-btn" type="button" id="menuBtn" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="drawer">' + icon("menu") + "</button></div></div>";
   var banner = document.getElementById("demoBanner");
   document.body.insertBefore(header, banner ? banner.nextSibling : document.body.firstChild);
@@ -153,6 +154,11 @@
     document.body.dataset.role = u.role;
     document.getElementById("meName").textContent = u.name;
     document.getElementById("meRole").textContent = u.role_label;
+    var initials = String(u.name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
+    document.getElementById("meAv").textContent = initials;
+    document.getElementById("meChipName").textContent = u.name;
+    document.getElementById("meChipRole").textContent = u.role_label;
+    document.getElementById("meChip").hidden = false;
     Array.prototype.forEach.call(document.querySelectorAll("[data-need]"), function (el) {
       if (rank[u.role] < rank[el.dataset.need]) el.hidden = true;
     });

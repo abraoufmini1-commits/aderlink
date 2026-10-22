@@ -414,6 +414,8 @@
     }).catch(function (err) { $("bsBody").innerHTML = "<p class='pane-sub'>" + esc(err.message) + "</p>"; });
   }
 
-  load();
+  load().then(function () {
+    if (location.hash === "#nouveau" && S.canWrite) { history.replaceState(null, "", "/routeurs"); $("addBtn").click(); }
+  });
   setInterval(function () { if (!document.hidden && $("bs").hidden) load(); }, 30000);
 })();

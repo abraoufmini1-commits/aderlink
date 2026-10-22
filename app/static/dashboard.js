@@ -86,8 +86,23 @@
     $("heroTickets").textContent = nf.format(st.tickets) + " ticket" + (st.tickets > 1 ? "s" : "") + " vendu" + (st.tickets > 1 ? "s" : "") + " aujourd'hui";
     $("pollInfo").textContent = "Relevé toutes les " + d.poll_seconds + " s";
     renderZones(d.zones);
+    personal(d);
     renderEvents(d.events, d.zones);
     renderChart(d.history);
+  }
+
+  // Espace personnel : un client, un gérant ou un revendeur voit à qui appartient ce tableau de bord
+  function personal(d) {
+    var u = d.me || {};
+    if (!u.role || u.role === "admin") return;
+    $("dashTitle").textContent = "Espace de " + u.name;
+    $("dashSub").textContent = u.role === "client" ? "Vos routeurs, vos tickets et vos ventes" : "Vos tickets et vos ventes";
+    var empty = u.role === "client" && !d.zones.length;
+    $("welcome").hidden = !empty;
+    if (empty) {
+      $("welcomeTitle").textContent = "Bienvenue, " + u.name + " !";
+      $("welcomeIco").innerHTML = window.AderShell.icon("router");
+    }
   }
 
   // --- zones -------------------------------------------------------------------------
