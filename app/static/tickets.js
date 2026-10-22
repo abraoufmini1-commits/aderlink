@@ -98,10 +98,24 @@
   function renderRouters() {
     var q = $("routerSearch").value.trim().toLowerCase();
     var list = S.zones.filter(function (z) { return !q || (z.name + " " + z.ssid).toLowerCase().indexOf(q) >= 0; });
-    $("routers").innerHTML = list.map(function (z) {
+    // Réseaux ADER Roaming : un choix à part, en tête de liste
+    var nets = [];
+    S.zones.forEach(function (z) {
+      if (z.roaming && !nets.some(function (n) { return n.id === z.roaming.id; }) &&
+          (!q || z.roaming.name.toLowerCase().indexOf(q) >= 0)) nets.push(z.roaming);
+    });
+    var netHtml = nets.map(function (n) {
+      var names = S.zones.filter(function (z) { return z.roaming && z.roaming.id === n.id; }).map(function (z) { return z.name; });
+      return "<button type='button' class='pick pick-roam' role='radio' aria-checked='" + (S.roam === n.id) + "' data-roam='" + n.id + "'>" +
+        "<span class='avatar av-blue' aria-hidden='true'>" + window.AderShell.icon("zones") + "</span>" +
+        "<span class='pick-main'><span class='pick-title'>" + esc(n.name) + " <span class='ro-badge'>ADER Roaming</span></span>" +
+        "<span class='pick-sub'>Valable sur " + names.length + " routeurs : " + esc(names.join(", ")) + "</span></span>" +
+        "<span class='radio' aria-hidden='true'></span></button>";
+    }).join("");
+    $("routers").innerHTML = (netHtml ? "<div class='pick-group'>Réseaux ADER Roaming</div>" + netHtml + "<div class='pick-group'>Routeurs</div>" : "") + list.map(function (z) {
       var s = S.status[z.id] || {};
       var on = s.status === "online";
-      return "<button type='button' class='pick' role='radio' aria-checked='" + (S.zone === z.id) + "' data-zone='" + esc(z.id) + "'>" +
+      return "<button type='button' class='pick' role='radio' aria-checked='" + (S.zone === z.id && !S.roam) + "' data-zone='" + esc(z.id) + "'>" +
         "<span class='avatar'>" + esc(initials(z.name)) + "</span>" +
         "<span class='pick-main'><span class='pick-title'>" + esc(z.name) + "</span>" +
         "<span class='pick-sub'>Wi-Fi " + esc(z.ssid) + " · <span class='" + (on ? "st-on" : "st-off") + "'>● " +
@@ -111,9 +125,21 @@
   }
   $("routerSearch").addEventListener("input", renderRouters);
   $("routers").addEventListener("click", function (e) {
+    var r = e.target.closest("[data-roam]");
+    if (r) {
+      var gid = +r.dataset.roam;
+      var members = S.zones.filter(function (z) { return z.roaming && z.roaming.id === gid; });
+      var home = members.find(function (z) { return (S.status[z.id] || {}).status === "online"; }) || members[0];
+      if (S.roam !== gid || S.zone !== home.id) { S.forfait = null; S.pv = null; }
+      S.roam = gid; S.zone = home.id;
+      renderRouters();
+      loadForfaits().then(function () { go("pv"); });
+      return;
+    }
     var b = e.target.closest("[data-zone]");
     if (!b) return;
-    if (S.zone !== b.dataset.zone) { S.forfait = null; S.pv = null; }
+    if (S.zone !== b.dataset.zone || S.roam) { S.forfait = null; S.pv = null; }
+    S.roam = null;
     S.zone = b.dataset.zone;
     try { localStorage.setItem("aderlink-zone", S.zone); } catch (err) { /* ignoré */ }
     renderRouters();
@@ -282,7 +308,7 @@
   // --- 3. quantité ---------------------------------------------------------------------------
   function renderQuantite() {
     var f = S.forfait;
-    $("crumbs").innerHTML = "<span>" + esc(zoneObj().name) + "</span><span aria-hidden='true'>›</span><span>" + esc(S.pv ? S.pv.name : "") +
+    $("crumbs").innerHTML = "<span>" + esc(S.roam ? (zoneObj().roaming || {}).name : zoneObj().name) + "</span><span aria-hidden='true'>›</span><span>" + esc(S.pv ? S.pv.name : "") +
       "</span><span aria-hidden='true'>›</span><span>" + esc(f.name) + "</span>";
     if (!$("codeLen").dataset.touched) $("codeLen").value = zoneObj().code_length || 8;
     lenUi();
@@ -291,7 +317,7 @@
       (f.uptime_s ? tile("t-time", "Durée", esc(dur(f.uptime_s))) : "") +
       tile("t-val", "Validité", esc(f.validity_s ? dur(f.validity_s) : "Sans limite")) +
       tile("t-data", "Données", esc(data(f.data_mb)));
-    var ro = zoneObj().roaming;
+    var ro = S.roam ? zoneObj().roaming : null;
     $("roBox").hidden = !ro;
     if (ro) $("roText").textContent = "Valable sur les " + ro.routers + " routeurs du réseau « " + ro.name + " »";
     hideNotice("createNotice");
@@ -328,12 +354,12 @@
     btn.disabled = true; btn.textContent = "Envoi au routeur… (" + n + " tickets)";
     hideNotice("createNotice");
     api("/api/batches", { forfait_id: S.forfait.id, pos_id: S.pv ? S.pv.id : null, count: n, code_length: len, password_mode: $("pwMode").value, note: $("note").value,
-      roaming: !!zoneObj().roaming && $("roOn").checked })
+      roaming: !!S.roam })
       .then(function (d) {
         S.result = d;
         $("doneTitle").textContent = "Lot n° " + d.id + " généré";
         $("doneSub").innerHTML = "<strong>" + nf.format(d.created) + " ticket" + (d.created > 1 ? "s" : "") + " « " + esc(S.forfait.name) + " »</strong> ajouté" +
-          (d.created > 1 ? "s" : "") + (d.roaming ? " · <span class='ro-badge'>ADER Roaming</span> valables sur tout le réseau « " + esc(zoneObj().roaming.name) + " »" : " sur " + esc(zoneObj().name)) + " · valeur " + nf.format(d.created * S.forfait.price) + " F CFA" +
+          (d.created > 1 ? "s" : "") + (d.roaming ? " · <span class='ro-badge'>ADER Roaming</span> valables sur tout le réseau « " + esc((zoneObj().roaming || {}).name) + " »" : " sur " + esc(zoneObj().name)) + " · valeur " + nf.format(d.created * S.forfait.price) + " F CFA" +
           (d.error ? "<br><span class='err-text'>Arrêt après une erreur du routeur : " + esc(d.error) + "</span>" : "");
         $("donePrint").href = "/imprimer?lot=" + d.id;
         $("note").value = "";
