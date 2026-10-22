@@ -42,12 +42,14 @@
   function money(b) { return nf.format(b.price) + " " + (b.currency || "FCFA"); }
   function pairs(code) { return code.replace(/(\d{2})(?=\d)/g, "$1 "); }
 
-  // Petit ticket : nom du réseau, code dans un cadre coloré, « durée • prix • validité »
+  // Petit ticket : l'en-tête ADER LINK (logo, Wi-Fi, prix), le code, puis données et validité
   function small(code, b) {
-    var main = b.uptime_s ? dur(b.uptime_s) : b.data_mb ? data(b.data_mb) : "Illimité";
-    var line = [main, money(b), b.validity_s ? longDur(b.validity_s) : ""].filter(Boolean).join(" • ");
+    var line = [+b.data_mb ? data(b.data_mb) : "", b.validity_s ? "Validité " + longDur(b.validity_s) : "Sans limite de validité"].filter(Boolean).join(" • ");
     return '<div class="tk c-' + esc(b.color || "bleu") + '">' +
-      '<div class="tk-head"><span class="tk-ico">' + WIFI + '</span><span class="tk-name">' + esc(b.ssid) + '</span><span class="tk-ico tk-ico-r">' + ROUTER + "</span></div>" +
+      '<div class="tk-band"><img class="tk-mark" src="/static/logo-blue.svg" alt="">' +
+      '<div class="tk-brand"><img class="tk-word" src="/static/' + (b.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg") + '" alt="ADER LINK">' +
+      '<div class="tk-ssid">' + esc(b.ssid) + "</div></div>" +
+      '<div class="tk-price">' + nf.format(b.price) + "<small>" + esc(b.currency === "FCFA" ? "F" : (b.currency || "F")) + "</small></div></div>" +
       '<div class="tk-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +
       '<div class="tk-line">' + esc(line) + "</div></div>";
   }

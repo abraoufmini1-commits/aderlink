@@ -86,38 +86,44 @@ body {
 .foot { margin-top: auto; border-top: 0.2mm solid #e3e9f2; padding-top: 1.2mm; font-size: 1.95mm; color: var(--ink-2); display: flex; justify-content: space-between; gap: 2mm; }
 .demo { background: #fff; color: var(--orange); font-weight: 800; font-size: 2.1mm; padding: 0.4mm 1.4mm; border-radius: 1mm; margin-left: 1.5mm; }
 
-/* --- Petits tickets 63 × 25 mm (3 × 11 par page) --- */
+/* --- Petits tickets : en-tête ADER LINK + code + ligne --- */
 .sheet-small { padding: 11mm 10.5mm; }
 .grid-small { display: grid; grid-template-columns: repeat(3, 63mm); grid-auto-rows: 25mm; }
 .tk {
-  width: 63mm; height: 25mm; border: 0.3mm solid #333c4a; padding: 1.4mm 2.2mm 1.2mm;
-  display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: #fff;
+  width: 63mm; height: 25mm; outline: 0.25mm dashed #9aa6b8; outline-offset: -0.125mm;
+  display: flex; flex-direction: column; overflow: hidden; background: #fff;
 }
-.tk-head { display: flex; align-items: center; gap: 1.5mm; }
-.tk-name {
-  flex: 1; text-align: center; font-weight: 800; font-size: 2.9mm; letter-spacing: 0.02em; text-transform: uppercase;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink);
+.tk-band {
+  height: 8.5mm; flex: none; display: flex; align-items: center; gap: 1.6mm; padding: 0 2mm;
+  background: linear-gradient(135deg, var(--c1, #0a3f8a), var(--c2, #0d4fa8)); color: #fff;
 }
-.tk-ico { width: 4.2mm; height: 4.2mm; color: var(--c2, #0d4fa8); flex: none; }
-.tk-ico-r { color: var(--chip, #f08a1c); }
-.tk-ico svg { width: 100%; height: 100%; display: block; }
+.tk-mark { width: 5mm; height: 5mm; background: #fff; border-radius: 1.2mm; padding: 0.6mm; flex: none; }
+.tk-brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5mm; }
+.tk-word { height: 2.3mm; width: auto; display: block; align-self: flex-start; }
+.tk-ssid { font-size: 1.9mm; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+.tk-price { background: var(--chip, #f08a1c); color: #fff; font-weight: 800; font-size: 2.9mm; padding: 0.8mm 1.5mm; border-radius: 1.2mm; white-space: nowrap; line-height: 1.1; flex: none; }
+.tk-price small { font-size: 1.9mm; margin-left: 0.4mm; }
 .tk-code {
-  border: 0.35mm dashed var(--c2, #0d4fa8); background: var(--cs, #eef4fc); border-radius: 1mm;
-  text-align: center; font-weight: 800; font-size: 6.4mm; line-height: 1.25; letter-spacing: 0.3mm;
+  margin: 1.6mm 2.2mm 0; border: 0.3mm dashed var(--c2, #0d4fa8); background: var(--cs, #eef4fc); border-radius: 1mm;
+  text-align: center; font-weight: 800; font-size: 6mm; line-height: 1.3; letter-spacing: 0.3mm;
   font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace; color: var(--ink);
 }
-.tk-code.long { font-size: 5mm; }
-.tk-line { text-align: center; font-size: 2.35mm; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-code.long { font-size: 4.8mm; }
+.tk-line { margin-top: auto; padding: 0 2mm 1.2mm; text-align: center; font-size: 2.3mm; font-weight: 700; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* --- Petits tickets 39,6 × 20,3 mm (5 × 14 = 70 par page) --- */
 .sheet-mini { padding: 6mm 6mm; }
 .grid-mini { grid-template-columns: repeat(5, 39.6mm); grid-auto-rows: 20.35mm; }
-.grid-mini .tk { width: 39.6mm; height: 20.35mm; padding: 1mm 1.4mm 0.9mm; border-width: 0.25mm; }
-.grid-mini .tk-head { gap: 1mm; }
-.grid-mini .tk-ico { width: 3mm; height: 3mm; }
-.grid-mini .tk-name { font-size: 2.1mm; }
-.grid-mini .tk-code { font-size: 4.3mm; line-height: 1.3; letter-spacing: 0.1mm; border-width: 0.3mm; background: var(--c2, #0d4fa8); color: #fff; border-color: var(--c1, #0a3f8a); }
+.grid-mini .tk { width: 39.6mm; height: 20.35mm; }
+.grid-mini .tk-band { height: 6.4mm; gap: 1mm; padding: 0 1.2mm; }
+.grid-mini .tk-mark { width: 3.8mm; height: 3.8mm; border-radius: 0.9mm; padding: 0.45mm; }
+.grid-mini .tk-word { height: 1.7mm; }
+.grid-mini .tk-ssid { font-size: 1.45mm; }
+.grid-mini .tk-price { font-size: 2.2mm; padding: 0.6mm 1mm; border-radius: 0.9mm; }
+.grid-mini .tk-price small { font-size: 1.5mm; }
+.grid-mini .tk-code { margin: 1.3mm 1.4mm 0; font-size: 4.3mm; line-height: 1.3; letter-spacing: 0.1mm; }
 .grid-mini .tk-code.long { font-size: 3.4mm; }
-.grid-mini .tk-line { font-size: 1.95mm; }
+.grid-mini .tk-line { font-size: 1.75mm; padding: 0 1.2mm 0.9mm; }
 .tb-format { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
 .tb-format select { min-height: 40px; border: 1px solid #cfd8e5; border-radius: 10px; padding: 0 10px; font: inherit; color: var(--ink); background: #fff; }
 
