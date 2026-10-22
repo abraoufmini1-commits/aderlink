@@ -36,25 +36,37 @@
       return "<button type='button' data-z='" + esc(z.id) + "' aria-pressed='" + (filter === z.id) + "'>" + esc(z.name) + "</button>";
     })).join("") : "";
     var list = all.filter(function (b) { return !filter || b.zone_id === filter; });
-    var sold = list.reduce(function (a, b) { return a + b.used * b.price; }, 0);
-    $("lotsSub").textContent = nf.format(list.length) + " lot" + (list.length > 1 ? "s" : "") + " · " + nf.format(sold) + " F CFA vendus";
+    var T = { count: 0, left: 0, live: 0, expired: 0, removed: 0, amount: 0 };
+    list.forEach(function (b) {
+      T.count += b.count; T.left += b.count - b.used - b.removed; T.live += b.used - b.expired;
+      T.expired += b.expired; T.removed += b.removed; T.amount += b.used * b.price;
+    });
+    $("lotsSub").textContent = nf.format(list.length) + " lot" + (list.length > 1 ? "s" : "") + " · " + nf.format(T.amount) + " F CFA vendus";
+    var stat = function (cls, n, label) { return "<div class='lstat " + cls + "'><strong class='num'>" + nf.format(n) + "</strong><span>" + label + "</span></div>"; };
+    $("lotsTotal").innerHTML = list.length ? "<div class='lstats'>" + stat("ls-total", T.count, "Tickets au total") + stat("ls-left", T.left, "Restants") +
+      stat("ls-live", T.live, "Utilisés, en cours") + stat("ls-exp", T.expired, "Expirés") + (T.removed ? stat("ls-del", T.removed, "Supprimés") : "") + "</div>" : "";
     $("lots").innerHTML = list.length ? list.map(function (b) {
-      var left = b.count - b.used - b.removed;
-      var pct = b.count ? Math.round(100 * b.used / b.count) : 0;
+      var left = b.count - b.used - b.removed, live = b.used - b.expired;
+      var pct = function (n) { return b.count ? (100 * n / b.count).toFixed(2) : 0; };
+      var soldPct = b.count ? Math.round(100 * b.used / b.count) : 0;
       return "<article class='card lot-card' id='lot-" + b.id + "'>" +
         "<div class='lot-head'><span class='lot-ico' aria-hidden='true'>" + window.AderShell.icon("ticket") + "</span>" +
-        "<div class='lot-main'><strong>" + nf.format(b.count) + " tickets « " + esc(b.note || b.profile) + " »</strong>" +
-        "<span class='zone-meta'>Lot n° " + b.id + " · " + esc(b.zone_name) + (b.pos_name ? " · " + esc(b.pos_name) : "") + " · " + date(b.created_at) + "</span></div>" +
-        "<div class='lot-pct'><strong class='num'>" + pct + " %</strong><span class='zone-meta'>vendus</span></div></div>" +
-        "<div class='progress'><span data-w='" + pct + "'></span></div>" +
-        "<div class='lot-facts'><span><b class='num'>" + nf.format(b.price) + " F</b> l'unité</span><span>" + dur(b.uptime_s) + " · " + data(b.data_mb) + "</span>" +
-        "<span><b class='num'>" + nf.format(b.used) + "</b> vendus · <b class='num'>" + nf.format(left) + "</b> en stock" + (b.removed ? " · " + b.removed + " supprimés" : "") + "</span>" +
-        "<span>Vendu : <b class='num'>" + nf.format(b.used * b.price) + " F</b></span></div>" +
+        "<div class='lot-main'><strong>« " + esc(b.note || b.profile) + " »</strong>" +
+        "<span class='zone-meta'>Lot n° " + b.id + " · " + esc(b.zone_name) + (b.pos_name ? " · " + esc(b.pos_name) : "") + " · " + date(b.created_at) + "</span>" +
+        "<span class='zone-meta'><b class='num'>" + nf.format(b.price) + " F</b> l'unité · " + dur(b.uptime_s) + " · " + data(b.data_mb) + "</span></div>" +
+        "<div class='lot-pct'><strong class='num'>" + soldPct + " %</strong><span class='zone-meta'>utilisés</span></div></div>" +
+        "<div class='lstats lstats-sm'>" + stat("ls-total", b.count, "Total") + stat("ls-left", left, "Restants") +
+        stat("ls-live", live, "En cours") + stat("ls-exp", b.expired, "Expirés") + (b.removed ? stat("ls-del", b.removed, "Supprimés") : "") + "</div>" +
+        "<div class='stack' role='img' aria-label='" + nf.format(b.used) + " utilisés sur " + nf.format(b.count) + "'>" +
+        "<span class='sk-live' data-w='" + pct(live) + "'></span><span class='sk-exp' data-w='" + pct(b.expired) + "'></span>" +
+        "<span class='sk-del' data-w='" + pct(b.removed) + "'></span></div>" +
+        "<div class='lot-facts'><span>Vendu : <b class='num'>" + nf.format(b.used * b.price) + " F</b></span>" +
+        "<span>Reste à vendre : <b class='num'>" + nf.format(left * b.price) + " F</b></span></div>" +
         "<div class='lot-actions'><a class='btn btn-sm' href='/imprimer?lot=" + b.id + "' target='_blank'>Imprimer les cartes</a>" +
         (left > 0 ? "<button class='btn btn-sm btn-outline need-gerant' type='button' data-remove='" + b.id + "' data-left='" + left + "'>Supprimer " + left + " non utilisés</button>" : "") +
         "</div></article>";
     }).join("") : "<div class='card empty'>Aucun lot. <a class='link' href='/tickets'>Créer des tickets</a></div>";
-    $("lots").querySelectorAll(".progress span").forEach(function (s) { s.style.width = s.dataset.w + "%"; });
+    $("lots").querySelectorAll(".stack span").forEach(function (s) { s.style.width = s.dataset.w + "%"; });
     var target = location.hash && document.querySelector(location.hash);
     if (target) { target.classList.add("is-target"); target.scrollIntoView({ block: "center" }); }
   }
