@@ -283,7 +283,7 @@ class Tickets:
         used, expired, rem = stats[0]
         return {
             "id": bid, "zone_id": zone_id, "zone_name": zone.get("name", zone_id),
-            "ssid": zone.get("ssid") or zone.get("name", ""),
+            "ssid": zone.get("ssid") or zone.get("name", ""), "currency": zone.get("currency") or "FCFA",
             "created_at": created, "count": count, "profile": profile, "price": price,
             "uptime_s": uptime_s, "data_mb": data_mb, "validity_s": validity_s, "note": note,
             "used": used or 0, "expired": expired or 0, "removed": rem or 0,

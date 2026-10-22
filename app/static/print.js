@@ -32,7 +32,7 @@
       '<div class="band"><div class="brand"><img class="mark" src="/static/logo-blue.svg" alt="">' +
       '<div><div class="brand-name"><img class="word" src="/static/' + (b.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg") + '" alt="ADER LINK">' + (b.demo ? '<span class="demo">Démo</span>' : "") + "</div>" +
       '<div class="ssid">Wi-Fi : ' + esc(b.ssid) + "</div></div></div>" +
-      '<div class="price">' + nf.format(b.price) + " <small>F CFA</small></div></div>" +
+      '<div class="price">' + nf.format(b.price) + " <small>" + esc(b.currency === "FCFA" ? "F CFA" : (b.currency || "F CFA")) + "</small></div></div>" +
       '<div class="body"><div class="code-box"><div class="code-label">Code d\'accès</div>' +
       '<div class="code' + (code.length > 8 ? " long" : "") + '">' + esc(spaced(code)) + "</div></div>" +
       '<div class="specs">' +
@@ -51,7 +51,7 @@
       .map(function (t) { return t.code; });
     $("sub").textContent = nf.format(codes.length) + " carte" + (codes.length > 1 ? "s" : "") + " · " +
       Math.max(1, Math.ceil(codes.length / PER_PAGE)) + " page" + (codes.length > PER_PAGE ? "s" : "") + " A4 · " +
-      nf.format(batch.price) + " F CFA l'unité";
+      nf.format(batch.price) + " " + (batch.currency === "FCFA" ? "F CFA" : (batch.currency || "F CFA")) + " l'unité";
     if (!codes.length) {
       $("sheets").innerHTML = '<div class="empty-msg">Aucune carte à imprimer : tous les tickets de ce lot ont été utilisés ou supprimés.</div>';
       $("printBtn").disabled = true;

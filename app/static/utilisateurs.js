@@ -54,7 +54,14 @@
   // --- liste ---------------------------------------------------------------------------
   function load() {
     return api("/api/users").then(function (d) {
-      S.users = d.users; S.zones = d.zones;
+      S.users = d.users; S.zones = d.zones; S.role = d.role;
+      var client = d.role === "client";
+      document.querySelector(".u-tabs").hidden = client;
+      if (client) {
+        setTab("staff");
+        document.querySelector("h1").textContent = "Mon équipe";
+        document.querySelector(".page-head .subtitle").textContent = "Vos gérants et revendeurs, sur vos routeurs. Ils suivent votre abonnement.";
+      }
       api("/api/me").then(function (m) { $("demoBanner").hidden = !m.demo; });
       render();
     }).catch(function (e) { $("list").innerHTML = "<div class='card empty'>" + esc(e.message) + "</div>"; });
@@ -126,13 +133,19 @@
         "<div class='rc-head'><span class='avatar " + (u.role === "gerant" ? "av-navy" : "av-orange") + "'>" + esc(initials(u.name)) + "</span>" +
         "<div class='rc-main'><div class='rc-name'>" + esc(u.name) + "</div>" +
         "<div class='rc-meta'><span class='mono'>" + esc(u.username) + "</span>" + (u.phone ? " · " + esc(u.phone) : "") + "</div>" +
-        "<div class='rc-meta'>" + ic("router") + " " + esc(u.zone_names.join(", ") || "Aucun routeur") + "</div></div>" + st + "</div>" +
+        "<div class='rc-meta'>" + ic("router") + " " + esc(u.zone_names.join(", ") || "Aucun routeur") + "</div>" +
+        (u.parent_name && S.role === "admin" ? "<div class='rc-meta'>" + ic("user") + " Équipe de <strong>" + esc(u.parent_name) + "</strong></div>" : "") + "</div>" + st + "</div>" +
         "<div class='u-kpis'>" + kpi("Vendus ce mois", nf.format(s.sold)) + kpi("Montant", money(s.amount)) +
         (u.role === "revendeur" ? kpi("Commission " + nf.format(u.commission) + " %", money(s.commission_due), "u-kpi-orange") : kpi("Lots créés", nf.format(s.lots))) + "</div>" +
-        (function () { var x = sub(u); return "<button type='button' class='sub-bar " + x.cls + "' data-act='subscription' data-id='" + u.id + "'>" + ic("clock") +
-          "<span><strong>" + esc(x.title) + "</strong><small>" + esc(x.text) + "</small></span><em>Gérer</em></button>"; })() +
+        (function () {
+          var x = sub(u);
+          if (u.follows_parent) return "<div class='sub-bar " + x.cls + "'>" + ic("clock") + "<span><strong>" + esc(x.title) + "</strong><small>Suit l'abonnement de " +
+            esc(u.parent_name || "son client") + "</small></span></div>";
+          return "<button type='button' class='sub-bar " + x.cls + "' data-act='subscription' data-id='" + u.id + "'>" + ic("clock") +
+            "<span><strong>" + esc(x.title) + "</strong><small>" + esc(x.text) + "</small></span><em>Gérer</em></button>";
+        })() +
         "<div class='rc-meta u-last'>Dernière connexion : " + when(u.last_login) + "</div>" +
-        "<div class='act-grid act-grid-4'>" + act("subscription", "Abonnement", "clock") + act("edit", "Modifier", "pencil") + act("password", "Mot de passe", "key") +
+        "<div class='act-grid " + (u.follows_parent ? "act-grid-3" : "act-grid-4") + "'>" + (u.follows_parent ? "" : act("subscription", "Abonnement", "clock")) + act("edit", "Modifier", "pencil") + act("password", "Mot de passe", "key") +
         act("toggle", u.active ? "Désactiver" : "Activer", u.active ? "x" : "check") + "</div></article>";
     }).join("") : "<div class='card empty'>Aucun gérant ni revendeur pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour en créer un.</div>";
   }
@@ -196,6 +209,7 @@
 
   // --- ajouter / modifier --------------------------------------------------------------
   function edit(u, defRole) {
+    if (S.role === "client" && (!defRole || defRole === "client")) defRole = "revendeur";
     var v = u || { name: "", username: "", phone: "", role: defRole || "client", max_routers: 1, zones: S.zones.length === 1 ? [S.zones[0].id] : [], commission: 0 };
     var f = function (id, label, value, attrs, hint) {
       return "<div class='f'><label for='" + id + "'>" + label + "</label><input id='" + id + "' value='" + esc(value) + "' " + (attrs || "") + ">" +
@@ -210,7 +224,7 @@
       f("uLogin", "Identifiant de connexion <span class='req'>*</span>", v.username, "maxlength='32' autocapitalize='off' spellcheck='false' placeholder='ex : moussa'", "Lettres minuscules et chiffres, sans espace") +
       (u ? "" : f("uPwd", "Mot de passe", "", "type='text' autocapitalize='off' spellcheck='false' placeholder='Laisser vide = créé automatiquement'", "6 caractères minimum")) +
       "<fieldset class='span2 role-pick'><legend>Rôle <span class='req'>*</span></legend>" +
-      role("client", "Client", "Ajoute et gère ses propres routeurs, jusqu'à sa limite") +
+      (S.role === "admin" ? role("client", "Client", "Ajoute et gère ses propres routeurs, jusqu'à sa limite") : "") +
       role("revendeur", "Revendeur", "Crée et imprime ses tickets, voit ses ventes") +
       role("gerant", "Gérant", "Tickets, profils et lots de vos routeurs") + "</fieldset>" +
       "<div class='f' id='uMaxBox'><label for='uMax'>Routeurs autorisés</label><div class='unit-field'><input id='uMax' type='number' min='0' max='1000' step='1' inputmode='numeric' value='" + esc(v.max_routers || 1) + "'><span class='unit'>routeur(s)</span></div>" +
@@ -221,7 +235,7 @@
       }).join("") : "<p class='pane-sub'>Ajoutez d'abord un routeur.</p>") + "</fieldset>" +
       "<div class='f' id='uComBox'><label for='uCom'>Commission du revendeur</label><div class='unit-field'><input id='uCom' type='number' min='0' max='100' step='any' inputmode='decimal' value='" + esc(v.commission || "") + "' placeholder='0'><span class='unit'>%</span></div>" +
       "<div class='hint'>Calculée sur les tickets vendus</div></div>" +
-      (u ? "" : "<fieldset class='span2 sub-pick'><legend>Abonnement de départ</legend>" +
+      (u || S.role !== "admin" ? "" : "<fieldset class='span2 sub-pick'><legend>Abonnement de départ</legend>" +
         "<div class='f'><div class='sub-add'><input id='uSubN' type='number' min='1' step='1' inputmode='numeric' value='1' aria-label='Durée'>" +
         "<select id='uSubU' aria-label='Unité'><option value='heure'>heure(s)</option><option value='jour'>jour(s)</option><option value='mois' selected>mois</option><option value='an'>an(s)</option></select></div></div>" +
         "<label class='check-opt'><input type='checkbox' id='uSubFree'><span>Sans limite (pas de date de fin)</span></label></fieldset>") +
@@ -230,7 +244,7 @@
       "<button class='btn-prev' type='button' data-close>Annuler</button>" + (u ? "<button class='btn btn-danger' type='button' id='uDel'>Supprimer</button>" : "") +
       "<button class='btn btn-big' type='button' id='uSave'>Enregistrer</button>");
     if (u) $("uDel").addEventListener("click", function () { remove(u); });
-    else $("uSubFree").addEventListener("change", function () { $("uSubN").disabled = $("uSubU").disabled = this.checked; });
+    else if ($("uSubFree")) $("uSubFree").addEventListener("change", function () { $("uSubN").disabled = $("uSubU").disabled = this.checked; });
     function syncRole() {
       var r = document.querySelector("input[name=uRole]:checked").value;
       $("uComBox").hidden = r !== "revendeur";
@@ -254,7 +268,7 @@
       };
       if (!u) {
         data.password = $("uPwd").value;
-        data.subscription = $("uSubFree").checked ? { unlimited: true } : { unlimited: false, n: $("uSubN").value, unit: $("uSubU").value };
+        if ($("uSubFree")) data.subscription = $("uSubFree").checked ? { unlimited: true } : { unlimited: false, n: $("uSubN").value, unit: $("uSubU").value };
       }
       var btn = $("uSave"); btn.disabled = true;
       api(u ? "/api/users/" + u.id + "/update" : "/api/users", data).then(function (res) {

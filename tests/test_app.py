@@ -2,6 +2,7 @@
 
     python3 -m unittest discover -s tests -v
 """
+import base64
 import json
 import socket
 import threading
@@ -429,7 +430,7 @@ class UsersAndRolesTests(unittest.TestCase):
         from app.users import Users
         cls.config = {
             "admin": {"username": "admin", "password_hash": hash_password("admin-secret-1")},
-            "secret_key": "y" * 64, "poll_seconds": 30,
+            "secret_key": "y" * 64, "poll_seconds": 30, "server_ip_for_routers": "127.0.0.1",
             "zones": [{"id": "a", "name": "Zone A", "router": {"host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}},
                       {"id": "b", "name": "Zone B", "router": {"host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}}],
         }
@@ -606,7 +607,7 @@ class UsersAndRolesTests(unittest.TestCase):
         d = self.get(t, "/api/routers")
         self.assertEqual((d["routers"], d["quota"]), ([], {"max": 1, "used": 0}))
         self.assertEqual(self.get(t, "/api/zones")["zones"], [])  # ne voit pas les routeurs des autres
-        code, r = self.post(t, "/api/routers", {"name": "Zone A", "host": "10.0.0.9"})  # même nom qu'ailleurs : permis
+        code, r = self.post(t, "/api/routers", {"name": "Zone A", "code_length": 8, "currency": "FCFA"})  # même nom qu'ailleurs : permis
         self.assertEqual(code, 200, r)
         self.assertEqual(r["owner"], "tassi")
         code, err = self.post(t, "/api/routers", {"name": "Deuxième", "host": "10.0.0.10"})
@@ -615,9 +616,47 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertEqual(self.post(t, "/api/routers/a/update", {"name": "Pirate", "host": "1.1.1.1"})[0], 403)
         with self.assertRaises(urllib.error.HTTPError):
             t.open(self.base + "/api/routers/a/install")
-        self.assertEqual(len(self.get(t, f"/api/routers/{r['id']}/install")["line"]) > 10, True)
+        self.assertFalse(r["installed"])  # créé sans adresse IP : en attente d'installation
+        self.assertEqual(r["status"], "pending")
+        info = self.get(t, f"/api/routers/{r['id']}/install")
+        script = urllib.request.urlopen(info["url"]).read().decode()
+        self.assertIn("/ok", script)
+        self.assertEqual(urllib.request.urlopen(info["url"][:-4] + "/ok").read(), b"ok")  # le routeur se signale
+        mine = self.get(t, "/api/routers")["routers"][0]
+        self.assertEqual((mine["installed"], mine["host"]), (True, "127.0.0.1"))
+        # modifier sans toucher à l'IP garde l'adresse détectée ; logo carré
+        self.post(t, f"/api/routers/{r['id']}/update", {"name": "Zone A", "host": "", "currency": "F"})
+        mine = self.get(t, "/api/routers")["routers"][0]
+        self.assertEqual((mine["host"], mine["currency"]), ("127.0.0.1", "F"))
+        png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode()
+        self.assertEqual(self.post(t, f"/api/routers/{r['id']}/logo", {"image": png})[0], 200)
+        self.assertEqual(t.open(self.base + f"/api/routers/{r['id']}/logo").read()[:4], b"\x89PNG")
+        self.assertEqual(self.post(t, f"/api/routers/{r['id']}/logo", {"image": "data:text/html;base64,AAAA"})[0], 400)
+        self.assertEqual(self.post(t, "/api/routers/a/logo", {"image": png})[0], 403)
         self.assertEqual(self.post(t, "/api/forfaits", {"zone_id": r["id"], "name": "1H", "price": 100})[0], 200)
-        self.assertEqual(self.post(t, "/api/users", {})[0], 403)
+        self.assertEqual(self.post(t, "/api/users", {})[0], 400)  # formulaire vide
+        # équipe du client : seulement sur ses routeurs, jamais un autre client
+        self.assertEqual(self.post(t, "/api/users", {"name": "X", "username": "xclient", "role": "client"})[0], 400)
+        self.assertEqual(self.post(t, "/api/users", {"name": "Vol", "username": "vol", "role": "revendeur", "zones": ["a"]})[0], 400)
+        code, rev = self.post(t, "/api/users", {"name": "Issa", "username": "issa", "role": "revendeur",
+                                                "zones": [r["id"]], "password": "issa-1234"})
+        self.assertEqual(code, 200, rev)
+        self.assertEqual(rev["parent"], "tassi")
+        team = self.get(t, "/api/users")["users"]
+        self.assertEqual([u["username"] for u in team], ["issa"])  # ne voit pas les autres comptes
+        self.assertEqual(self.post(t, f"/api/users/{rev['id']}/subscription", {"action": "unlimited"})[0], 403)
+        self.assertEqual(self.post(t, f"/api/users/{rev['id']}/routers", {"max_routers": 9})[0], 403)
+        others = [u for u in self.get(admin, "/api/users")["users"] if u["username"] != "issa"]
+        self.assertEqual(self.post(t, f"/api/users/{others[0]['id']}/disable", {})[0], 403)
+        issa = self.login("issa", "issa-1234")
+        self.assertEqual([z["id"] for z in self.get(issa, "/api/zones")["zones"]], [r["id"]])
+        # l'équipe suit l'abonnement du client
+        self.post(admin, f"/api/users/{c['id']}/subscription", {"action": "stop"})
+        time.sleep(1.1)
+        with self.assertRaises(urllib.error.HTTPError):
+            issa.open(self.base + "/api/me")
+        self.post(admin, f"/api/users/{c['id']}/subscription", {"action": "unlimited"})
+        self.assertEqual(self.get(self.login("issa", "issa-1234"), "/api/me")["parent"], "tassi")
         # l'administrateur augmente la limite à la main
         code, up = self.post(admin, f"/api/users/{c['id']}/routers", {"max_routers": 3, "note": "payé"})
         self.assertEqual((up["max_routers"], up["routers_used"]), (3, 1))
@@ -631,5 +670,6 @@ class UsersAndRolesTests(unittest.TestCase):
         # suppression du client : ses routeurs reviennent à l'administrateur
         self.post(admin, f"/api/users/{c['id']}/delete", {})
         self.assertFalse([z for z in self.config["zones"] if z.get("owner") == "tassi"])
+        self.assertFalse([u for u in self.get(admin, "/api/users")["users"] if u["username"] == "issa"])  # équipe supprimée
         for z in [z for z in self.config["zones"] if z["id"] not in ("a", "b")]:
             self.config["zones"].remove(z)

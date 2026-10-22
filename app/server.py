@@ -213,7 +213,7 @@ class App:
 PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
-         "/utilisateurs": ("utilisateurs.html", "users"), "/rapports": ("rapports.html", None), "/profil": ("profil.html", None)}
+         "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/profil": ("profil.html", None)}
 
 
 def make_handler(app):
@@ -290,11 +290,20 @@ def make_handler(app):
             from .tickets import TicketError
             from .users import UserError
             try:
-                return self.json(fn(), status)
+                out = fn()
+                if out is None:  # réponse déjà envoyée (image)
+                    return None
+                return self.json(out, status)
             except Forbidden as e:
                 return self.json({"error": str(e) or "Accès refusé"}, 403)
             except (RouterError, TicketError, UserError) as e:
                 return self.json({"error": str(e)}, 400)
+
+        def my_team(self, who, uid):
+            if who.role != "client" or not app.users:
+                return False
+            u = app.users.get(uid)
+            return bool(u and u.get("parent") == who.username)
 
         def need(self, cond, msg="Accès refusé pour votre compte"):
             if not cond:
@@ -317,7 +326,16 @@ def make_handler(app):
                 z = app.routers.by_token(p[len("/install/"):-4])
                 if not z:
                     return self.send(404, b"# Lien d'installation inconnu")
-                return self.send(200, app.routers.install_script(z).encode(), "text/plain; charset=utf-8")
+                return self.send(200, app.routers.install_script(z, self.headers.get("Host", "")).encode(),
+                                 "text/plain; charset=utf-8")
+            if p.startswith("/install/") and p.endswith("/ok") and app.routers:
+                z = app.routers.by_token(p[len("/install/"):-3])
+                if not z:
+                    return self.send(404, b"inconnu")
+                app.routers.installed(z, self.client_ip())
+                if app.collector and not app.demo:
+                    threading.Thread(target=app.collector.poll_all, daemon=True).start()
+                return self.send(200, b"ok")
             if p == "/healthz":
                 return self.send(200, b"ok")
             if p == "/login":
@@ -372,6 +390,11 @@ def make_handler(app):
                     for r in out["routers"]:
                         r["owner_name"] = names.get(r["owner"], r["owner"]) if r.get("owner") else None
                 return out
+            if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "logo":
+                self.need(who.can_zone(parts[3]))
+                logo = app.routers.logo(parts[3])
+                self.need(logo is not None, "Pas de logo")
+                return self.send(200, bytes(logo[1]), logo[0], {"Cache-Control": "private, max-age=86400"})
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))
@@ -397,14 +420,16 @@ def make_handler(app):
                 res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]
                 return {"results": res}
             if app.users and p == "/api/users":
-                self.need(who.can("users"))
+                self.need(who.can("team"))
                 off = app.offset()
                 month = time.localtime(time.time() + off - time.timezone)
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
-                return {"users": app.users.list(since), "zones": [{"id": z["id"], "name": z["name"]}
-                                                                  for z in app.config.get("zones", [])]}
+                mine = None if who.is_admin else who.username
+                return {"users": app.users.list(since, parent=mine), "role": who.role,
+                        "zones": [{"id": z["id"], "name": z["name"], "owner": z.get("owner")}
+                                  for z in app.config.get("zones", []) if who.can_zone(z["id"])]}
             if app.users and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit() and parts[4] == "history":
-                self.need(who.can("users"))
+                self.need(who.can("users") or self.my_team(who, int(parts[3])))
                 return {"history": app.users.history(int(parts[3]))}
             if app.updater and p == "/api/settings":
                 self.need(who.can("settings"))
@@ -424,7 +449,10 @@ def make_handler(app):
             who = self.who()
             if not who:
                 return self.json({"error": "Non connecté"}, 401)
-            length = min(int(self.headers.get("Content-Length", 0) or 0), 16384)
+            cap = 700_000 if p.endswith("/logo") else 16384  # un logo en base64, sinon de petits formulaires
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > cap:
+                return self.json({"error": "Envoi trop volumineux"}, 413)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
             except ValueError:
@@ -480,6 +508,7 @@ def make_handler(app):
                     return R.test(zid)
                 self.need(who.can("routers_write"))
                 acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
+                        "logo": lambda: R.set_logo(zid, body.get("image")),
                         "pv": lambda: R.create_pv(zid, body)}
                 if action in acts:
                     return acts[action]()
@@ -491,11 +520,12 @@ def make_handler(app):
             if U and p == "/api/me/password":
                 return U.change_own_password(who, body, lambda: app.save_config(app.config))
             if U and p == "/api/users":
-                self.need(who.can("users"))
-                return U.create(body)
+                self.need(who.can("team"))
+                return U.create(body, parent=None if who.is_admin else who.username)
             if U and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit():
-                self.need(who.can("users"))
                 uid, action = int(parts[3]), parts[4]
+                # le client ne gère que son équipe, et pas l'abonnement ni les routeurs autorisés
+                self.need(who.can("users") or (self.my_team(who, uid) and action not in ("subscription", "routers")))
                 acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),
                         "enable": lambda: U.set_active(uid, True), "disable": lambda: U.set_active(uid, False),
                         "subscription": lambda: U.subscription(uid, body),

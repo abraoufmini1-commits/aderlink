@@ -986,3 +986,32 @@ body[data-role="revendeur"] .need-gerant { display: none !important; }
   .c-acts .c-more { flex: none; }
   .ctable-card .table-scroll { overflow: visible; }
 }
+.act-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .act-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ===================== Nouveau routeur ===================== */
+.nr-form { display: flex; flex-direction: column; gap: 14px; }
+.nr-form .f > label, .nr-form .lbl { display: flex; align-items: center; gap: 6px; font-weight: 650; font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
+.nr-form .f > label svg, .nr-form .lbl svg { width: 16px; height: 16px; }
+.nr-form .more-toggle { margin: 0; }
+.logo-drop {
+  display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 2px dashed var(--border); border-radius: 14px;
+  background: var(--surface-2); cursor: pointer;
+}
+.logo-drop:hover, .logo-drop:focus-within { border-color: var(--blue-600); }
+.logo-drop span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.logo-drop small { color: var(--ink-3); font-size: 13px; }
+.logo-prev { width: 52px; height: 52px; border-radius: 12px; background: var(--blue-100); color: var(--blue-600); display: grid; place-items: center; overflow: hidden; flex: none; }
+.logo-prev svg { width: 24px; height: 24px; }
+.logo-prev img, .avatar-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-logo { padding: 0; overflow: hidden; background: #fff; border: 1px solid var(--border); }
+.pill-pending { background: color-mix(in srgb, var(--orange) 16%, var(--surface)); color: var(--orange-hover); }
+.wait-box { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; margin: 12px 0; background: var(--surface-2); font-weight: 650; color: var(--ink-2); }
+.wait-box:empty { display: none; }
+.wait-box.ok { background: var(--good-bg); color: var(--good); }
+.wait-box svg { width: 20px; height: 20px; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--orange); animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.bs-foot svg { width: 18px; height: 18px; flex: none; }
+.bs-foot .btn, .bs-foot .btn-prev { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

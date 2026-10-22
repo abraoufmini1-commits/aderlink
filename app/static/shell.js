@@ -24,6 +24,9 @@
     terminal: '<path d="m5 7 5 5-5 5M12 18h7"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+    upload: '<path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+    coins: '<circle cx="9" cy="9" r="6"/><path d="M15.5 9.5a6 6 0 1 1-6 6"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/>',
@@ -39,7 +42,7 @@
     { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
     { id: "rapports", href: "/rapports", label: "Rapport des ventes", icon: "chart" },
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
-    { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", need: "admin" },
+    { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", roles: "admin client" },
     { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
     { id: "profil", href: "/profil", label: "Mon profil", icon: "user" }
   ];
@@ -47,7 +50,7 @@
     { label: "Multi-zones", icon: "zones" },
     { label: "Analytique", icon: "trend" }
   ];
-  function need(m) { return m.need ? ' data-need="' + m.need + '"' : ""; }
+  function need(m) { return m.need ? ' data-need="' + m.need + '"' : m.roles ? ' data-roles="' + m.roles + '"' : ""; }
   function link(m) {
     return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + icon(m.icon) + "<span>" + m.label + "</span></a>";
   }
@@ -149,6 +152,10 @@
     document.getElementById("meRole").textContent = u.role_label;
     Array.prototype.forEach.call(document.querySelectorAll("[data-need]"), function (el) {
       if (rank[u.role] < rank[el.dataset.need]) el.hidden = true;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-roles]"), function (el) {
+      if (el.dataset.roles.split(" ").indexOf(u.role) < 0) el.hidden = true;
+      if (u.role === "client" && el.getAttribute("href") === "/utilisateurs") el.querySelector("span") ? el.querySelector("span").textContent = "Mon équipe" : el.textContent = "Mon équipe";
     });
     Array.prototype.forEach.call(document.querySelectorAll("[data-only]"), function (el) {
       el.hidden = el.dataset.only !== u.role;

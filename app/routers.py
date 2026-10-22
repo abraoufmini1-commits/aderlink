@@ -14,6 +14,7 @@ import time
 from .routeros import RouterOS, RouterOSError
 
 PUBLIC = ("id", "name", "location", "ssid", "code_length", "created_at")
+MAX_LOGO = 400_000  # octets
 
 
 class RouterError(Exception):
@@ -53,6 +54,7 @@ class Routers:
                 CREATE TABLE IF NOT EXISTS points_vente (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, zone_id TEXT, name TEXT, code TEXT,
                     created_at INTEGER, archived INTEGER DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS zone_logos (zone_id TEXT PRIMARY KEY, mime TEXT, data BLOB);
                 """
             )
             store.db.commit()
@@ -90,6 +92,12 @@ class Routers:
             d[k] = s.get(k)
         d["points_vente"] = self.list_pv(z["id"])
         d["owner"] = z.get("owner")
+        d["currency"] = z.get("currency", "FCFA")
+        d["installed"] = bool(r.get("host"))
+        d["auto_host"] = bool(r.get("auto_host"))
+        d["has_logo"] = self.logo(z["id"]) is not None
+        if not d["installed"]:
+            d["status"] = "pending"
         return d
 
     # --- routeurs ---------------------------------------------------------------------
@@ -102,10 +110,10 @@ class Routers:
     def _validate(self, data, current=None, owner=None):
         name = _clean(data.get("name"), 40)
         if not name:
-            raise RouterError("Donnez un nom au site")
+            raise RouterError("Donnez un nom au réseau")
         host = _clean(data.get("host"), 64).replace(" ", "")
-        if not host or not re.fullmatch(r"[A-Za-z0-9.\-:]+", host):
-            raise RouterError("Adresse IP du routeur invalide (ex. 10.10.0.1)")
+        if host and not re.fullmatch(r"[A-Za-z0-9.\-:]+", host):
+            raise RouterError("Adresse IP du routeur invalide (ex. 10.10.0.1) — ou laissez vide")
         try:
             port = int(data.get("port") or 8728)
             code_length = int(data.get("code_length") or 8)
@@ -118,9 +126,14 @@ class Routers:
         owner = current.get("owner") if current else owner
         for z in self.zones():  # le nom doit être unique chez un même propriétaire
             if z is not current and z.get("owner") == owner and z["name"].lower() == name.lower():
-                raise RouterError("Un routeur porte déjà ce nom")
+                raise RouterError("Vous avez déjà un routeur avec ce nom")
         wan = _clean(data.get("wan_interface") or "ether1", 32).replace(" ", "")
         return name, host, port, code_length, wan
+
+    @staticmethod
+    def _currency(data, current="FCFA"):
+        cur = _clean(data.get("currency"), 8) if "currency" in data else current
+        return cur or "FCFA"
 
     def create(self, data, owner=None):
         name, host, port, code_length, wan = self._validate(data, owner=owner)
@@ -129,8 +142,9 @@ class Routers:
             z = {
                 "id": zid, "name": name, "location": _clean(data.get("location"), 60),
                 "ssid": _clean(data.get("ssid"), 32) or name, "code_length": code_length,
+                "currency": self._currency(data),
                 "created_at": int(time.time()), "install_token": secrets.token_urlsafe(18),
-                "router": {"host": host, "port": port, "ssl": False, "username": "aderlink",
+                "router": {"host": host, "auto_host": not host, "port": port, "ssl": False, "username": "aderlink",
                            "password": secrets.token_urlsafe(15).replace("-", "x").replace("_", "y"),
                            "wan_interface": wan},
             }
@@ -145,9 +159,16 @@ class Routers:
         z = self.zone(zone_id)
         name, host, port, code_length, wan = self._validate(data, current=z)
         with self.lock:
-            z.update(name=name, location=_clean(data.get("location"), 60),
-                     ssid=_clean(data.get("ssid"), 32) or name, code_length=code_length)
-            z.setdefault("router", {}).update(host=host, port=port, wan_interface=wan)
+            z.update(name=name, location=_clean(data.get("location"), 60) if "location" in data else z.get("location", ""),
+                     ssid=_clean(data.get("ssid"), 32) or name, code_length=code_length,
+                     currency=self._currency(data, z.get("currency", "FCFA")))
+            r = z.setdefault("router", {})
+            if "host" in data:  # vide = l'adresse est détectée à l'installation
+                if host and host != r.get("host"):
+                    r.update(host=host, auto_host=False)
+                elif not host and not r.get("auto_host"):
+                    r.update(host="", auto_host=True)  # on repasse en détection automatique
+            r.update(port=port, wan_interface=wan)
             self._persist()
         return self.public(z)
 
@@ -156,6 +177,7 @@ class Routers:
         with self.lock:
             self.zones().remove(z)
             self._persist()
+        self._q("DELETE FROM zone_logos WHERE zone_id = ?", (zone_id,), commit=True)
         return {"ok": True}
 
     def test(self, zone_id):
@@ -163,6 +185,8 @@ class Routers:
         if self.demo:
             return {"ok": True, "message": "Connexion réussie (démo)"}
         r = z["router"]
+        if not r.get("host"):
+            return {"ok": False, "message": "le routeur ne s'est pas encore signalé. Collez la ligne dans le Terminal de Winbox."}
         try:
             with RouterOS(r["host"], r["username"], r["password"], port=r.get("port", 8728),
                           use_ssl=r.get("ssl", False), timeout=6) as api:
@@ -187,7 +211,45 @@ class Routers:
         return None
 
     def server_ip_for(self, z):
-        return self.config.get("server_ip_for_routers") or local_ip_towards(z["router"]["host"]) or "127.0.0.1"
+        return (self.config.get("server_ip_for_routers")
+                or local_ip_towards(z["router"].get("host") or "8.8.8.8") or "127.0.0.1")
+
+    def installed(self, z, client_ip):
+        """Appelé par le routeur à la fin du script : on retient son adresse."""
+        r = z["router"]
+        with self.lock:
+            if not r.get("host") or r.get("auto_host"):
+                r["host"], r["auto_host"] = client_ip, True
+            z["installed_at"] = int(time.time())
+            self._persist()
+        return r["host"]
+
+    # --- logo ------------------------------------------------------------------------------
+    def logo(self, zone_id):
+        rows, _ = self._q("SELECT mime, data FROM zone_logos WHERE zone_id = ?", (zone_id,))
+        return rows[0] if rows else None
+
+    def set_logo(self, zone_id, data_url):
+        import base64
+        self.zone(zone_id)
+        if not data_url:
+            self._q("DELETE FROM zone_logos WHERE zone_id = ?", (zone_id,), commit=True)
+            return {"ok": True}
+        m = re.fullmatch(r"data:(image/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)", str(data_url))
+        if not m:
+            raise RouterError("Image invalide (PNG ou JPG)")
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > MAX_LOGO:
+            raise RouterError("Image trop lourde")
+        self._q("INSERT OR REPLACE INTO zone_logos (zone_id, mime, data) VALUES (?,?,?)", (zone_id, m.group(1), raw),
+                commit=True)
+        return {"ok": True}
+
+    def _base(self, z, request_host):
+        host, _, port = (request_host or "").partition(":")
+        if not host or host in ("127.0.0.1", "localhost", "::1"):
+            host = self.server_ip_for(z)
+        return (f"{host}:{port}" if port else host), host
 
     def install_info(self, zone_id, request_host):
         z = self.zone(zone_id)
@@ -201,9 +263,10 @@ class Routers:
                 f'/import file-name=aderlink.rsc; /file remove aderlink.rsc')
         return {"line": line, "url": url, "server_ip": self.server_ip_for(z), "router": self.public(z)}
 
-    def install_script(self, z):
+    def install_script(self, z, request_host=""):
         r = z["router"]
-        srv = self.server_ip_for(z)
+        base, srv = self._base(z, request_host)
+        ok = f"http://{base}/install/{z['install_token']}/ok"
         pwd = r["password"]
         name = re.sub(r'[^A-Za-z0-9 \-]', "", z["name"])
         return "\r\n".join([
@@ -214,8 +277,10 @@ class Routers:
             f'password="{pwd}" address={srv}/32 comment="ADER LINK" }} else={{ /user set [find name="aderlink"] '
             f'group="aderlink-api" password="{pwd}" address={srv}/32 }}',
             f'/ip service set api disabled=no port={int(r.get("port", 8728))} address={srv}/32',
+            # le routeur se signale : ADER LINK retient son adresse (RouterOS 7 puis 6)
+            f':do {{ /tool fetch url="{ok}" output=none }} on-error={{ :do {{ /tool fetch url="{ok}" keep-result=no }} on-error={{}} }}',
             ':log info "ADER LINK installe"',
-            f':put "ADER LINK : installation terminee ({name}). Retournez dans l application et cliquez sur Verifier."',
+            f':put "ADER LINK : installation terminee ({name}). Le routeur apparait maintenant en ligne dans ADER LINK."',
             "",
         ])
 

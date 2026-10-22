@@ -151,6 +151,9 @@ class Collector:
             return self._demo_snapshot(zone)
         r = zone["router"]
         now = time.time()
+        if not r.get("host"):  # pas encore installé : rien à interroger
+            return {"online": False, "pending": True, "checked_at": int(now), "sessions": [],
+                    "error": "En attente d'installation"}
         try:
             with RouterOS(r["host"], r["username"], r["password"],
                           port=r.get("port", 8729 if r.get("ssl") else 8728),
@@ -228,6 +231,8 @@ class Collector:
                     snap.setdefault(k, prev.get(k))
             self.state[zid] = snap
         was_online = prev.get("online") if prev else None
+        if snap.get("pending"):
+            return
         if was_online is None:
             if not snap["online"] and not self.demo:
                 self.store.add_event(snap["checked_at"], zid, "offline",

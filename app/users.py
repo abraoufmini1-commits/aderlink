@@ -47,6 +47,7 @@ class Principal:
         self.commission = commission
         self.expires_at = expires_at  # None = sans limite
         self.max_routers = max_routers  # clients : nombre de routeurs autorisés
+        self.parent = None  # équipe d'un client : identifiant de ce client
 
     @property
     def is_admin(self):
@@ -61,7 +62,7 @@ class Principal:
 
     def can(self, action):
         rules = {
-            "users": ("admin",), "settings": ("admin",), "routers_write": ("admin", "client"),
+            "users": ("admin",), "team": ("admin", "client"), "settings": ("admin",), "routers_write": ("admin", "client"),
             "routers_read": ("admin", "client", "gerant"), "forfaits_write": ("admin", "client", "gerant"),
             "lots_manage": ("admin", "client", "gerant"), "dashboard_full": ("admin", "client", "gerant"),
         }
@@ -70,7 +71,8 @@ class Principal:
     def public(self):
         return {"username": self.username, "name": self.name, "role": self.role,
                 "role_label": ROLE_LABEL[self.role], "zones": self.zones, "commission": self.commission,
-                "expires_at": self.expires_at, "now": int(time.time()), "max_routers": self.max_routers}
+                "expires_at": self.expires_at, "now": int(time.time()), "max_routers": self.max_routers,
+                "parent": self.parent}
 
 
 class Users:
@@ -99,7 +101,8 @@ class Users:
             )
             for sql in ("ALTER TABLE points_vente ADD COLUMN user_id INTEGER",
                         "ALTER TABLE users ADD COLUMN expires_at INTEGER",
-                        "ALTER TABLE users ADD COLUMN max_routers INTEGER DEFAULT 0"):
+                        "ALTER TABLE users ADD COLUMN max_routers INTEGER DEFAULT 0",
+                        "ALTER TABLE users ADD COLUMN parent TEXT"):
                 try:
                     store.db.execute(sql)
                 except Exception:
@@ -115,7 +118,7 @@ class Users:
             return rows, cur.lastrowid
 
     COLS = ("id", "username", "name", "phone", "role", "password_hash", "zones", "commission",
-            "active", "created_at", "last_login", "expires_at", "max_routers")
+            "active", "created_at", "last_login", "expires_at", "max_routers", "parent")
 
     def _row(self, row):
         u = dict(zip(self.COLS, row))
@@ -137,7 +140,7 @@ class Users:
             return admin["username"] if self.verify(password, admin["password_hash"]) else None
         u = self._get(username)
         if u and u["active"] and self.verify(password, u["password_hash"]):
-            if self.expired(u):
+            if self.blocked(u):
                 raise SubscriptionExpired(u["username"])
             self._q("UPDATE users SET last_login = ? WHERE id = ?", (int(time.time()), u["id"]), commit=True)
             return u["username"]
@@ -147,9 +150,18 @@ class Users:
     def expired(u):
         return bool(u.get("expires_at")) and time.time() >= u["expires_at"]
 
+    def blocked(self, u):
+        """Abonnement terminé — le sien, ou celui du client dont il fait partie de l'équipe."""
+        if self.expired(u):
+            return True
+        if u.get("parent"):
+            p = self._get(u["parent"])
+            return not p or not p["active"] or self.expired(p)
+        return False
+
     def is_expired(self, username):
         u = self._get(username) if username else None
-        return bool(u and u["active"] and self.expired(u))
+        return bool(u and u["active"] and self.blocked(u))
 
     def principal(self, username):
         if not username:
@@ -157,18 +169,24 @@ class Users:
         if username == self.config["admin"]["username"]:
             return Principal(username, "Administrateur", "admin")
         u = self._get(username)
-        if not u or not u["active"] or self.expired(u):
+        if not u or not u["active"] or self.blocked(u):
             return None  # compte supprimé, désactivé ou abonnement terminé : la session tombe
         if u["role"] == "client":  # un client voit les routeurs qu'il a lui-même ajoutés
             zones = [z["id"] for z in self.config.get("zones", []) if z.get("owner") == u["username"]]
         else:
-            known = {z["id"] for z in self.config.get("zones", [])}
+            known = {z["id"] for z in self.config.get("zones", [])
+                     if not u["parent"] or z.get("owner") == u["parent"]}  # équipe : routeurs du client seulement
             zones = [z for z in u["zones"] if z in known]
-        return Principal(u["username"], u["name"], u["role"], zones,
-                         u["id"], u["commission"] or 0, u["expires_at"], u["max_routers"] or 0)
+        expires = u["expires_at"]
+        if u["parent"]:  # l'équipe suit l'abonnement du client
+            expires = (self._get(u["parent"]) or {}).get("expires_at")
+        p = Principal(u["username"], u["name"], u["role"], zones,
+                      u["id"], u["commission"] or 0, expires, u["max_routers"] or 0)
+        p.parent = u["parent"]
+        return p
 
     # --- gestion -----------------------------------------------------------------------
-    def _validate(self, data, current=None):
+    def _validate(self, data, current=None, parent=None):
         name = " ".join(str(data.get("name") or "").split())[:60]
         if not name:
             raise UserError("Indiquez le nom de la personne")
@@ -181,9 +199,10 @@ class Users:
         if other and (not current or other["id"] != current["id"]):
             raise UserError("Cet identifiant est déjà utilisé")
         role = data.get("role")
-        if role not in ("client", "gerant", "revendeur"):
-            raise UserError("Choisissez le type de compte : client, gérant ou revendeur")
-        known = {z["id"] for z in self.config.get("zones", [])}
+        if role not in (("gerant", "revendeur") if parent else ("client", "gerant", "revendeur")):
+            raise UserError("Choisissez le type de compte : gérant ou revendeur" if parent
+                            else "Choisissez le type de compte : client, gérant ou revendeur")
+        known = {z["id"] for z in self.config.get("zones", []) if not parent or z.get("owner") == parent}
         zones = [z for z in (data.get("zones") or []) if z in known] if role != "client" else []
         if role != "client" and not zones:
             raise UserError("Choisissez au moins un routeur")
@@ -235,17 +254,17 @@ class Users:
                           (principal.user_id, zone_id))
         return rows[0][0] if rows else None
 
-    def create(self, data):
-        name, username, role, zones, commission, phone = self._validate(data)
+    def create(self, data, parent=None):
+        name, username, role, zones, commission, phone = self._validate(data, parent=parent)
         pwd = self._password(data, required=True)
         max_routers = self._max_routers(data, 1) if role == "client" else 0
         _, uid = self._q(
-            "INSERT INTO users (username, name, phone, role, password_hash, zones, commission, created_at, max_routers) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO users (username, name, phone, role, password_hash, zones, commission, created_at, max_routers, parent) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (username, name, phone, role, self.hash(pwd), json.dumps(zones), commission, int(time.time()),
-             max_routers), commit=True)
+             max_routers, parent), commit=True)
         sub = data.get("subscription") or {}
-        if sub.get("unlimited") is False or sub.get("n"):
+        if not parent and (sub.get("unlimited") is False or sub.get("n")):
             self.subscription(uid, dict(sub, action="add"), note="Création du compte")
         user = self.get(uid)
         self._sync_pv(user)
@@ -255,12 +274,14 @@ class Users:
         user = self.get(user_id)
         if not user:
             raise UserError("Utilisateur introuvable")
-        name, username, role, zones, commission, phone = self._validate(data, current=user)
+        name, username, role, zones, commission, phone = self._validate(data, current=user, parent=user["parent"])
         max_routers = self._max_routers(data, user["max_routers"]) if role == "client" else 0
         if user["role"] == "client" and role != "client" and self.routers and self.routers.owned(user["username"]):
             raise UserError("Ce client a des routeurs : il doit rester client")
         self._q("UPDATE users SET username=?, name=?, phone=?, role=?, zones=?, commission=?, max_routers=? WHERE id=?",
                 (username, name, phone, role, json.dumps(zones), commission, max_routers, user_id), commit=True)
+        if username != user["username"]:  # son équipe suit son nouvel identifiant
+            self._q("UPDATE users SET parent = ? WHERE parent = ?", (username, user["username"]), commit=True)
         if username != user["username"] and self.routers:  # les routeurs du client suivent son nouvel identifiant
             for z in self.routers.owned(user["username"]):
                 z["owner"] = username
@@ -382,6 +403,9 @@ class Users:
         self._sync_pv(user)  # archive ses points de vente ; ses lots et ventes restent dans l'historique
         self._q("DELETE FROM users WHERE id = ?", (user_id,), commit=True)
         self._q("DELETE FROM subscription_log WHERE user_id = ?", (user_id,), commit=True)
+        rows, _ = self._q("SELECT id FROM users WHERE parent = ?", (user["username"],))
+        for (tid,) in rows:  # l'équipe d'un client supprimé disparaît avec lui
+            self.delete(tid)
         return {"ok": True}
 
     def change_own_password(self, principal, data, save_admin):
@@ -411,13 +435,22 @@ class Users:
                 "active": bool(u["active"]), "created_at": u["created_at"], "last_login": u["last_login"],
                 "expires_at": u["expires_at"], "expired": self.expired(u), "now": int(time.time()),
                 "max_routers": u["max_routers"] or 0,
-                "routers_used": len(self.routers.owned(u["username"])) if self.routers else 0}
+                "routers_used": len(self.routers.owned(u["username"])) if self.routers else 0,
+                "parent": u["parent"]}
 
-    def list(self, since):
-        rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users ORDER BY active DESC, role, name")
+    def list(self, since, parent=None):
+        where = "WHERE parent = ?" if parent else ""
+        rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users {where} ORDER BY active DESC, role, name",
+                          (parent,) if parent else ())
+        names = dict(self._q("SELECT username, name FROM users WHERE role = 'client'")[0])
         out = []
         for r in rows:
             u = self.public(self._row(r))
+            u["parent_name"] = names.get(u["parent"]) if u["parent"] else None
+            if u["parent"]:  # l'équipe suit l'abonnement de son client
+                p = self._get(u["parent"]) or {}
+                u["expires_at"], u["follows_parent"] = p.get("expires_at"), True
+                u["expired"] = bool(u["expires_at"]) and time.time() >= u["expires_at"]
             if u["role"] == "client":  # client : toutes les ventes de ses routeurs
                 zs = [z["id"] for z in self.routers.owned(u["username"])] if self.routers else []
                 cond, args = "b.zone_id IN (%s)" % (",".join("?" * len(zs)) or "NULL"), zs
