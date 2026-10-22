@@ -61,12 +61,9 @@
       '<div class="body"><div class="code-box"><div class="code-label">Code d\'accès</div>' +
       '<div class="code' + (code.length > 8 ? " long" : "") + '">' + esc(spaced(code)) + "</div></div>" +
       '<div class="specs">' +
-      '<div class="spec"><div class="spec-l">Durée</div><div class="spec-v">' + dur(b.uptime_s) + "</div></div>" +
-      '<div class="spec"><div class="spec-l">Données</div><div class="spec-v">' + data(b.data_mb) + "</div></div>" +
-      '<div class="spec"><div class="spec-l">Validité</div><div class="spec-v">' + (b.validity_s ? dur(b.validity_s) : "Illimitée") + "</div></div>" +
+      (+b.data_mb ? '<div class="spec"><div class="spec-l">Données</div><div class="spec-v">' + data(b.data_mb) + "</div></div>" : "") +
+      '<div class="spec"><div class="spec-l">Validité</div><div class="spec-v">' + (b.validity_s ? longDur(b.validity_s) : "Illimitée") + "</div></div>" +
       "</div>" +
-      '<div class="howto">Connectez-vous au Wi-Fi <b>' + esc(b.ssid) + '</b>, ouvrez le navigateur et saisissez ce code.</div>' +
-      '<div class="foot"><span>' + (b.validity_s ? "Valable " + dur(b.validity_s) + " après la 1re connexion" : "Sans date limite") + "</span><span>Lot " + b.id + "</span></div>" +
       "</div></div>";
   }
 
