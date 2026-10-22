@@ -638,19 +638,6 @@ class UsersAndRolesTests(unittest.TestCase):
         code, wb = self.post(t, f"/api/routers/{r['id']}/winbox", {})
         self.assertEqual((code, wb["host"]), (200, "127.0.0.1"))  # hors Windows : l'adresse est rendue pour être copiée
         self.assertEqual(self.post(t, "/api/routers/a/winbox", {})[0], 403)
-        # page de connexion Wi-Fi
-        pt = self.get(t, f"/api/routers/{r['id']}/portail")
-        rsc = urllib.request.urlopen(pt["line"].split('url="')[1].split('"')[0]).read().decode()
-        self.assertIn("html-directory", rsc)
-        tok = info["url"].rsplit("/", 1)[1][:-4]
-        login = urllib.request.urlopen(self.base + f"/portail/{tok}/login.html").read().decode()
-        for part in ("$(link-login-only)", "$(if chap-id)", "Code du ticket"):
-            self.assertIn(part, login)
-        self.assertIn("$(session-time-left)", urllib.request.urlopen(self.base + f"/portail/{tok}/status.html").read().decode())
-        prev = t.open(self.base + pt["preview"]).read().decode()
-        self.assertNotIn("$(", prev)
-        with self.assertRaises(urllib.error.HTTPError):
-            urllib.request.urlopen(self.base + "/portail/faux/login.html")
         bat = urllib.request.urlopen(self.base + "/winbox/activer-winbox.bat").read().decode()
         self.assertIn("/winbox/install.ps1", bat)
         ps1 = urllib.request.urlopen(self.base + "/winbox/install.ps1").read().decode()

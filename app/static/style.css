@@ -708,7 +708,7 @@ main.narrow { max-width: 820px; }
 .av-orange { background: color-mix(in srgb, var(--orange) 18%, var(--surface)); color: var(--orange-hover); }
 .av-navy { background: var(--blue-700); color: #fff; }
 .av-teal { background: var(--good-bg); color: var(--good); }
-.act-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.act-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .act {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 78px; padding: 8px 4px;
   border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); font: inherit;
