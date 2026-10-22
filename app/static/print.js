@@ -3,10 +3,10 @@
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var nf = new Intl.NumberFormat("fr-FR");
-  var FORMATS = { cartes: 10, petits: 33 };
-  var format = "cartes";
-  try { format = localStorage.getItem("aderlink-print-format") || "cartes"; } catch (e) { /* ignoré */ }
-  if (!FORMATS[format]) format = "cartes";
+  var FORMATS = { mini: 70, petits: 33, cartes: 10 };
+  var format = "mini";
+  try { format = localStorage.getItem("aderlink-print-format2") || "mini"; } catch (e) { /* ignoré */ }
+  if (!FORMATS[format]) format = "mini";
   var batch = null;
   var WIFI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a14.5 14.5 0 0 1 20 0"/><path d="M12 19.5h.01"/></svg>';
   var ROUTER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0"/></svg>';
@@ -72,7 +72,7 @@
     var codes = batch.tickets.filter(function (t) { return !t.removed && (!only || !t.first_used); })
       .map(function (t) { return t.code; });
     var PER_PAGE = FORMATS[format];
-    $("sub").textContent = nf.format(codes.length) + (format === "petits" ? " ticket" : " carte") + (codes.length > 1 ? "s" : "") + " · " +
+    $("sub").textContent = nf.format(codes.length) + (format !== "cartes" ? " ticket" : " carte") + (codes.length > 1 ? "s" : "") + " · " +
       Math.max(1, Math.ceil(codes.length / PER_PAGE)) + " page" + (codes.length > PER_PAGE ? "s" : "") + " A4 · " +
       nf.format(batch.price) + " " + (batch.currency === "FCFA" ? "F CFA" : (batch.currency || "F CFA")) + " l'unité";
     if (!codes.length) {
@@ -83,8 +83,9 @@
     $("printBtn").disabled = false;
     var html = "";
     for (var i = 0; i < codes.length; i += PER_PAGE) {
-      html += '<section class="sheet' + (format === "petits" ? " sheet-small" : "") + '"><div class="' + (format === "petits" ? "grid-small" : "grid") + '">' +
-        codes.slice(i, i + PER_PAGE).map(function (c) { return format === "petits" ? small(c, batch) : card(c, batch); }).join("") + "</div></section>";
+      var cls = { mini: ["sheet-small sheet-mini", "grid-small grid-mini"], petits: ["sheet-small", "grid-small"], cartes: ["", "grid"] }[format];
+      html += '<section class="sheet ' + cls[0] + '"><div class="' + cls[1] + '">' +
+        codes.slice(i, i + PER_PAGE).map(function (c) { return format === "cartes" ? card(c, batch) : small(c, batch); }).join("") + "</div></section>";
     }
     $("sheets").innerHTML = html;
   }
@@ -106,8 +107,17 @@
   $("format").value = format;
   $("format").addEventListener("change", function () {
     format = this.value;
-    try { localStorage.setItem("aderlink-print-format", format); } catch (e) { /* ignoré */ }
+    try { localStorage.setItem("aderlink-print-format2", format); } catch (e) { /* ignoré */ }
     if (batch) render();
   });
   $("printBtn").addEventListener("click", function () { window.print(); });
+
+  // Nouvelle version d'ADER LINK installée : la page se recharge toute seule
+  var version = null;
+  setInterval(function () {
+    fetch("/api/version", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (version && d.version !== version) location.reload();
+      version = d.version;
+    }).catch(function () { /* serveur en train de redémarrer */ });
+  }, 30000);
 })();
