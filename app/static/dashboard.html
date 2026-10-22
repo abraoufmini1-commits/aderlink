@@ -23,18 +23,24 @@
     </div>
   </div>
 
-  <section class="hero" aria-labelledby="heroLabel">
-    <div class="hero-top">
-      <span class="hero-label" id="heroLabel">Ventes d'aujourd'hui</span>
+  <section class="stub" aria-labelledby="heroLabel">
+    <div class="stub-main">
+      <span class="stub-label" id="heroLabel">Ventes d'aujourd'hui</span>
+      <div class="stub-amount num"><span id="heroAmount">–</span><small>F CFA</small></div>
+      <div class="stub-sub num" id="heroTickets">–</div>
     </div>
-    <div class="hero-amount num"><span id="heroAmount">–</span> <small>F CFA</small></div>
-    <div class="hero-sub"><span class="hero-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z"/></svg></span><span id="heroTickets">–</span></div>
-    <div class="hero-actions">
-      <a class="btn" href="/tickets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Créer</a>
-      <a class="btn btn-light" href="/controle">Contrôler</a>
-      <a class="btn btn-light" href="/lots">Lots</a>
+    <div class="stub-side" aria-hidden="true">
+      <img src="/static/logo-white.svg" alt="" width="34" height="29">
+      <span class="stub-day" id="stubDay"></span>
     </div>
   </section>
+
+  <nav class="quick" aria-label="Actions rapides">
+    <a class="quick-tile quick-main" href="/tickets"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span>Créer des tickets</span></a>
+    <a class="quick-tile" href="/controle"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><circle cx="12" cy="12" r="3"/></svg></span><span>Contrôler</span></a>
+    <a class="quick-tile" href="/lots"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg></span><span>Lots</span></a>
+    <a class="quick-tile" href="/rapports"><span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span><span>Rapport</span></a>
+  </nav>
 
   <section class="kpis" aria-label="Indicateurs">
     <div class="card kpi kpi-accent">

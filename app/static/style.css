@@ -1065,3 +1065,90 @@ button.rcard { border: 1px solid var(--border); }
 .wb-steps { margin: 14px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
 .wb-steps li { padding-left: 4px; line-height: 1.45; }
 .wb-steps .btn svg { width: 18px; height: 18px; }
+
+/* =====================================================================
+   Identité ADER LINK : le ticket comme signature, angles nets, bordures fines
+   ===================================================================== */
+:root { --radius: 10px; --shadow: 0 1px 0 rgba(15, 29, 51, 0.04); }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111315; --surface: #1a1d21; --surface-2: #22262b; --border: #2e3339;
+    --ink: #eceff3; --ink-2: #aab2bd; --ink-3: #7f8893; --grid: #262a30;
+    --blue-100: #1b2738; --blue-50: #171f2b;
+  }
+}
+.card { border-radius: 12px; box-shadow: none; border: 1px solid var(--border); }
+
+/* --- Ventes du jour : un ticket ADER LINK --- */
+.stub {
+  display: flex; position: relative; margin-bottom: 12px; border-radius: 12px; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border); border-left: 6px solid var(--orange);
+}
+.stub-main { flex: 1; min-width: 0; padding: 18px 20px; }
+.stub-label { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+.stub-amount { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; color: var(--ink); }
+.stub-amount small { font-size: 15px; font-weight: 700; color: var(--ink-3); letter-spacing: 0; }
+.stub-sub { margin-top: 10px; font-size: 14px; font-weight: 650; color: var(--blue-600); }
+.stub-side {
+  position: relative; flex: none; width: 104px; background: var(--blue-700); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  border-left: 2px dashed rgba(255,255,255,0.0);
+}
+.stub-side::before { /* perforations entre le ticket et la souche */
+  content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 2px;
+  background: repeating-linear-gradient(to bottom, var(--surface) 0 6px, transparent 6px 12px);
+}
+.stub-side::after { /* encoches */
+  content: ""; position: absolute; left: -9px; top: -9px; bottom: -9px; width: 18px;
+  background: radial-gradient(circle at 9px 0, var(--bg) 8px, transparent 8.5px) top / 18px 18px no-repeat,
+              radial-gradient(circle at 9px 18px, var(--bg) 8px, transparent 8.5px) bottom / 18px 18px no-repeat;
+}
+.stub-day { display: flex; flex-direction: column; align-items: center; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; line-height: 1.1; }
+.stub-day b { font-size: 24px; letter-spacing: 0; opacity: 1; }
+@media (prefers-color-scheme: dark) { .stub-sub { color: var(--series); } .stub-side { background: #16263d; } }
+@media (max-width: 560px) { .stub-amount { font-size: 38px; } .stub-side { width: 84px; } .stub-main { padding: 16px; } }
+
+/* --- Actions rapides : tuiles carrées --- */
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.quick-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 92px; padding: 10px 6px;
+  border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--ink);
+  text-decoration: none; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.2;
+}
+.quick-tile:hover { border-color: var(--blue-600); }
+.quick-tile .qi { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--blue-100); color: var(--blue-600); }
+.quick-tile .qi svg { width: 22px; height: 22px; }
+.quick-main { background: var(--orange); border-color: var(--orange); color: #fff; }
+.quick-main:hover { background: var(--orange-hover); border-color: var(--orange-hover); }
+.quick-main .qi { background: rgba(255,255,255,0.22); color: #fff; }
+@media (prefers-color-scheme: dark) { .quick-tile .qi { color: var(--series); } .quick-main .qi { color: #fff; } }
+
+/* --- Barre du bas : fixée au bord, bouton + carré --- */
+@media (max-width: 760px) {
+  body.has-bottombar { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .bottombar {
+    left: 0; right: 0; bottom: 0; border-radius: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--border); box-shadow: none; align-items: center;
+  }
+  .bottombar a, .bottombar button { color: var(--ink-3); min-height: 54px; border-radius: 10px; position: relative; }
+  .bottombar a[aria-current="page"] { color: var(--blue-600); }
+  .bottombar a[aria-current="page"]::after { content: ""; position: absolute; top: -7px; left: 30%; right: 30%; width: auto; height: 3px; border-radius: 0 0 3px 3px; background: var(--blue-600); }
+  .bottombar .fab {
+    width: 52px; height: 52px; margin: 0 auto; border-radius: 14px; border: 0;
+    background: var(--orange); color: #fff; box-shadow: none;
+  }
+  .bottombar .fab svg { width: 26px; height: 26px; }
+  .bottombar .fab[aria-current="page"]::after { display: none; }
+}
+@media (max-width: 760px) and (prefers-color-scheme: dark) {
+  .bottombar a[aria-current="page"] { color: var(--series); }
+  .bottombar a[aria-current="page"]::after { background: var(--series); }
+}
+
+/* --- Cartes routeurs, KPI : angles nets --- */
+.rcard { border-radius: 12px; }
+.rcard:hover { transform: none; box-shadow: none; border-color: var(--blue-600); }
+.rtile { border-radius: 10px; }
+.ravatar { border-radius: 10px; }
+.kpi-accent { border-top: 1px solid var(--border); border-left: 4px solid var(--blue-600); }
+.router-card, .wizard { border-radius: 12px; }

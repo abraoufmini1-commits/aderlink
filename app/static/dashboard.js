@@ -82,6 +82,8 @@
     $("kZonesSub").textContent = off ? off + " routeur" + (off > 1 ? "s" : "") + " hors ligne" : "Tous en ligne";
     var st = d.sales_today || { tickets: 0, amount: 0 };
     $("heroAmount").textContent = nf.format(st.amount);
+    var today = new Date();
+    $("stubDay").innerHTML = "<b>" + today.getDate() + "</b>" + today.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "");
     $("heroTickets").textContent = nf.format(st.tickets) + " ticket" + (st.tickets > 1 ? "s" : "") + " vendu" + (st.tickets > 1 ? "s" : "") + " aujourd'hui";
     $("pollInfo").textContent = "Relevé toutes les " + d.poll_seconds + " s";
     renderZones(d.zones);
