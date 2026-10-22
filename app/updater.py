@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "VERSION"
 RESTART_CODE = 3
+DEFAULT_REPO = "abraoufmini1-commits/aderlink"  # dépôt officiel ADER LINK
 KEEP = {"config.json", "data", ".git"}           # jamais remplacés
 COPY = ("app", "deploy", "tests", "README.md", "VERSION", "config.example.json")  # pas le .bat : il tourne pendant la mise à jour
 
@@ -46,7 +47,7 @@ class Updater:
 
     @property
     def repo(self):
-        return (self.config.get("update") or {}).get("repo", "").strip()
+        return ((self.config.get("update") or {}).get("repo") or DEFAULT_REPO).strip()
 
     @property
     def branch(self):
