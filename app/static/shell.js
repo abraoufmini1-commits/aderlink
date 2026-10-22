@@ -36,6 +36,7 @@
     { id: "creer", href: "/tickets", label: "Créer des tickets", icon: "ticket" },
     { id: "lots", href: "/lots", label: "Lots", icon: "layers" },
     { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
+    { id: "rapports", href: "/rapports", label: "Rapport des ventes", icon: "chart" },
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
     { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", need: "admin" },
     { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
@@ -43,7 +44,6 @@
   ];
   var soon = [
     { label: "Multi-zones", icon: "zones" },
-    { label: "Rapport des ventes", icon: "chart" },
     { label: "Analytique", icon: "trend" }
   ];
   function need(m) { return m.need ? ' data-need="' + m.need + '"' : ""; }
@@ -58,7 +58,7 @@
     '<div class="topbar-inner">' +
     '<a class="brand" href="/"><span class="brand-mark"><img src="/static/logo-blue.svg" alt="" width="22" height="22"></span>' +
     '<img class="brand-word" src="/static/wordmark-white.svg" alt="ADER LINK" width="106" height="15"></a>' +
-    '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 5).map(function (m) {
+    '<nav class="nav" aria-label="Menu principal">' + main.slice(0, 6).map(function (m) {
       return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + m.label + "</a>";
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +

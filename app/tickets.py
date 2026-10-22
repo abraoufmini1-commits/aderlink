@@ -440,6 +440,47 @@ class Tickets:
                 "period": {"tickets": sum(x["tickets"] for x in series), "amount": sum(x["amount"] for x in series)},
                 "all_time": {"tickets": tot[0][0], "amount": tot[0][1] or 0, "generated": gen[0][0]}}
 
+    def report(self, start, end, utc_offset_s=3600, zone_ids=None, created_by=None, names=None):
+        """Rapport des ventes entre start et end (horodatages, end exclu).
+
+        Un ticket est « vendu » au moment de sa première connexion, au prix de son forfait.
+        """
+        sc, sp = self._scope(zone_ids, created_by)
+        base = ("FROM tickets t JOIN batches b ON b.id = t.batch_id "
+                "LEFT JOIN forfaits f ON f.id = b.forfait_id LEFT JOIN points_vente pv ON pv.id = b.pos_id "
+                "WHERE t.first_used >= ? AND t.first_used < ?" + sc)
+        params = [start, end] + sp
+
+        def group(key):
+            rows, _ = self._q(f"SELECT {key} AS k, COUNT(*), COALESCE(SUM(b.price), 0) {base} GROUP BY k "
+                              "ORDER BY 3 DESC, 2 DESC", params)
+            return rows
+
+        zones = {z["id"]: z["name"] for z in self.config.get("zones", [])}
+        names = names or {}
+        tot, _ = self._q(f"SELECT COUNT(*), COALESCE(SUM(b.price), 0) {base}", params)
+        prev, _ = self._q(f"SELECT COUNT(*), COALESCE(SUM(b.price), 0) {base}", [2 * start - end, start] + sp)
+        gen, _ = self._q("SELECT COUNT(*), COALESCE(SUM(b.price), 0) FROM tickets t JOIN batches b ON b.id = t.batch_id "
+                         "WHERE b.created_at >= ? AND b.created_at < ?" + sc, params)
+        stock, _ = self._q("SELECT COUNT(*) FROM tickets t JOIN batches b ON b.id = t.batch_id "
+                           "WHERE t.first_used IS NULL AND t.removed = 0" + sc, sp)
+        first_day, last_day = (start + utc_offset_s) // 86400, (end - 1 + utc_offset_s) // 86400
+        days = {d: (n, a) for d, n, a in group(f"(t.first_used + {int(utc_offset_s)}) / 86400")}
+        line = lambda label, n, a: {"label": label, "tickets": n, "amount": a}
+        return {
+            "start": start, "end": end,
+            "totals": {"tickets": tot[0][0], "amount": tot[0][1], "generated": gen[0][0],
+                       "generated_value": gen[0][1], "stock": stock[0][0]},
+            "previous": {"tickets": prev[0][0], "amount": prev[0][1]},
+            "by_day": [dict(line("", *days.get(d, (0, 0))), day=d * 86400 - utc_offset_s,
+                            date=time.strftime("%Y-%m-%d", time.gmtime(d * 86400)))
+                       for d in range(first_day, last_day + 1)],
+            "by_zone": [line(zones.get(k, k), n, a) for k, n, a in group("b.zone_id")],
+            "by_forfait": [line(k or "–", n, a) for k, n, a in group("COALESCE(f.name, b.profile)")],
+            "by_pos": [line(k or "Sans point de vente", n, a) for k, n, a in group("pv.name")],
+            "by_seller": [line(names.get(k, k) if k else "Administrateur", n, a) for k, n, a in group("b.created_by")],
+        }
+
     def sales(self, since, zone_ids=None, created_by=None):
         sc, sp = self._scope(zone_ids, created_by)
         rows, _ = self._q(

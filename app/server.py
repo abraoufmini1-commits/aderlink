@@ -175,6 +175,35 @@ class App:
         return {"zone": {"id": zone_id, "name": zone["name"]},
                 "online": s.get("online", False), "sessions": s.get("sessions", [])}
 
+    def report(self, q, who):
+        """Période en jours locaux : ?from=AAAA-MM-JJ&to=AAAA-MM-JJ (inclus)."""
+        import datetime as dt
+        off = self.offset()
+        today = (int(time.time()) + off) // 86400
+
+        def day(key, default):
+            try:
+                return dt.date.fromisoformat(q.get(key, [""])[0]).toordinal() - dt.date(1970, 1, 1).toordinal()
+            except ValueError:
+                return default
+        d1, d2 = day("from", today - 6), day("to", today)
+        d1, d2 = min(d1, d2), max(d1, d2)
+        d1 = max(d1, d2 - 366)  # un an au plus
+        zone_ids, mine = self.sales_scope(who)
+        names = {self.config["admin"]["username"]: "Administrateur"}
+        if self.users:
+            rows, _ = self.users._q("SELECT username, name FROM users")
+            names.update(dict(rows))
+        rep = self.tickets.report(d1 * 86400 - off, (d2 + 1) * 86400 - off, off, zone_ids, mine, names)
+        rep.update({"from": str(dt.date(1970, 1, 1) + dt.timedelta(days=d1)),
+                    "to": str(dt.date(1970, 1, 1) + dt.timedelta(days=d2)),
+                    "today": str(dt.date(1970, 1, 1) + dt.timedelta(days=today)),
+                    "me": who.public(), "demo": self.demo,
+                    "zones": [z["name"] for z in self.zones_for(who)]})
+        if who.is_reseller:
+            rep["commission"] = round(rep["totals"]["amount"] * (who.commission or 0) / 100)
+        return rep
+
     def batch_visible(self, b, who):
         if not b or not who.can_zone(b["zone_id"]):
             return False
@@ -184,7 +213,7 @@ class App:
 PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
-         "/utilisateurs": ("utilisateurs.html", "users"), "/profil": ("profil.html", None)}
+         "/utilisateurs": ("utilisateurs.html", "users"), "/rapports": ("rapports.html", None), "/profil": ("profil.html", None)}
 
 
 def make_handler(app):
@@ -347,6 +376,8 @@ def make_handler(app):
                     days = 30
                 zone_ids, mine = app.sales_scope(who)
                 return app.tickets.sales_history(days, app.offset(), zone_ids, mine)
+            if app.tickets and p == "/api/report":
+                return app.report(q, who)
             if app.tickets and p == "/api/tickets/find":
                 code = q.get("code", [""])[0].strip()[:20]
                 res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]

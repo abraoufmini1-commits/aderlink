@@ -843,3 +843,50 @@ body[data-role="revendeur"] .need-gerant { display: none !important; }
 .pw-big { font-size: 22px; letter-spacing: 0.06em; color: var(--blue-600); }
 @media (prefers-color-scheme: dark) { .pw-big { color: var(--series); } .pill-role { color: var(--series); } }
 #stats { margin-bottom: 14px; }
+
+/* ===================== Rapport des ventes ===================== */
+.rp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rp-period { padding: 14px 16px; margin-bottom: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.rp-chips { margin: 0; }
+.rp-chips button[aria-pressed="true"] { background: var(--blue-600); border-color: var(--blue-600); color: #fff; }
+.rp-dates { display: flex; gap: 10px; }
+.rp-dates .f { min-width: 0; }
+.rp-dates input { min-width: 0; width: 160px; }
+@media (max-width: 560px) { .rp-dates { width: 100%; } .rp-dates .f { flex: 1; } .rp-dates input { width: 100%; } }
+.trend-up { color: var(--good); font-weight: 650; }
+.trend-down { color: var(--critical); font-weight: 650; }
+.rp-bars svg { height: 230px; }
+.rp-bars .bar { fill: var(--blue-600); }
+.rp-bars .bar:hover { fill: var(--orange); }
+@media (prefers-color-scheme: dark) { .rp-bars .bar { fill: var(--series); } }
+.rp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+@media (max-width: 760px) { .rp-grid { grid-template-columns: 1fr; } }
+.rp-table { padding: 16px; margin-top: 12px; }
+.rp-grid .rp-table { margin-top: 0; }
+.rp-table h2 { font-size: 17px; margin: 0 0 10px; }
+.rp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rp-row { display: flex; justify-content: space-between; gap: 10px; font-weight: 650; }
+.rp-name { min-width: 0; overflow-wrap: anywhere; }
+.rp-amt { white-space: nowrap; }
+.rp-meter { height: 8px; background: var(--surface-2); border-radius: 99px; margin: 6px 0 4px; overflow: hidden; }
+.rp-meter span { display: block; height: 100%; background: linear-gradient(90deg, var(--blue-600), var(--orange)); border-radius: 99px; }
+.rp-sub { font-size: 13px; color: var(--ink-2); }
+.rp-table tr.muted td { color: var(--ink-3); }
+.rp-table tfoot th { border-top: 2px solid var(--border); padding-top: 10px; }
+.print-head, .print-foot { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: #fff !important; padding: 0 !important; }
+  .topbar, .drawer, .drawer-shade, .bottombar, .demo-banner, .no-print, .toast, .page-head .subtitle { display: none !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  .card { box-shadow: none !important; border: 1px solid #d5dbe5 !important; break-inside: avoid; }
+  .print-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 3px solid var(--orange); }
+  .print-head div { text-align: right; font-size: 13px; }
+  .print-foot { display: block; font-size: 11px; color: #667; margin-top: 14px; text-align: center; }
+  .page-head { display: none; }
+  .kpis { grid-template-columns: repeat(4, 1fr) !important; }
+  .rp-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .rp-meter span { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .rp-bars .bar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .table-scroll { overflow: visible; }
+}

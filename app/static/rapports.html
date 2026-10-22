@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>Rapport des ventes — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="rapports">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main>
+  <div class="page-head">
+    <div>
+      <h1>Rapport des ventes</h1>
+      <p class="subtitle" id="scope">Tickets vendus = tickets utilisés pour la première fois</p>
+    </div>
+    <div class="rp-actions no-print">
+      <button class="btn btn-sm btn-outline" type="button" id="csvBtn">Excel (CSV)</button>
+      <button class="btn btn-sm" type="button" id="printBtn">Imprimer</button>
+    </div>
+  </div>
+
+  <section class="card rp-period no-print" aria-label="Période">
+    <div class="chips rp-chips" id="presets">
+      <button type="button" data-p="today">Aujourd'hui</button>
+      <button type="button" data-p="yesterday">Hier</button>
+      <button type="button" data-p="7">7 jours</button>
+      <button type="button" data-p="30">30 jours</button>
+      <button type="button" data-p="month">Ce mois</button>
+      <button type="button" data-p="lastmonth">Mois dernier</button>
+    </div>
+    <div class="rp-dates">
+      <div class="f"><label for="dFrom">Du</label><input id="dFrom" type="date"></div>
+      <div class="f"><label for="dTo">Au</label><input id="dTo" type="date"></div>
+    </div>
+  </section>
+
+  <div class="print-head" aria-hidden="true">
+    <img src="/static/wordmark-blue.svg" alt="" width="155" height="22">
+    <div><strong>Rapport des ventes</strong><br><span id="printPeriod"></span></div>
+  </div>
+
+  <section class="kpis rp-kpis" aria-label="Totaux">
+    <div class="card kpi kpi-accent"><div class="kpi-label">Montant des ventes</div>
+      <div class="kpi-value num"><span id="kAmount">–</span> <small>F CFA</small></div><div class="kpi-sub" id="kTrend">–</div></div>
+    <div class="card kpi"><div class="kpi-label">Tickets vendus</div>
+      <div class="kpi-value num" id="kTickets">–</div><div class="kpi-sub" id="kAvg">–</div></div>
+    <div class="card kpi"><div class="kpi-label">Tickets créés</div>
+      <div class="kpi-value num" id="kGen">–</div><div class="kpi-sub" id="kGenSub">–</div></div>
+    <div class="card kpi" id="kLastCard"><div class="kpi-label" id="kLastLabel">En stock</div>
+      <div class="kpi-value num" id="kLast">–</div><div class="kpi-sub" id="kLastSub">tickets pas encore utilisés</div></div>
+  </section>
+
+  <section class="card chart-card" aria-labelledby="dayTitle">
+    <div class="chart-head"><h2 id="dayTitle">Ventes par jour</h2><span class="kpi-sub" id="best"></span></div>
+    <div class="chart-wrap rp-bars" id="bars"></div>
+  </section>
+
+  <div class="rp-grid">
+    <section class="card rp-table" aria-labelledby="t1"><h2 id="t1">Par routeur</h2><div id="byZone"></div></section>
+    <section class="card rp-table" aria-labelledby="t2"><h2 id="t2">Par forfait</h2><div id="byForfait"></div></section>
+    <section class="card rp-table" aria-labelledby="t3"><h2 id="t3">Par point de vente</h2><div id="byPos"></div></section>
+    <section class="card rp-table need-gerant" aria-labelledby="t4"><h2 id="t4">Par vendeur</h2><div id="bySeller"></div></section>
+  </div>
+
+  <section class="card rp-table" aria-labelledby="t5">
+    <h2 id="t5">Détail jour par jour</h2>
+    <div class="table-scroll"><table><thead><tr><th>Jour</th><th class="r">Tickets</th><th class="r">Montant</th></tr></thead>
+      <tbody id="dayRows"></tbody><tfoot><tr><th>Total</th><th class="r num" id="fT">–</th><th class="r num" id="fA">–</th></tr></tfoot></table></div>
+  </section>
+  <p class="print-foot" id="printFoot"></p>
+</main>
+
+<script src="/static/shell.js"></script>
+<script src="/static/rapports.js"></script>
+</body>
+</html>

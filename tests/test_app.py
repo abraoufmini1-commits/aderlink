@@ -530,4 +530,18 @@ class UsersAndRolesTests(unittest.TestCase):
             self.login("moussa", "nouveau-1").open(self.base + "/api/me")
         self.post(admin, f"/api/users/{rev['id']}/enable", {})
         self.assertEqual(self.get(self.login("moussa", "nouveau-1"), "/api/me")["username"], "moussa")
+        # Rapport des ventes : l'admin voit tout, le revendeur seulement ses ventes
+        today = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3600))
+        rep = self.get(admin, f"/api/report?from=2000-01-01&to={today}")
+        self.assertEqual(rep["totals"]["tickets"], 3)
+        self.assertEqual(rep["totals"]["amount"], 600)
+        self.assertEqual(rep["by_seller"][0]["label"], "Moussa Issa")
+        self.assertEqual(rep["by_pos"][0]["label"], "Moussa Issa")
+        self.assertEqual(sum(d["amount"] for d in rep["by_day"]), 600)
+        self.assertLessEqual(len(rep["by_day"]), 367)  # période limitée à un an
+        mine = self.get(self.login("moussa", "nouveau-1"), "/api/report")
+        self.assertEqual(mine["totals"]["amount"], 600)
+        self.assertEqual(mine["commission"], 60)
+        g_rep = self.get(g, "/api/report")
+        self.assertEqual(g_rep["totals"]["tickets"], 0)  # le gérant de la zone B ne voit pas la zone A
         self.assertEqual(self.post(admin, f"/api/users/{rev['id']}/delete", {})[0], 200)

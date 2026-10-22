@@ -182,8 +182,13 @@ def _demo_users(cfg, users, tickets):
     who = users.principal(rev["username"])
     f = next((f for f in tickets.list_forfaits(zones[0])), None) if zones else None
     if f:
-        tickets.create_batch({"forfait_id": f["id"], "count": 40, "pos_id": users.pv_for(who, zones[0]),
-                              "note": "Lot Moussa"}, created_by=who.username)
+        lot = tickets.create_batch({"forfait_id": f["id"], "count": 40, "pos_id": users.pv_for(who, zones[0]),
+                                    "note": "Lot Moussa"}, created_by=who.username)
+        now = int(time.time())
+        rows, _ = tickets._q("SELECT code FROM tickets WHERE batch_id = ? LIMIT 14", (lot["id"],))
+        for i, (code,) in enumerate(rows):  # quelques ventes réparties sur 10 jours
+            tickets._q("UPDATE tickets SET first_used = ? WHERE batch_id = ? AND code = ?",
+                       (now - (i % 10) * 86400 - 3600, lot["id"], code), commit=True)
     print("Comptes démo : gerant / aderlink · revendeur / aderlink")
 
 
