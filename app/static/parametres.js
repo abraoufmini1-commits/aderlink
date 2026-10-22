@@ -52,6 +52,22 @@
       m.className = "notice show notice-ok"; m.textContent = "Contact enregistré.";
     }).catch(function (e) { m.className = "notice show notice-err"; m.textContent = e.message; });
   });
+  // Restauration : remplace tout par le contenu du fichier, puis ADER LINK redémarre
+  $("bkFile").addEventListener("change", function () {
+    var f = this.files && this.files[0], m = $("bkMsg"), input = this;
+    if (!f) return;
+    var say = function (kind, text) { m.className = "notice show notice-" + kind; m.textContent = text; };
+    if (!/\.zip$/i.test(f.name)) { say("err", "Choisissez le fichier .zip téléchargé avec « Télécharger une sauvegarde »."); return; }
+    if (!window.confirm("Tout remplacer par cette sauvegarde (" + f.name + ") ?\nLes données actuelles de cet ADER LINK seront effacées.")) { input.value = ""; return; }
+    say("ok", "Envoi de la sauvegarde…");
+    fetch("/api/restore", { method: "POST", credentials: "same-origin", headers: { "X-AderLink": "1", "Content-Type": "application/zip" }, body: f })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "Erreur"); return d; }); })
+      .then(function (d) {
+        say("ok", d.message + " La page va se recharger, reconnectez-vous avec le mot de passe de la sauvegarde.");
+        setTimeout(function () { location.href = "/login"; }, 6000);
+      })
+      .catch(function (e) { say("err", e.message); input.value = ""; });
+  });
   function run(install) {
     note("ok", install ? "Installation… la page se rechargera toute seule." : "Vérification…");
     api("/api/settings/check", { install: install }).then(function (d) {

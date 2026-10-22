@@ -82,7 +82,7 @@ class Forbidden(Exception):
 
 class App:
     def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None,
-                 users=None, save_config=None):
+                 users=None, save_config=None, paths=None):
         self.config = config
         self.collector = collector
         self.store = store
@@ -92,6 +92,7 @@ class App:
         self.updater = updater
         self.users = users
         self.save_config = save_config or (lambda c: None)
+        self.paths = paths or {}
         self.throttle = LoginThrottle()
 
     def offset(self):
@@ -302,6 +303,72 @@ def make_handler(app):
             except (RouterError, TicketError, UserError) as e:
                 return self.json({"error": str(e)}, 400)
 
+        def send_backup(self):
+            """Sauvegarde complète : config.json + base de données (copie cohérente)."""
+            import io
+            import sqlite3
+            import tempfile
+            import zipfile
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("config.json", json.dumps(app.config, ensure_ascii=False, indent=2))
+                with tempfile.TemporaryDirectory() as tmp:
+                    copy = Path(tmp) / "aderlink.db"
+                    dst = sqlite3.connect(copy)
+                    with app.store.lock:
+                        app.store.db.backup(dst)
+                    dst.close()
+                    zf.write(copy, "aderlink.db")
+                zf.writestr("LISEZMOI.txt", "Sauvegarde ADER LINK. A restaurer dans Parametres > Restaurer une sauvegarde.\n")
+            name = time.strftime("aderlink-sauvegarde-%Y-%m-%d-%H%M.zip", time.localtime())
+            return self.send(200, buf.getvalue(), "application/zip",
+                             {"Content-Disposition": f'attachment; filename="{name}"'})
+
+        def restore_backup(self, who):
+            """Remplace la configuration et la base par celles d'une sauvegarde, puis redémarre."""
+            import io
+            import zipfile
+            if self.headers.get("X-AderLink") != "1":
+                return self.json({"error": "Requête refusée"}, 403)
+            if not who or not who.can("settings"):
+                return self.json({"error": "Accès refusé"}, 403)
+            if app.demo or not app.paths.get("db"):
+                return self.json({"error": "Indisponible en mode démonstration"}, 400)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if not 0 < length <= 200 * 1024 * 1024:
+                return self.json({"error": "Fichier vide ou trop gros (200 Mo au plus)"}, 413)
+            raw = self.rfile.read(length)
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                cfg = json.loads(zf.read("config.json"))
+                db = zf.read("aderlink.db")
+            except (zipfile.BadZipFile, KeyError, ValueError):
+                return self.json({"error": "Ce fichier n'est pas une sauvegarde ADER LINK"}, 400)
+            if not (isinstance(cfg, dict) and cfg.get("admin", {}).get("password_hash") and cfg.get("secret_key")
+                    and db[:16] == b"SQLite format 3\x00"):
+                return self.json({"error": "Sauvegarde incomplète ou abîmée"}, 400)
+            # le serveur garde ses propres réglages de réseau (adresse, HTTPS, proxy)
+            for k in ("secure_cookies", "behind_proxy", "server_ip_for_routers", "wireguard"):
+                if k in app.config:
+                    cfg[k] = app.config[k]
+                else:
+                    cfg.pop(k, None)
+            dbp = Path(app.paths["db"])
+            tmp = dbp.with_suffix(".restore")
+            tmp.write_bytes(db)
+            app.config.clear()
+            app.config.update(cfg)
+            app.save_config(app.config)
+            with app.store.lock:  # on bascule sur la base restaurée au redémarrage
+                app.store.db.close()
+                for suffix in ("-wal", "-shm"):
+                    Path(str(dbp) + suffix).unlink(missing_ok=True)
+                tmp.replace(dbp)
+            self.json({"ok": True, "message": "Sauvegarde restaurée. ADER LINK redémarre…"})
+            if app.updater:
+                threading.Timer(1.0, app.updater.on_restart).start()
+            return None
+
         def my_team(self, who, uid):
             if who.role != "client" or not app.users:
                 return False
@@ -455,6 +522,9 @@ def make_handler(app):
             if app.users and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit() and parts[4] == "history":
                 self.need(who.can("users") or self.my_team(who, int(parts[3])))
                 return {"history": app.users.history(int(parts[3]))}
+            if p == "/api/backup":
+                self.need(who.can("settings"))
+                return self.send_backup()
             if app.updater and p == "/api/settings":
                 self.need(who.can("settings"))
                 from .routers import local_ip_towards
@@ -588,6 +658,8 @@ def make_handler(app):
 
         def do_POST(self):
             p = urlparse(self.path).path
+            if p == "/api/restore":
+                return self.restore_backup(self.who())
             if p.startswith("/api/"):
                 return self.api_post(p)
             if p != "/login":

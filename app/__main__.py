@@ -100,6 +100,25 @@ def cmd_setup(_args):
     print(f"Configuration créée : {CONFIG}\nAjoute tes zones dans ce fichier, puis lance « test-router ».")
 
 
+def cmd_init_vps(_args):
+    """Installation sur un serveur : configuration créée sans question, mot de passe affiché une fois."""
+    if CONFIG.exists():
+        print(f"{CONFIG} existe déjà : rien à faire.")
+        return
+    pwd = "".join(secrets.choice("abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(14))
+    cfg = {
+        "admin": {"username": "admin", "password_hash": hash_password(pwd)},
+        "secret_key": secrets.token_hex(32),
+        "poll_seconds": 30,
+        "secure_cookies": False,  # passe à true quand le site a un nom de domaine en HTTPS
+        "behind_proxy": True,
+        "zones": [],
+    }
+    DATA.mkdir(parents=True, exist_ok=True)
+    save_config(cfg)
+    print("ADMIN_PASSWORD=" + pwd)
+
+
 def cmd_password(_args):
     cfg = load_config()
     cfg["admin"]["password_hash"] = hash_password(ask_password())
@@ -170,7 +189,8 @@ def cmd_serve(args):
         updater.start()
     print(f"ADER LINK version {updater.state['current']}")
     serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
-              users=users, save_config=save_config),
+              users=users, save_config=save_config,
+              paths={"config": CONFIG, "db": None if args.demo else DATA / "aderlink.db"}),
           args.host, args.port)
 
 
@@ -263,6 +283,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("setup").set_defaults(func=cmd_setup)
     sub.add_parser("password").set_defaults(func=cmd_password)
+    sub.add_parser("init-vps").set_defaults(func=cmd_init_vps)
     sub.add_parser("test-router").set_defaults(func=cmd_test)
     w = sub.add_parser("set-ssid", help="nom du Wi-Fi imprimé sur les cartes")
     w.add_argument("ssid")

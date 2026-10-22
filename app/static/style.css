@@ -1172,3 +1172,7 @@ button.rcard { border: 1px solid var(--border); }
 .an-rate .rp-meter { flex: 1; margin: 0; }
 .an-rate span.num { font-size: 13px; font-weight: 700; min-width: 38px; text-align: right; }
 .an-table td, .an-table th { white-space: nowrap; }
+
+.bk-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.bk-actions .btn { flex: 1 1 220px; text-align: center; }
+.bk-restore { cursor: pointer; }
