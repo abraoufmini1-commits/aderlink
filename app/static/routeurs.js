@@ -181,6 +181,7 @@
       f("rLoc", "Quartier / adresse", v.location || "", "maxlength='60' placeholder='ex : Katako, Niamey'") +
       f("rHost", "Adresse IP du routeur", r && !r.auto_host ? v.host : "", "inputmode='decimal' placeholder='Automatique'", "Vide = détectée à l'installation" + (r && r.auto_host && r.host ? " (actuelle : " + esc(r.host) + ")" : "")) +
       f("rPort", "Port API", v.port, "type='number' min='1' max='65535' inputmode='numeric'") +
+      f("rWinbox", "Adresse Winbox (à distance)", v.winbox || "", "maxlength='80' placeholder='Par défaut : l\'adresse du routeur'", "Ex. 41.203.10.5:8291 — sera remplie automatiquement avec le VPS") +
       f("rWan", "Interface Internet", v.wan_interface || "ether1", "maxlength='32' placeholder='ether1, lte1, pppoe-out1…'", "Sert à mesurer le débit") +
       "</div></form><div class='notice' id='bsMsg' role='status'></div>";
     var foot = "<button class='btn-prev' type='button' data-close>" + ic("x") + " Annuler</button>" +
@@ -205,7 +206,7 @@
       if (!$("rName").value.trim()) { msg("err", "Donnez un nom au réseau"); $("rName").focus(); return; }
       var data = { name: $("rName").value, code_length: +$("rLen").value, currency: $("rCur").value,
         ssid: $("rSsid").value, location: $("rLoc").value, host: $("rHost").value,
-        port: +$("rPort").value || 8728, wan_interface: $("rWan").value };
+        port: +$("rPort").value || 8728, wan_interface: $("rWan").value, winbox: $("rWinbox").value };
       var btn = $("rSave"); btn.disabled = true;
       api(r ? "/api/routers/" + encodeURIComponent(r.id) + "/update" : "/api/routers", data).then(function (res) {
         var id = r ? r.id : res.id;
@@ -243,13 +244,38 @@
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 6000);
   }
+  function winboxReady() { try { return localStorage.getItem("aderlink-winbox") === "1"; } catch (e) { return false; } }
+  function launch(addr) {
+    location.href = "aderlink-winbox://" + encodeURIComponent(addr);
+    toast("Ouverture de Winbox sur " + addr + "…", true);
+  }
   function winbox(r, btn) {
+    var addr = r.winbox || r.host;
+    if (!addr) { toast("Ce routeur n'est pas encore installé."); return; }
+    if (winboxReady()) { launch(addr); return; }
     if (btn) btn.disabled = true;
     api("/api/routers/" + encodeURIComponent(r.id) + "/winbox", {}).then(function (d) {
-      if (!d.ok && d.host) copyText(d.host);
-      toast(d.message, d.ok);
+      if (d.ok) { toast(d.message, true); return; }
+      copyText(addr);
+      setupWinbox(addr);
     }).catch(function (err) { toast(err.message); })
       .then(function () { if (btn) btn.disabled = false; });
+  }
+  // Une seule fois par PC : on apprend à Windows à ouvrir Winbox depuis le navigateur
+  function setupWinbox(addr) {
+    sheet("Ouvrir Winbox depuis ADER LINK", "winbox",
+      "<p class='pane-sub'>À faire <strong>une seule fois sur ce PC</strong> (Windows). Ensuite, le bouton Winbox ouvre Winbox directement, même à travers le lien d'ADER LINK.</p>" +
+      "<ol class='wb-steps'><li><a class='btn btn-big btn-block' href='/winbox/activer-winbox.bat' download>" + ic("download") + " Télécharger le fichier d'activation</a></li>" +
+      "<li>Ouvrez le fichier <strong>activer-winbox-aderlink.bat</strong>. Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur <strong>Informations complémentaires</strong> puis <strong>Exécuter quand même</strong>.</li>" +
+      "<li>Une fenêtre noire installe Winbox (s'il n'est pas déjà sur le PC) et affiche <strong>C'est fait</strong>. Fermez-la.</li>" +
+      "<li>Cliquez ci-dessous sur <strong>C'est fait</strong>.</li></ol>" +
+      "<div class='info-box'>En attendant, l'adresse du routeur est copiée : <strong class='mono'>" + esc(addr) + "</strong></div>",
+      "<button class='btn-prev' type='button' data-close>Plus tard</button><button class='btn btn-big' type='button' id='wbDone'>" + ic("check") + " C'est fait</button>");
+    $("wbDone").addEventListener("click", function () {
+      try { localStorage.setItem("aderlink-winbox", "1"); } catch (e) { /* ignoré */ }
+      close();
+      launch(addr);
+    });
   }
 
   // --- forfaits : on ouvre l'assistant de création sur ce routeur ------------------------------

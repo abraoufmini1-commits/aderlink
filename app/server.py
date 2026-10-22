@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import mimetypes
 import secrets
 import threading
@@ -339,6 +340,15 @@ def make_handler(app):
                 if app.collector and not app.demo:
                     threading.Thread(target=app.collector.poll_all, daemon=True).start()
                 return self.send(200, b"ok")
+            if p == "/winbox/install.ps1":  # public : ne contient aucun secret
+                return self.send(200, (Path(__file__).parent / "winbox" / "install.ps1").read_bytes(), "text/plain; charset=utf-8")
+            if p == "/winbox/activer-winbox.bat":
+                host = re.sub(r"[^A-Za-z0-9.\-:\[\]]", "", self.headers.get("Host", ""))[:80] or "127.0.0.1:8080"
+                bat = ("@echo off\r\ntitle ADER LINK - Activer Winbox\r\necho Activation du bouton Winbox d'ADER LINK...\r\n"
+                       f"powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex ((New-Object Net.WebClient)"
+                       f".DownloadString('http://{host}/winbox/install.ps1'))\"\r\npause\r\n")
+                return self.send(200, bat.encode(), "application/octet-stream",
+                                 {"Content-Disposition": 'attachment; filename="activer-winbox-aderlink.bat"'})
             if p == "/healthz":
                 return self.send(200, b"ok")
             if p == "/login":

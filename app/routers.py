@@ -93,6 +93,7 @@ class Routers:
         d["points_vente"] = self.list_pv(z["id"])
         d["owner"] = z.get("owner")
         d["currency"] = z.get("currency", "FCFA")
+        d["winbox"] = z.get("winbox", "")
         d["installed"] = bool(r.get("host"))
         d["auto_host"] = bool(r.get("auto_host"))
         d["has_logo"] = self.logo(z["id"]) is not None
@@ -169,6 +170,11 @@ class Routers:
                 elif not host and not r.get("auto_host"):
                     r.update(host="", auto_host=True)  # on repasse en détection automatique
             r.update(port=port, wan_interface=wan)
+            if "winbox" in data:
+                wb = _clean(data.get("winbox"), 80).replace(" ", "")
+                if wb and not re.fullmatch(r"[A-Za-z0-9.\-:\[\]]+", wb):
+                    raise RouterError("Adresse Winbox invalide (ex. 41.203.10.5:8291)")
+                z["winbox"] = wb
             self._persist()
         return self.public(z)
 
@@ -201,12 +207,17 @@ class Routers:
                     return hits[0]
         return None
 
+    @staticmethod
+    def winbox_addr(z):
+        r = z.get("router") or {}
+        return z.get("winbox") or (f"{r['host']}" if r.get("host") else "")
+
     def open_winbox(self, zone_id, local):
         """Ouvre Winbox sur le PC où tourne ADER LINK, l'adresse du routeur déjà remplie."""
         import os
         import subprocess
         z = self.zone(zone_id)
-        host = (z.get("router") or {}).get("host")
+        host = self.winbox_addr(z)
         if not host:
             return {"ok": False, "host": "", "message": "Ce routeur n'est pas encore installé."}
         if self.demo:
@@ -218,7 +229,7 @@ class Routers:
         if not exe:
             return {"ok": False, "host": host,
                     "message": "Winbox introuvable. Mettez winbox64.exe dans le dossier aderlink, puis recommencez. L'adresse est copiée."}
-        subprocess.Popen([exe, host], close_fds=True)
+        subprocess.Popen([exe, host], close_fds=True)  # host déjà vérifié (adresse ou adresse:port)
         return {"ok": True, "host": host, "message": "Winbox s'ouvre avec l'adresse " + host + "."}
 
     def test(self, zone_id):

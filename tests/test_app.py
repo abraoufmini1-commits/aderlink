@@ -638,6 +638,14 @@ class UsersAndRolesTests(unittest.TestCase):
         code, wb = self.post(t, f"/api/routers/{r['id']}/winbox", {})
         self.assertEqual((code, wb["host"]), (200, "127.0.0.1"))  # hors Windows : l'adresse est rendue pour être copiée
         self.assertEqual(self.post(t, "/api/routers/a/winbox", {})[0], 403)
+        bat = urllib.request.urlopen(self.base + "/winbox/activer-winbox.bat").read().decode()
+        self.assertIn("/winbox/install.ps1", bat)
+        ps1 = urllib.request.urlopen(self.base + "/winbox/install.ps1").read().decode()
+        self.assertIn("aderlink-winbox", ps1)
+        self.assertIn("-notmatch", ps1)  # l'adresse reçue du navigateur est vérifiée avant de lancer Winbox
+        self.post(t, f"/api/routers/{r['id']}/update", {"name": "Zone A", "winbox": "41.203.10.5:8291"})
+        self.assertEqual(self.get(t, "/api/routers")["routers"][0]["winbox"], "41.203.10.5:8291")
+        self.assertEqual(self.post(t, f"/api/routers/{r['id']}/update", {"name": "Zone A", "winbox": "a;calc"})[0], 400)
         self.assertEqual(self.post(t, "/api/forfaits", {"zone_id": r["id"], "name": "1H", "price": 100})[0], 200)
         self.assertEqual(self.post(t, "/api/users", {})[0], 400)  # formulaire vide
         # équipe du client : seulement sur ses routeurs, jamais un autre client

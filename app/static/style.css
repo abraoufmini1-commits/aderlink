@@ -1062,3 +1062,6 @@ button.rcard { border: 1px solid var(--border); }
 .lockup-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-2); }
 
 .toast-ok { background: var(--good) !important; }
+.wb-steps { margin: 14px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
+.wb-steps li { padding-left: 4px; line-height: 1.45; }
+.wb-steps .btn svg { width: 18px; height: 18px; }
