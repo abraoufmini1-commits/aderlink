@@ -145,7 +145,7 @@
             "<span><strong>" + esc(x.title) + "</strong><small>" + esc(x.text) + "</small></span><em>Gérer</em></button>";
         })() +
         "<div class='rc-meta u-last'>Dernière connexion : " + when(u.last_login) + "</div>" +
-        "<div class='act-grid " + (u.follows_parent ? "act-grid-3" : "act-grid-4") + "'>" + (u.follows_parent ? "" : act("subscription", "Abonnement", "clock")) + act("edit", "Modifier", "pencil") + act("password", "Mot de passe", "key") +
+        "<div class='act-grid " + (u.follows_parent ? "act-grid-3" : "act-grid-4") + "'>" + (u.follows_parent ? "" : act("subscription", "Abonnement", "clock")) + act("edit", "Modifier", "pencil") + act("send", "Envoyer l'accès", "phone") +
         act("toggle", u.active ? "Désactiver" : "Activer", u.active ? "x" : "check") + "</div></article>";
     }).join("") : "<div class='card empty'>Aucun gérant ni revendeur pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour en créer un.</div>";
   }
@@ -153,7 +153,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var u = byId(+b.dataset.id);
-    ({ edit: edit, password: password, toggle: toggle, delete: remove, subscription: subscription })[b.dataset.act](u);
+    ({ edit: edit, password: password, send: sendAccess, toggle: toggle, delete: remove, subscription: subscription })[b.dataset.act](u);
   });
   $("addBtn").addEventListener("click", function () { edit(null, tab === "clients" ? "client" : "revendeur"); });
 
@@ -187,15 +187,28 @@
   }
 
   // Le mot de passe n'est montré qu'une seule fois : on propose de le copier
+  function isLocal() {
+    var h = location.hostname;
+    return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+  }
+  function waNumber(phone) {
+    var d = String(phone || "").replace(/[^0-9]/g, "").replace(/^00/, "");
+    if (d.length === 8) d = "227" + d;  // numéro nigérien sans indicatif
+    return d;
+  }
   function showPassword(u, pwd, title) {
+    var link = location.origin + "/login?u=" + encodeURIComponent(u.username);
+    var text = "Bonjour " + u.name + ", voici votre accès ADER LINK :\n" + link + "\nIdentifiant : " + u.username + "\nMot de passe : " + pwd;
     sheet(title, "key",
-      "<p class='pane-sub'>Donnez ces informations à <strong>" + esc(u.name) + "</strong>. Le mot de passe ne sera plus affiché ensuite.</p>" +
-      "<dl class='check-dl'><div><dt>Adresse</dt><dd class='mono'>" + esc(location.origin) + "</dd></div>" +
+      "<p class='pane-sub'>Envoyez ces informations à <strong>" + esc(u.name) + "</strong>. Il clique sur le lien, tape le mot de passe, et il est dans son compte. Le mot de passe ne sera plus affiché ensuite.</p>" +
+      (isLocal() ? "<div class='notice show notice-err'>Attention : cette adresse (" + esc(location.host) + ") ne marche que sur le même réseau que ce PC. Pour que " + esc(u.name) +
+        " se connecte de chez lui, il faut le serveur en ligne (VPS).</div>" : "") +
+      "<dl class='check-dl'><div><dt>Lien</dt><dd class='mono'>" + esc(link) + "</dd></div>" +
       "<div><dt>Identifiant</dt><dd class='mono'>" + esc(u.username) + "</dd></div>" +
       "<div><dt>Mot de passe</dt><dd class='mono pw-big'>" + esc(pwd) + "</dd></div></dl>",
-      "<button class='btn-prev' type='button' data-close>Fermer</button><button class='btn btn-big' type='button' id='cp'>" + ic("copy") + " Copier</button>");
+      "<button class='btn btn-outline' type='button' id='cp'>" + ic("copy") + " Copier</button>" +
+      "<a class='btn btn-big btn-wa' id='wa' target='_blank' rel='noopener' href='https://wa.me/" + waNumber(u.phone) + "?text=" + encodeURIComponent(text) + "'>" + ic("phone") + " Envoyer sur WhatsApp</a>");
     $("cp").addEventListener("click", function () {
-      var text = "ADER LINK\nAdresse : " + location.origin + "\nIdentifiant : " + u.username + "\nMot de passe : " + pwd;
       var b = $("cp");
       var done = function () { b.innerHTML = ic("check") + " Copié !"; setTimeout(function () { b.innerHTML = ic("copy") + " Copier"; }, 2000); };
       if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done);
@@ -343,13 +356,13 @@
 
   function more(u) {
     var item = function (a, label, icon, cls) { return "<button type='button' class='menu-item" + (cls ? " " + cls : "") + "' data-m='" + a + "'>" + ic(icon) + "<span>" + label + "</span></button>"; };
-    sheet(u.name, "user", "<div class='menu-list'>" + item("edit", "Modifier les informations", "pencil") + item("password", "Nouveau mot de passe", "key") +
+    sheet(u.name, "user", "<div class='menu-list'>" + item("send", "Envoyer l'accès par WhatsApp", "phone") + item("edit", "Modifier les informations", "pencil") + item("password", "Nouveau mot de passe", "key") +
       item("toggle", u.active ? "Désactiver le compte" : "Activer le compte", u.active ? "x" : "check") +
       item("delete", "Supprimer le compte", "trash", "is-danger") + "</div>");
     $("bsBody").onclick = function (e) {
       var b = e.target.closest("[data-m]");
       if (!b) return;
-      ({ edit: function () { edit(u); }, password: function () { password(u); }, toggle: function () { close(); toggle(u); }, delete: function () { remove(u); } })[b.dataset.m]();
+      ({ send: function () { sendAccess(u); }, edit: function () { edit(u); }, password: function () { password(u); }, toggle: function () { close(); toggle(u); }, delete: function () { remove(u); } })[b.dataset.m]();
     };
   }
 
@@ -432,6 +445,19 @@
       send({ action: "stop" }, b);
     });
     loadHistory(u);
+  }
+
+  // --- envoyer l'accès : le mot de passe n'est jamais gardé en clair, on en crée un nouveau -----
+  function sendAccess(u) {
+    sheet("Envoyer l'accès à " + u.name, "phone",
+      "<p class='pane-sub'>ADER LINK ne garde jamais les mots de passe en clair. Pour envoyer l'accès, un <strong>nouveau mot de passe</strong> est créé " +
+      "pour <strong>" + esc(u.name) + "</strong> (" + esc(u.username) + ") ; l'ancien ne marchera plus.</p><div class='notice' id='bsMsg' role='status'></div>",
+      "<button class='btn-prev' type='button' data-close>Annuler</button><button class='btn btn-big' type='button' id='saGo'>Créer et envoyer</button>");
+    $("saGo").addEventListener("click", function () {
+      api("/api/users/" + u.id + "/password", { password: "" }).then(function (res) {
+        showPassword(u, res.password, "Accès de " + u.name);
+      }).catch(function (err) { msg("err", esc(err.message)); });
+    });
   }
 
   // --- mot de passe ----------------------------------------------------------------------

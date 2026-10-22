@@ -1218,3 +1218,8 @@ button.rcard { border: 1px solid var(--border); }
 
 .lstats-3, .lstats-sm.lstats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 560px) { .lstats.lstats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } .lstats-3 .lstat strong { font-size: 18px; } .lstats-3 .lstat { padding: 8px 9px; } }
+
+/* bouton WhatsApp (envoi de l'accès) */
+.btn-wa { background: #1f9d55; border-color: #1f9d55; color: #fff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-wa:hover { background: #188046; border-color: #188046; }
+.btn-wa svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }

@@ -1,5 +1,11 @@
 (function () {
-  var e = new URLSearchParams(location.search).get("e");
+  var qs = new URLSearchParams(location.search), e = qs.get("e");
+  var who = qs.get("u");
+  if (who && /^[a-z0-9._-]{1,32}$/.test(who)) {  // lien envoyé par WhatsApp : identifiant déjà rempli
+    var uin = document.querySelector("input[name=username]"), pin = document.querySelector("input[type=password]");
+    uin.value = who; uin.removeAttribute("autofocus");
+    if (pin) setTimeout(function () { pin.focus(); }, 50);
+  }
   var box = document.getElementById("err");
   var exp = document.getElementById("expired");
   if (e === "expire") {
