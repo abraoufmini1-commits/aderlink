@@ -120,6 +120,10 @@ class App:
         hours = {"6h": 6, "24h": 24, "7j": 168}.get(range_key, 24)
         bucket = 300 if hours <= 24 else 3600
         state = self.collector.snapshot()
+        since = int(time.time()) - hours * 3600
+        with self.store.lock:
+            peaks = dict(self.store.db.execute(
+                "SELECT zone_id, MAX(active) FROM samples WHERE ts >= ? AND online = 1 GROUP BY zone_id", (since,)).fetchall())
         zones = []
         for z in self.zones_for(who):
             s = state.get(z["id"], {})
@@ -133,6 +137,7 @@ class App:
                 "board": s.get("board"), "version": s.get("version"),
                 "uptime_s": s.get("uptime_s"), "cpu": s.get("cpu"), "memory": s.get("memory"),
                 "tickets": s.get("tickets"), "active": s.get("active", 0),
+                "peak": max(peaks.get(z["id"]) or 0, s.get("active", 0) if s.get("online") else 0),
                 "rx_bps": s.get("rx_bps", 0), "tx_bps": s.get("tx_bps", 0),
             })
         online = [z for z in zones if z["status"] == "online"]
@@ -140,7 +145,6 @@ class App:
         midnight = (int(time.time()) + off) // 86400 * 86400 - off
         zone_ids, mine = self.sales_scope(who)
         sales = self.tickets.sales(midnight, zone_ids, mine) if self.tickets else []
-        since = int(time.time()) - hours * 3600
         if who.zones is None:
             history = self.store.history(since, bucket)
         else:

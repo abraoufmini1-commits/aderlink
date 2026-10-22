@@ -75,8 +75,7 @@
     $("demoBanner").hidden = !d.demo;
     $("updated").textContent = "Mis à jour à " + clock(d.generated_at);
     $("kActive").textContent = nf.format(t.active);
-    var peak = d.history.reduce(function (m, p) { return Math.max(m, p.active); }, 0);
-    $("kActiveSub").textContent = "Max connectés : " + nf.format(peak);
+    $("kActiveSub").textContent = "Sur tous les routeurs";
     $("kZones").innerHTML = nf.format(t.zones_online) + " <small>/ " + nf.format(t.zones) + "</small>";
     var off = t.zones - t.zones_online;
     $("kZonesSub").textContent = off ? off + " routeur" + (off > 1 ? "s" : "") + " hors ligne" : "Tous en ligne";
@@ -108,11 +107,13 @@
       var head = '<span class="rtop">' + avatar + '<span class="rid"><span class="rname" title="' + esc(z.name) + '">' + esc(z.name) + "</span>" +
         '<span class="rmodel">' + esc(model(z) || (z.status === "pending" ? "Pas encore installé" : "MikroTik")) + "</span></span>" +
         '<span class="rstate"><i aria-hidden="true"></i>' + st[0] + "</span></span>";
-      var tile = function (cls, n, label) {
-        return '<span class="rtile ' + cls + '"><span class="n num">' + n + '</span><span class="l">' + label + "</span></span>";
+      var tile = function (cls, n, label, sub) {
+        return '<span class="rtile ' + cls + '"><span class="n num">' + n + '</span><span class="l">' + label + "</span>" +
+          (sub ? '<span class="rtile-sub">' + sub + "</span>" : "") + "</span>";
       };
       var tiles = '<span class="rtiles">' +
-        tile("rtile-blue", online ? nf.format(z.active) : "–", "Connecté" + (online && z.active > 1 ? "s" : "")) +
+        tile("rtile-blue", online ? nf.format(z.active) : "–", "Connecté" + (online && z.active > 1 ? "s" : ""),
+          z.peak ? "Max connectés : " + nf.format(z.peak) : "") +
         tile("rtile-orange", z.tickets != null ? nf.format(z.tickets) : "–", "Tickets dans le MikroTik") + "</span>";
       var inner = head + tiles;
       if (online) return '<button type="button" class="card rcard ' + st[1] + '" data-zone="' + esc(z.id) + '" aria-label="' + esc(z.name) + " : " + z.active + ' connectés — voir la liste">' + inner + "</button>";
