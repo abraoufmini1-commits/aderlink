@@ -70,18 +70,23 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
         f'password={q(password)} address={srv}/32 comment="ADER LINK" }} else={{ /user set [find name="{user}"] '
         f'group="aderlink-api" password={q(password)} address={srv}/32 }}',
         f"/ip service set api disabled=no port={int(api_port)} address={srv}/32",
-        "# 2. Expiration des tickets par le routeur lui-meme",
+        "# 2. Heure exacte (apres une coupure de courant, l horloge du routeur repart a zero :",
+        "#    sans la bonne heure, les tickets n expireraient pas a l heure prevue)",
+        ':do { /ip cloud set update-time=yes } on-error={}',
+        ':do { :local n [:parse "/system ntp client set enabled=yes servers=pool.ntp.org"]; $n } on-error={ '
+        ':do { :local n [:parse "/system ntp client set enabled=yes server-dns-names=pool.ntp.org"]; $n } on-error={} }',
+        "# 3. Expiration des tickets par le routeur lui-meme",
         '/system script remove [find name="aderlink-login"]',
         '/system script add name="aderlink-login" dont-require-permissions=yes policy=read,write,policy,test '
         f'comment="ADER LINK : expiration des tickets" source={q(LOGIN_SOURCE)}',
-        "# 3. Liaison avec l application toutes les 5 minutes",
+        "# 4. Liaison avec l application toutes les 5 minutes",
         '/system script remove [find name="aderlink-ping"]',
         '/system script add name="aderlink-ping" dont-require-permissions=yes policy=read,write,policy,test '
         f'comment="ADER LINK : liaison avec l application" source={q(ping_source(ok_url))}',
         '/system scheduler remove [find name="ADER LINK"]',
         '/system scheduler add name="ADER LINK" interval=5m start-time=startup '
         'on-event="/system script run aderlink-ping" comment="ADER LINK : liaison avec l application"',
-        "# 4. Profils des forfaits (vitesse, appareils, validite)",
+        "# 5. Profils des forfaits (vitesse, appareils, validite)",
     ]
     for p in profiles:
         prof = re.sub(r"[^A-Za-z0-9\-]", "", p["profile"])
