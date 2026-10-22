@@ -72,7 +72,7 @@
         st + "</div>" +
         (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
         "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Forfaits", "ticket") +
-        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", "Winbox", "winbox") : "") + "</div></article>";
+        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("portail", "Page Wi-Fi", "phone") + act("winbox", "Winbox", "winbox") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
   $("search").addEventListener("input", render);
@@ -80,7 +80,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var r = byId(b.dataset.id);
-    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install, winbox: winbox })[b.dataset.act](r, b);
+    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install, winbox: winbox, portail: portail })[b.dataset.act](r, b);
   });
   $("addBtn").addEventListener("click", function () {
     if (S.quota && S.quota.used >= S.quota.max) {
@@ -276,6 +276,29 @@
       close();
       launch(addr);
     });
+  }
+
+  // --- page de connexion Wi-Fi (portail captif) ---------------------------------------------------
+  function portail(r) {
+    if (!r.installed) { toast("Installez d'abord le routeur (bouton Installer)."); return; }
+    sheet("Page de connexion Wi-Fi", "phone", "<p class='pane-sub'>Préparation…</p>");
+    api("/api/routers/" + encodeURIComponent(r.id) + "/portail").then(function (d) {
+      $("bsBody").innerHTML =
+        "<p class='pane-sub'>La page que voient vos clients quand ils se connectent au Wi-Fi <strong>" + esc(r.ssid) + "</strong> : votre logo, une case pour le code du ticket, vos forfaits et votre numéro.</p>" +
+        "<a class='btn btn-outline btn-block' href='" + esc(d.preview) + "' target='_blank' rel='noopener'>" + ic("phone") + " Voir l'aperçu</a>" +
+        "<label class='q-label' for='pScript'>Ligne à coller dans Winbox (New Terminal)</label>" +
+        "<textarea id='pScript' class='script' readonly rows='4'>" + esc(d.line) + "</textarea>" +
+        "<button class='btn btn-big btn-block' type='button' id='pCopy'>" + ic("copy") + " Copier la ligne</button>" +
+        "<div class='info-box'><strong>Bon à savoir</strong><ul>" +
+        "<li>La page remplace celle de votre hotspot (login, statut, déconnexion). Pour revenir à la page d'origine : Winbox → IP → Hotspot → onglet Servers → ouvrez votre serveur → <strong>Reset HTML</strong>.</li>" +
+        "<li>Après avoir changé vos forfaits, le logo ou le nom, recollez la ligne pour mettre la page à jour.</li>" +
+        "<li>Le client tape seulement le code : il sert d'identifiant et de mot de passe.</li></ul></div>";
+      $("pScript").addEventListener("focus", function () { this.select(); });
+      $("pCopy").addEventListener("click", function () {
+        var b = this;
+        copyText(d.line).then(function () { b.innerHTML = ic("check") + " Copié !"; setTimeout(function () { b.innerHTML = ic("copy") + " Copier la ligne"; }, 2000); });
+      });
+    }).catch(function (err) { $("bsBody").innerHTML = "<p class='pane-sub'>" + esc(err.message) + "</p>"; });
   }
 
   // --- forfaits : on ouvre l'assistant de création sur ce routeur ------------------------------

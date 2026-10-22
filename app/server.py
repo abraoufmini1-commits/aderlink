@@ -253,14 +253,14 @@ def make_handler(app):
             from .users import Principal
             return Principal(username, "Administrateur", "admin") if username == app.config["admin"]["username"] else None
 
-        def send(self, status, body=b"", ctype="text/plain; charset=utf-8", headers=None):
+        def send(self, status, body=b"", ctype="text/plain; charset=utf-8", headers=None, csp=None):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Security-Policy",
+            self.send_header("Content-Security-Policy", csp or
                              "default-src 'self'; img-src 'self' data:; style-src 'self'; "
                              "script-src 'self'; frame-ancestors 'none'")
             self.send_header("Cache-Control", "no-store")
@@ -302,6 +302,44 @@ def make_handler(app):
             except (RouterError, TicketError, UserError) as e:
                 return self.json({"error": str(e)}, 400)
 
+        def portal(self, p):
+            """Page de connexion Wi-Fi : script et fichiers pour le routeur (publics, par jeton), aperçu (connecté)."""
+            from . import portal
+            parts = p.split("/")
+            if len(parts) == 3 and parts[2].endswith(".rsc"):
+                z = app.routers.by_token(parts[2][:-4])
+                if not z:
+                    return self.send(404, b"# Lien inconnu")
+                base, _ = app.routers._base(z, self.headers.get("Host", ""))
+                return self.send(200, portal.install_rsc(base, z["install_token"]).encode(), "text/plain; charset=utf-8")
+            if len(parts) == 5 and parts[2] == "apercu":
+                who = self.who()
+                if not who or not who.can_zone(parts[3]):
+                    return self.redirect("/login")
+                z = next((x for x in app.config.get("zones", []) if x["id"] == parts[3]), None)
+                page = self.portal_page(z, parts[4]) if z else None
+                if not page:
+                    return self.send(404, b"Introuvable")
+                return self.send(200, portal.preview(page).encode(), "text/html; charset=utf-8",
+                                 csp="default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'none'")
+            if len(parts) == 4:
+                z = app.routers.by_token(parts[2])
+                page = self.portal_page(z, parts[3]) if z else None
+                return self.send(200, page.encode(), "text/html; charset=utf-8") if page else self.send(404, b"")
+            return self.send(404, b"Introuvable")
+
+        def portal_page(self, z, name):
+            from . import portal
+            if name not in portal.FILES:
+                return None
+            contact = app.config.get("contact") or {}
+            if z.get("owner") and app.users:  # routeur d'un client : son propre numéro
+                owner = app.users._get(z["owner"])
+                if owner and owner.get("phone"):
+                    contact = {"name": owner["name"], "phone": owner["phone"]}
+            forfaits = app.tickets.list_forfaits(z["id"]) if app.tickets else []
+            return portal.render(name, z, forfaits, app.routers.logo(z["id"]), contact)
+
         def my_team(self, who, uid):
             if who.role != "client" or not app.users:
                 return False
@@ -332,6 +370,8 @@ def make_handler(app):
                 profiles = app.tickets.profile_specs(z["id"]) if app.tickets else []
                 return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles).encode(),
                                  "text/plain; charset=utf-8")
+            if p.startswith("/portail/") and app.routers:
+                return self.portal(p)
             if p.startswith("/install/") and p.endswith("/ok") and app.routers:
                 z = app.routers.by_token(p[len("/install/"):-3])
                 if not z:
@@ -408,6 +448,15 @@ def make_handler(app):
                 logo = app.routers.logo(parts[3])
                 self.need(logo is not None, "Pas de logo")
                 return self.send(200, bytes(logo[1]), logo[0], {"Cache-Control": "private, max-age=86400"})
+            if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "portail":
+                self.need(who.can("routers_write") and who.can_zone(parts[3]))
+                z = app.routers.zone(parts[3])
+                token = app.routers.ensure_token(z)
+                base, srv = app.routers._base(z, self.headers.get("Host", ""))
+                url = f"http://{base}/portail/{token}.rsc"
+                return {"line": f'/tool fetch url="{url}" dst-path=aderlink-portail.rsc; :delay 1s; '
+                                f'/import file-name=aderlink-portail.rsc; /file remove aderlink-portail.rsc',
+                        "preview": f"/portail/apercu/{z['id']}/login.html", "server_ip": srv}
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))
