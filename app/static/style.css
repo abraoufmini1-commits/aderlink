@@ -1205,3 +1205,6 @@ button.rcard { border: 1px solid var(--border); }
   .lstats-sm .lstat strong { font-size: 16px; }
   .lstats-sm .lstat span { font-size: 11px; }
 }
+
+.lstats-3, .lstats-sm.lstats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 560px) { .lstats.lstats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } .lstats-3 .lstat strong { font-size: 18px; } .lstats-3 .lstat { padding: 8px 9px; } }

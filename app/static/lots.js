@@ -43,8 +43,8 @@
     });
     $("lotsSub").textContent = nf.format(list.length) + " lot" + (list.length > 1 ? "s" : "") + " · " + nf.format(T.amount) + " F CFA vendus";
     var stat = function (cls, n, label) { return "<div class='lstat " + cls + "'><strong class='num'>" + nf.format(n) + "</strong><span>" + label + "</span></div>"; };
-    $("lotsTotal").innerHTML = list.length ? "<div class='lstats'>" + stat("ls-total", T.count, "Tickets au total") + stat("ls-left", T.left, "Restants") +
-      stat("ls-live", T.live, "Utilisés, en cours") + stat("ls-exp", T.expired, "Expirés") + (T.removed ? stat("ls-del", T.removed, "Supprimés") : "") + "</div>" : "";
+    $("lotsTotal").innerHTML = list.length ? "<div class='lstats lstats-3'>" + stat("ls-total", T.count, "Tickets au total") + stat("ls-left", T.left, "Restants") +
+      stat("ls-live", T.live + T.expired, "Utilisés") + "</div>" : "";
     $("lots").innerHTML = list.length ? list.map(function (b) {
       var left = b.count - b.used - b.removed, live = b.used - b.expired;
       var pct = function (n) { return b.count ? (100 * n / b.count).toFixed(2) : 0; };
@@ -55,11 +55,10 @@
         "<span class='zone-meta'>Lot n° " + b.id + " · " + esc(b.zone_name) + (b.pos_name ? " · " + esc(b.pos_name) : "") + " · " + date(b.created_at) + "</span>" +
         "<span class='zone-meta'><b class='num'>" + nf.format(b.price) + " F</b> l'unité · " + dur(b.uptime_s) + " · " + data(b.data_mb) + "</span></div>" +
         "<div class='lot-pct'><strong class='num'>" + soldPct + " %</strong><span class='zone-meta'>utilisés</span></div></div>" +
-        "<div class='lstats lstats-sm'>" + stat("ls-total", b.count, "Total") + stat("ls-left", left, "Restants") +
-        stat("ls-live", live, "En cours") + stat("ls-exp", b.expired, "Expirés") + (b.removed ? stat("ls-del", b.removed, "Supprimés") : "") + "</div>" +
+        "<div class='lstats lstats-sm lstats-3'>" + stat("ls-total", b.count, "Total") + stat("ls-left", left, "Restants") +
+        stat("ls-live", b.used, "Utilisés") + "</div>" +
         "<div class='stack' role='img' aria-label='" + nf.format(b.used) + " utilisés sur " + nf.format(b.count) + "'>" +
-        "<span class='sk-live' data-w='" + pct(live) + "'></span><span class='sk-exp' data-w='" + pct(b.expired) + "'></span>" +
-        "<span class='sk-del' data-w='" + pct(b.removed) + "'></span></div>" +
+        "<span class='sk-live' data-w='" + pct(b.used) + "'></span></div>" +
         "<div class='lot-facts'><span>Vendu : <b class='num'>" + nf.format(b.used * b.price) + " F</b></span>" +
         "<span>Reste à vendre : <b class='num'>" + nf.format(left * b.price) + " F</b></span></div>" +
         "<div class='lot-actions'><a class='btn btn-sm' href='/imprimer?lot=" + b.id + "' target='_blank'>Imprimer les cartes</a>" +
