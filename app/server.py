@@ -121,9 +121,11 @@ class App:
         zones = []
         for z in self.zones_for(who):
             s = state.get(z["id"], {})
+            pending = not (z.get("router") or {}).get("host")
             zones.append({
                 "id": z["id"], "name": z["name"], "location": z.get("location", ""),
-                "status": "unknown" if not s else ("online" if s.get("online") else "offline"),
+                "status": "pending" if pending else "unknown" if not s else ("online" if s.get("online") else "offline"),
+                "has_logo": bool(self.routers and self.routers.logo(z["id"]) is not None),
                 "error": s.get("error"), "checked_at": s.get("checked_at"),
                 "last_seen": s.get("last_seen"), "identity": s.get("identity"),
                 "board": s.get("board"), "version": s.get("version"),

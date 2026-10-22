@@ -1015,3 +1015,44 @@ body[data-role="revendeur"] .need-gerant { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .bs-foot svg { width: 18px; height: 18px; flex: none; }
 .bs-foot .btn, .bs-foot .btn-prev { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* ===================== Accueil : cartes routeurs compactes ===================== */
+.zones { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.rcard { padding: 14px; display: flex; flex-direction: column; gap: 12px; border-top: 4px solid var(--st, var(--border)); border-radius: 18px; }
+.rcard.is-online { --st: var(--good); }
+.rcard.is-offline { --st: var(--critical); }
+.rcard.is-pending { --st: var(--orange); }
+.rtop { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ravatar {
+  width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
+  background: var(--blue-100); color: var(--blue-600); font-weight: 800; font-size: 14px; overflow: hidden;
+}
+.ravatar-logo { background: #fff; border: 1px solid var(--border); }
+.ravatar img { width: 100%; height: 100%; object-fit: cover; }
+.rid { flex: 1; min-width: 0; }
+.rname { font-weight: 800; font-size: 15px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmodel { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.rstatus { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--st, var(--ink-2));
+  background: color-mix(in srgb, var(--st, var(--ink-3)) 12%, var(--surface)); padding: 4px 9px; border-radius: 99px; white-space: nowrap; flex: none; }
+.rstatus i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.rcard.is-online .rstatus i { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .rcard.is-online .rstatus i { animation: none; } }
+.rmid { display: flex; align-items: center; gap: 14px; }
+.rusers { display: flex; flex-direction: column; min-width: 74px; }
+.rusers .n { font-size: 34px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; color: var(--blue-600); }
+.rusers .l { font-size: 12px; color: var(--ink-2); font-weight: 600; margin-top: 3px; }
+@media (prefers-color-scheme: dark) { .rusers .n { color: var(--series); } }
+.rbars { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.rbar { display: grid; grid-template-columns: 32px 1fr 40px; align-items: center; gap: 6px; font-size: 12px; }
+.rbar-l { color: var(--ink-3); font-weight: 700; }
+.rbar-v { text-align: right; font-weight: 650; }
+.rbar-track { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.rbar-track span { display: block; height: 100%; border-radius: 99px; background: var(--blue-600); }
+.rbar-track span.high { background: var(--critical); }
+.rinfo { display: flex; flex-wrap: wrap; gap: 6px; }
+.rinfo span { font-size: 12px; color: var(--ink-2); background: var(--surface-2); padding: 3px 8px; border-radius: 8px; }
+.rnote { margin: 0; font-size: 13px; color: var(--ink-2); }
+.rcard.is-offline .rnote { color: var(--critical); }
+.rlink { align-self: flex-start; background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--orange-hover); cursor: pointer; }
+.rlink:hover { text-decoration: underline; }
