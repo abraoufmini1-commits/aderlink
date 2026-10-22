@@ -101,6 +101,7 @@ class Routers:
         d["installed"] = bool(r.get("host"))
         d["auto_host"] = bool(r.get("auto_host"))
         d["has_logo"] = self.logo(z["id"]) is not None
+        d["remote"] = self.remote(z)
         if not d["installed"]:
             d["status"] = "pending"
         return d
@@ -216,12 +217,36 @@ class Routers:
         r = z.get("router") or {}
         return z.get("winbox") or (f"{r['host']}" if r.get("host") else "")
 
+    # --- accès à distance (Winbox, WebFig) par le tunnel --------------------------------------
+    WINBOX_BASE, WEBFIG_BASE = 50000, 52000
+
+    def remote(self, z):
+        """Adresses publiques du serveur qui mènent au routeur par le tunnel."""
+        wg, r = self.wg(), z.get("router") or {}
+        if not wg or r.get("tunnel") not in ("wg", "ovpn") or not r.get("tunnel_ip"):
+            return None
+        n = int(r["tunnel_ip"].rsplit(".", 1)[1])
+        ip = wg["endpoint"]
+        return {"winbox": f"{ip}:{self.WINBOX_BASE + n}", "webfig": f"http://{ip}:{self.WEBFIG_BASE + n}",
+                "tunnel": r["host"], "kind": "WireGuard" if r["tunnel"] == "wg" else "OpenVPN"}
+
+    def forwards_text(self):
+        """« port-public adresse-tunnel port-routeur » : lu par l'aide système (redirections du serveur)."""
+        out = []
+        for z in self.zones():
+            r = z.get("router") or {}
+            if self.remote(z):
+                n = int(r["tunnel_ip"].rsplit(".", 1)[1])
+                out.append(f"{self.WINBOX_BASE + n} {r['host']} 8291")
+                out.append(f"{self.WEBFIG_BASE + n} {r['host']} 80")
+        return "\n".join(out) + ("\n" if out else "")
+
     def open_winbox(self, zone_id, local):
         """Ouvre Winbox sur le PC où tourne ADER LINK, l'adresse du routeur déjà remplie."""
         import os
         import subprocess
         z = self.zone(zone_id)
-        host = self.winbox_addr(z)
+        host = (self.remote(z) or {}).get("winbox") or self.winbox_addr(z)
         if not host:
             return {"ok": False, "host": "", "message": "Ce routeur n'est pas encore installé."}
         if self.demo:
@@ -402,6 +427,7 @@ class Routers:
             return
         # écrits sur place : l'aide système réagit à la fermeture du fichier
         Path(self.wg_file).with_name("ovpn-users.conf").write_text(self.ovpn_text())
+        Path(self.wg_file).with_name("forwards.conf").write_text(self.forwards_text())
         Path(self.wg_file).write_text(self.peers_text())
 
     def install_script(self, z, request_host="", profiles=(), roaming=None):

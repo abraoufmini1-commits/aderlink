@@ -900,6 +900,13 @@ class TunnelTests(unittest.TestCase):
         self.assertEqual(r.ovpn_up(z2), "10.67.0.11")
         self.assertEqual(z2["router"]["tunnel"], "ovpn")
         self.assertIn("al11 ", r.wg_file.with_name("ovpn-users.conf").read_text())
+        # accès à distance : Winbox / WebFig par le serveur
+        self.assertEqual(r.remote(z1), {"winbox": "169.58.168.195:50010", "webfig": "http://169.58.168.195:52010",
+                                        "tunnel": "10.66.0.10", "kind": "WireGuard"})
+        fw = r.wg_file.with_name("forwards.conf").read_text()
+        self.assertIn("50010 10.66.0.10 8291\n", fw)
+        self.assertIn("52011 10.67.0.11 80\n", fw)
+        self.assertEqual(r.remote(z2)["kind"], "OpenVPN")
         # le signal toutes les 5 min ne remplace plus l'adresse du tunnel
         r.installed(z1, "41.0.0.5")
         self.assertEqual(z1["router"]["host"], "10.66.0.10")

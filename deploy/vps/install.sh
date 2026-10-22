@@ -14,7 +14,7 @@ say() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 
 say "1/7 Paquets système"
 apt-get update -qq
-apt-get install -y -qq python3 curl unzip ufw wireguard-tools openvpn openssl debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
+apt-get install -y -qq python3 curl unzip ufw wireguard-tools openvpn openssl nftables debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
 
 say "2/7 Caddy (serveur web)"
 if ! command -v caddy >/dev/null; then
@@ -179,6 +179,26 @@ while read -r u p a; do printf 'ifconfig-push %s 255.255.255.0\n' "$a" > "$OV/cc
 cut -d' ' -f1,2 "$OV/users.new" > "$OV/users.tmp"; chgrp nogroup "$OV/users.tmp"; chmod 640 "$OV/users.tmp"
 mv "$OV/users.tmp" "$OV/users"; rm -f "$OV/users.new"
 chmod 755 "$OV/ccd"; chmod 644 "$OV"/ccd/* 2>/dev/null || true
+# Accès à distance : port public du serveur -> Winbox (8291) / WebFig (80) du routeur, par le tunnel
+FW=/opt/aderlink/data/forwards.conf
+RULES=""
+while read -r port addr dport; do
+  RULES="$RULES    tcp dport $port dnat to $addr:$dport
+"
+done < <(grep -E '^5[0-3][0-9]{3} 10\.6[67]\.0\.[0-9]{1,3} (8291|80)$' "$FW" 2>/dev/null || true)
+nft -f - <<NFT || true
+table ip aderlink
+delete table ip aderlink
+table ip aderlink {
+  chain pre {
+    type nat hook prerouting priority -100;
+$RULES  }
+  chain post {
+    type nat hook postrouting priority 100;
+    ip daddr 10.66.0.0/23 ct status dnat masquerade
+  }
+}
+NFT
 if ip link show wg0 >/dev/null 2>&1; then
   wg syncconf wg0 <(wg-quick strip wg0)
 else
@@ -199,11 +219,15 @@ Description=ADER LINK - surveille la liste des routeurs du tunnel
 [Path]
 PathChanged=/opt/aderlink/data/wg-peers.conf
 PathChanged=/opt/aderlink/data/ovpn-users.conf
+PathChanged=/opt/aderlink/data/forwards.conf
 [Install]
 WantedBy=multi-user.target
 UNIT
-touch "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf"
-chown aderlink:aderlink "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf"
+touch "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf" "$DEST/data/forwards.conf"
+chown aderlink:aderlink "$DEST/data/wg-peers.conf" "$DEST/data/ovpn-users.conf" "$DEST/data/forwards.conf"
+# le serveur relaie Winbox / WebFig vers les routeurs par le tunnel
+echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-aderlink.conf
+sysctl -q -p /etc/sysctl.d/99-aderlink.conf
 chmod 600 "$DEST/data/ovpn-users.conf"
 IP=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 systemctl stop aderlink  # l'application ne doit pas réécrire la configuration pendant ce réglage
@@ -225,7 +249,9 @@ ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw allow 51820/udp >/dev/null
 ufw allow 1194/tcp >/dev/null      # tunnel des routeurs RouterOS 6
-ufw allow 1812:1813/udp >/dev/null   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
+ufw allow 1812:1813/udp >/dev/null
+ufw route allow proto tcp to 10.66.0.0/23 port 8291 >/dev/null   # Winbox à distance (par le tunnel)
+ufw route allow proto tcp to 10.66.0.0/23 port 80 >/dev/null     # WebFig à distance (par le tunnel)   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
 ufw --force enable >/dev/null
 
 sleep 2

@@ -249,7 +249,32 @@
     location.href = "aderlink-winbox://" + encodeURIComponent(addr);
     toast("Ouverture de Winbox sur " + addr + "…", true);
   }
+  // Accès à distance par le tunnel : Winbox et WebFig passent par le serveur en ligne
+  function remote(r) {
+    var x = r.remote;
+    var row = function (label, value, open) {
+      return "<div class='ra-row'><div class='ra-main'><div class='ra-label'>" + label + "</div><div class='ra-value mono'>" + esc(value) + "</div></div>" +
+        "<button type='button' class='icon-btn ra-copy' data-copy='" + esc(value) + "' aria-label='Copier'>" + ic("copy") + "</button>" + (open || "") + "</div>";
+    };
+    sheet("Accès à distance — " + r.name, "winbox",
+      "<p class='pane-sub'>Ouvrez ce routeur <strong>de n'importe où</strong>, même s'il est derrière une box : ADER LINK passe par le tunnel " + esc(x.kind) + ".</p>" +
+      "<div class='ra-list'>" +
+      row("Winbox", x.winbox, "<button type='button' class='btn btn-sm' id='raWb'>" + ic("winbox") + " Ouvrir</button>") +
+      row("WebFig (navigateur)", x.webfig, "<a class='btn btn-sm btn-outline' href='" + esc(x.webfig) + "' target='_blank' rel='noopener'>Ouvrir</a>") +
+      row("Adresse dans le tunnel", x.tunnel, "") + "</div>" +
+      "<div class='info-box'>Dans Winbox, collez l'adresse <strong class='mono'>" + esc(x.winbox) + "</strong> dans <strong>Connect To</strong>, puis votre identifiant et mot de passe du MikroTik.<br>" +
+      "<small>Gardez un mot de passe solide sur vos MikroTik : cette adresse est joignable depuis Internet.</small></div>");
+    $("bsBody").onclick = function (e) {
+      var c = e.target.closest("[data-copy]");
+      if (c) { copyText(c.dataset.copy); toast("Adresse copiée", true); }
+    };
+    $("raWb").addEventListener("click", function () {
+      copyText(x.winbox);
+      if (winboxReady()) launch(x.winbox); else setupWinbox(x.winbox);
+    });
+  }
   function winbox(r, btn) {
+    if (r.remote) { remote(r); return; }
     var addr = r.winbox || r.host;
     if (!addr) { toast("Ce routeur n'est pas encore installé."); return; }
     if (winboxReady()) { launch(addr); return; }
