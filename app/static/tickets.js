@@ -1,10 +1,10 @@
-/* ADER LINK — création de tickets : 1. routeur → 2. forfait → 3. quantité → terminé */
+/* ADER LINK — création de tickets : 1. routeur → 2. profil → 3. quantité → terminé */
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var nf = new Intl.NumberFormat("fr-FR");
-  var S = { zones: [], status: {}, zone: null, pv: null, forfaits: [], forfait: null, result: null };
-  var PARENT = { "pv": "routeur", "forfait": "pv", "forfait/nouveau": "forfait", "quantite": "forfait", "fini": "routeur" };
+  var S = { zones: [], status: {}, zone: null, pv: null, forfaits: [], forfait: null, result: null, editing: null };
+  var PARENT = { "pv": "routeur", "forfait": "pv", "forfait/nouveau": "forfait", "forfait/modifier": "forfait", "quantite": "forfait", "fini": "routeur" };
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -68,20 +68,22 @@
   });
   function show(view) {
     if (view !== "routeur" && !S.zone) view = "routeur";
-    if ((view === "forfait" || view === "forfait/nouveau" || view === "quantite") && !S.pv) view = "pv";
+    if ((view === "forfait" || view === "forfait/nouveau" || view === "forfait/modifier" || view === "quantite") && !S.pv) view = "pv";
+    if (view === "forfait/modifier" && !S.editing) view = "forfait";
+    if (view === "forfait/nouveau" && S.editing) { S.editing = null; resetProfileForm(); }
     if (view === "quantite" && !S.forfait) view = "forfait";
     if (view === "fini" && !S.result) view = "routeur";
-    var pane = { "routeur": "routeur", "pv": "pv", "forfait": "forfait", "forfait/nouveau": "nouveau", "quantite": "quantite", "fini": "fini" }[view] || "routeur";
+    var pane = { "routeur": "routeur", "pv": "pv", "forfait": "forfait", "forfait/nouveau": "nouveau", "forfait/modifier": "nouveau", "quantite": "quantite", "fini": "fini" }[view] || "routeur";
     ["routeur", "pv", "forfait", "nouveau", "quantite", "fini"].forEach(function (p) { $("pane-" + p).hidden = p !== pane; });
     var order = ["routeur", "pv", "forfait", "quantite"];
-    var cur = view === "fini" ? 4 : order.indexOf(view === "forfait/nouveau" ? "forfait" : view);
+    var cur = view === "fini" ? 4 : order.indexOf(view.indexOf("forfait/") === 0 ? "forfait" : view);
     if (pane === "pv") renderPv();
     document.querySelectorAll("#stepper li").forEach(function (li, i) {
       li.className = i < cur ? "is-done" : i === cur ? "is-current" : "";
       li.querySelector(".dot-n").innerHTML = i < cur ? "✓" : String(i + 1);
     });
     if (pane === "quantite") renderQuantite();
-    if (pane === "nouveau") { pSummary(); setTimeout(function () { $("pName").focus(); }, 60); }
+    if (pane === "nouveau") { profileMode(); pSummary(); setTimeout(function () { $("pName").focus(); }, 60); }
     if (pane === "routeur") setTimeout(function () { $("routerSearch").focus({ preventScroll: true }); }, 60);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -156,16 +158,23 @@
         "<span class='pick-main'><span class='pick-title'>" + esc(f.name) + "</span><span class='pick-sub'>" + esc(bits) + "</span>" +
         "<span class='pick-stock'>" + nf.format(f.stock) + " en stock" + (f.down_mbps ? " · " + nf.format(f.down_mbps) + " Mb/s" : "") + "</span></span>" +
         "<span class='pick-price num'>" + nf.format(f.price) + " F</span><span class='radio' aria-hidden='true'></span></button>" +
-        "<button type='button' class='row-del' data-archive='" + f.id + "' aria-label='Retirer le forfait " + esc(f.name) + "'>Retirer</button></div>";
-    }).join("") : "<div class='empty-step'>Aucun forfait sur ce routeur. Créez le premier, par exemple <strong>1 heure à 200 F</strong>.</div>";
+        "<button type='button' class='row-edit need-gerant' data-edit='" + f.id + "' aria-label='Modifier le profil " + esc(f.name) + "'>" + window.AderShell.icon("pencil") + "<span>Modifier</span></button>" +
+        "<button type='button' class='row-del' data-archive='" + f.id + "' aria-label='Retirer le profil " + esc(f.name) + "'>Retirer</button></div>";
+    }).join("") : "<div class='empty-step'>Aucun profil sur ce routeur. Créez le premier, par exemple <strong>1 heure à 200 F</strong>.</div>";
     $("manage").hidden = !S.forfaits.length;
   }
   $("manage").addEventListener("click", function () {
     var on = $("forfaits").classList.toggle("managing");
-    $("manage").textContent = on ? "Terminer" : "Retirer un forfait";
+    $("manage").textContent = on ? "Terminer" : "Retirer un profil";
     $("manage").setAttribute("aria-pressed", on);
   });
   $("forfaits").addEventListener("click", function (e) {
+    var ed = e.target.closest("[data-edit]");
+    if (ed) {
+      S.editing = S.forfaits.find(function (f) { return f.id === +ed.dataset.edit; }) || null;
+      if (S.editing) { fillProfileForm(S.editing); go("forfait/modifier"); }
+      return;
+    }
     var b = e.target.closest("[data-forfait]");
     if (b) {
       S.forfait = S.forfaits.find(function (f) { return f.id === +b.dataset.forfait; });
@@ -198,6 +207,41 @@
       down_mbps: down, up_mbps: up, shared_users: Math.round(num("pShared")) || 1, color: pColor()
     };
   }
+  // Remplit le formulaire avec un profil existant (modification)
+  function unitSet(nId, uId, value, units) {
+    var u = units.filter(function (x) { return value && value % x === 0; }).pop() || units[0];
+    $(nId).value = value ? Math.round(value / u * 100) / 100 : "";
+    $(uId).value = String(u);
+  }
+  function fillProfileForm(f) {
+    $("pane-nouveau").reset();
+    $("pName").value = f.name;
+    $("pPrice").value = f.price;
+    unitSet("pDataN", "pDataU", f.data_mb, [1, 1024]);
+    unitSet("pValN", "pValU", f.validity_s, [3600, 86400]);
+    unitSet("pUptimeN", "pUptimeU", f.uptime_s, [60, 3600, 86400]);
+    if (!f.uptime_s) $("pUptimeU").value = "3600";
+    $("pShared").value = f.shared_users || 1;
+    $("pDown").value = f.down_mbps || "";
+    $("pUp").value = f.up_mbps || "";
+    var c = document.querySelector("input[name=pColor][value='" + (f.color || "bleu") + "']");
+    if (c) c.checked = true;
+    var more = !!(f.uptime_s || f.down_mbps || f.up_mbps || (f.shared_users || 1) > 1);
+    $("pMore").checked = more;
+    $("pMoreBox").hidden = !more;
+  }
+  function resetProfileForm() {
+    $("pane-nouveau").reset();
+    $("pMoreBox").hidden = true;
+  }
+  function profileMode() {
+    var ed = !!S.editing;
+    $("npTitle").textContent = ed ? "Modifier le profil" : "Nouveau profil";
+    $("npVerb").textContent = ed ? "Sur" : "Créé sur";
+    $("pEditHint").hidden = !ed;
+    $("pSave").textContent = ed ? "✓ Enregistrer les modifications" : "✓ Enregistrer";
+    hideNotice("pNotice");
+  }
   function pColor() {
     var c = document.querySelector("input[name=pColor]:checked");
     return c ? c.value : "bleu";
@@ -216,22 +260,23 @@
   $("pane-nouveau").addEventListener("submit", function (e) {
     e.preventDefault();
     var v = profileValues();
-    if (!v.name) { notice("pNotice", "err", "Donnez un nom au forfait."); $("pName").focus(); return; }
+    if (!v.name) { notice("pNotice", "err", "Donnez un nom au profil."); $("pName").focus(); return; }
     if ($("pPrice").value.trim() === "") { notice("pNotice", "err", "Indiquez le prix du ticket."); $("pPrice").focus(); return; }
     if (v.shared_users > 10) { notice("pNotice", "err", "10 appareils maximum par ticket."); $("pShared").focus(); return; }
     var btn = $("pSave");
     btn.disabled = true; btn.textContent = "Envoi au routeur…";
     hideNotice("pNotice");
-    api("/api/forfaits", v).then(function (f) {
-      $("pane-nouveau").reset();
-      $("pMoreBox").hidden = true;
+    var editing = S.editing;
+    api(editing ? "/api/forfaits/" + editing.id : "/api/forfaits", v).then(function (f) {
+      S.editing = null;
+      resetProfileForm();
       return loadForfaits().then(function () {
         S.forfait = S.forfaits.find(function (x) { return x.id === f.id; }) || null;
         renderForfaits();
         go("forfait");
       });
     }).catch(function (err) { notice("pNotice", "err", esc(err.message)); })
-      .then(function () { btn.disabled = false; btn.textContent = "Enregistrer le forfait"; });
+      .then(function () { btn.disabled = false; profileMode(); });
   });
 
   // --- 3. quantité ---------------------------------------------------------------------------

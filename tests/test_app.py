@@ -328,6 +328,23 @@ class TicketTests(unittest.TestCase):
         self.assertEqual(self.router.profiles["AL-1-heure"]["rate-limit"], "2500k/5M")
         self.assertEqual(len([n for n in self.router.profiles if n.startswith("AL-")]), 1)
 
+    def test_update_forfait(self):
+        from app.tickets import TicketError
+        f = self.t.create_forfait({"zone_id": "z1", "name": "100F", "price": 100, "data_mb": 2048, "validity_s": 86400})
+        self.t.create_forfait({"zone_id": "z1", "name": "200F", "price": 200})
+        g = self.t.update_forfait(f["id"], {"name": "100F Go", "price": 150, "data_mb": 3072, "validity_s": 2 * 86400,
+                                            "down_mbps": 4, "shared_users": 2, "color": "vert"})
+        self.assertEqual((g["name"], g["price"], g["data_mb"], g["validity_s"], g["color"]), ("100F Go", 150, 3072, 172800, "vert"))
+        self.assertEqual(g["router_profile"], f["router_profile"])  # même profil sur le routeur
+        prof = self.router.profiles[f["router_profile"]]
+        self.assertEqual(prof["shared-users"], "2")
+        self.assertIn('v="2d00:00:00"', prof["on-login"])
+        with self.assertRaises(TicketError):
+            self.t.update_forfait(f["id"], {"name": "200f"})  # nom déjà pris
+        b = self.t.create_batch({"forfait_id": f["id"], "count": 1})
+        code = self.t.get_batch(b["id"])["tickets"][0]["code"]
+        self.assertEqual(self.router.users[code]["limit-bytes-total"], str(3072 * 1024 * 1024))
+
     def test_sales_history(self):
         f = self.t.create_forfait({"zone_id": "z1", "name": "Jour", "price": 100})
         b = self.t.create_batch({"forfait_id": f["id"], "count": 4})

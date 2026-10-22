@@ -71,7 +71,7 @@
           : "<div class='rc-meta'>Pas encore installé : touchez <strong>Installer</strong></div>") + "</div>" +
         st + "</div>" +
         (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
-        "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Forfaits", "ticket") +
+        "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Profils", "ticket") +
         (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", "Winbox", "winbox") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
@@ -349,11 +349,11 @@
         "<div class='wait-box' id='waitBox'>" + (r.installed ? "" : "<span class='spin' aria-hidden='true'></span> En attente du routeur…") + "</div>" +
         "<div class='info-box ok-box'><strong>Ce que le routeur installe</strong><ul>" +
         "<li><strong>L'accès d'ADER LINK</strong> : le compte « aderlink » (lecture, écriture, API — pas de Winbox ni SSH), l'API ouverte seulement pour " + esc(d.server_ip) + "</li>" +
-        "<li><strong>Vos forfaits</strong> : un profil hotspot « AL-… » par forfait, avec sa vitesse et ses appareils</li>" +
+        "<li><strong>Vos profils</strong> : un profil hotspot « AL-… » par profil ADER LINK, avec sa vitesse et ses appareils</li>" +
         "<li><strong>L'expiration des tickets</strong> : à la 1re connexion, le routeur lance le compte à rebours et supprime le ticket à la fin, même si ADER LINK est éteint</li>" +
         "<li><strong>La liaison</strong> : le routeur se signale à ADER LINK toutes les 5 minutes</li></ul>" +
         "Dans Winbox, vous verrez <strong>ADER LINK</strong> dans <strong>System → Scheduler</strong> et <strong>aderlink-login</strong>, <strong>aderlink-ping</strong> dans <strong>System → Scripts</strong>.<br>" +
-        "<small>Déjà installé ? Recollez la ligne après avoir ajouté des forfaits : c'est sans danger.</small></div>" +
+        "<small>Déjà installé ? Recollez la ligne après avoir ajouté des profils : c'est sans danger.</small></div>" +
         "<div class='notice' id='bsMsg' role='status'></div>";
       $("bsFoot").innerHTML = "<button class='btn-prev' type='button' data-close>Fermer</button><button class='btn btn-big' type='button' id='verify'>Vérifier la connexion</button>";
       clearInterval(watch);

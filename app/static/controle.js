@@ -40,7 +40,7 @@
           "<div class='check-code num'>" + esc(t.code) + "</div>" +
           "<dl class='check-dl'>" +
           "<div><dt>Routeur</dt><dd>" + esc(b.zone_name) + "</dd></div>" +
-          "<div><dt>Forfait</dt><dd>" + esc(b.note || b.profile) + " · " + nf.format(b.price) + " F</dd></div>" +
+          "<div><dt>Profil</dt><dd>" + esc(b.note || b.profile) + " · " + nf.format(b.price) + " F</dd></div>" +
           "<div><dt>Durée / données</dt><dd>" + dur(b.uptime_s) + " · " + data(b.data_mb) + "</dd></div>" +
           "<div><dt>Lot</dt><dd><a class='link' href='/lots#lot-" + b.id + "'>n° " + b.id + "</a></dd></div>" +
           "<div><dt>1re connexion</dt><dd>" + (t.first_used ? date(t.first_used) : "–") + "</dd></div>" +

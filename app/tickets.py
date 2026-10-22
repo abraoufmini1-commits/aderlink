@@ -137,53 +137,83 @@ class Tickets:
         fmt = lambda v: (f"{int(v)}M" if float(v).is_integer() else f"{int(float(v) * 1000)}k") if v else "0"
         return f"{fmt(up)}/{fmt(down)}"  # MikroTik : réception (envoi du client) / émission (réception du client)
 
-    def create_forfait(self, data):
-        zone = self.zone(str(data.get("zone_id", "")))
+    def _forfait_values(self, data):
         name = " ".join(str(data.get("name") or "").split())[:40]
         if not name:
             raise TicketError("Donnez un nom au profil")
         try:
-            price = max(0, int(data.get("price", 0)))
-            uptime_s = max(0, int(data.get("uptime_s", 0)))
-            data_mb = max(0, int(data.get("data_mb", 0)))
-            validity_s = max(0, int(data.get("validity_s", 0)))
-            down = max(0.0, float(data.get("down_mbps", 0) or 0))
-            up = max(0.0, float(data.get("up_mbps", 0) or 0))
-            shared = int(data.get("shared_users", 1) or 1)
+            v = {"name": name,
+                 "price": max(0, int(data.get("price", 0))),
+                 "uptime_s": max(0, int(data.get("uptime_s", 0))),
+                 "data_mb": max(0, int(data.get("data_mb", 0))),
+                 "validity_s": max(0, int(data.get("validity_s", 0))),
+                 "down_mbps": max(0.0, float(data.get("down_mbps", 0) or 0)),
+                 "up_mbps": max(0.0, float(data.get("up_mbps", 0) or 0)),
+                 "shared_users": int(data.get("shared_users", 1) or 1)}
         except (TypeError, ValueError):
             raise TicketError("Valeurs invalides")
-        if not 1 <= shared <= 10:
+        if not 1 <= v["shared_users"] <= 10:
             raise TicketError("Appareils simultanés : entre 1 et 10")
-        color = data.get("color") if data.get("color") in self.COLORS else "bleu"
-        rows, _ = self._q("SELECT id FROM forfaits WHERE zone_id = ? AND archived = 0 AND lower(name) = lower(?)",
-                          (zone["id"], name))
-        if rows:
+        v["color"] = data.get("color") if data.get("color") in self.COLORS else "bleu"
+        return v
+
+    def _push_profile(self, zone, router_profile, v):
+        """Crée ou met à jour le profil hotspot sur le routeur (vitesse, appareils, validité)."""
+        if self.demo:
+            return
+        from .mikrotik import on_login
+        try:
+            with open_router(zone) as api:
+                args = [f"=shared-users={v['shared_users']}", f"=rate-limit={self._rate(v['down_mbps'], v['up_mbps'])}",
+                        f"=on-login={on_login(v['validity_s'])}"]
+                found = api.query("/ip/hotspot/user/profile/print", f"?name={router_profile}")
+                if found:
+                    api.query("/ip/hotspot/user/profile/set", f"=.id={found[0]['.id']}", *args)
+                else:
+                    api.query("/ip/hotspot/user/profile/add", f"=name={router_profile}", *args)
+        except RouterOSError as e:
+            msg = str(e)
+            if "permission" in msg.lower() or "not enough" in msg.lower():
+                msg += " — le compte « aderlink » du routeur doit avoir le droit write"
+            raise TicketError(f"Le routeur a refusé : {msg}") from e
+
+    def _name_taken(self, zone_id, name, exclude=None):
+        rows, _ = self._q("SELECT id FROM forfaits WHERE zone_id = ? AND archived = 0 AND lower(name) = lower(?) AND id != ?",
+                          (zone_id, name, exclude or 0))
+        return bool(rows)
+
+    def create_forfait(self, data):
+        zone = self.zone(str(data.get("zone_id", "")))
+        v = self._forfait_values(data)
+        if self._name_taken(zone["id"], v["name"]):
             raise TicketError("Un profil porte déjà ce nom sur ce routeur")
-        slug = "".join(c if c.isalnum() else "-" for c in name.lower())
+        slug = "".join(c if c.isalnum() else "-" for c in v["name"].lower())
         slug = "-".join(x for x in slug.split("-") if x)[:28] or "profil"
         router_profile = f"AL-{slug}"
-        rate = self._rate(down, up)
-        if not self.demo:
-            try:
-                with open_router(zone) as api:
-                    from .mikrotik import on_login
-                    args = [f"=shared-users={shared}", f"=rate-limit={rate}", f"=on-login={on_login(validity_s)}"]
-                    found = api.query("/ip/hotspot/user/profile/print", f"?name={router_profile}")
-                    if found:
-                        api.query("/ip/hotspot/user/profile/set", f"=.id={found[0]['.id']}", *args)
-                    else:
-                        api.query("/ip/hotspot/user/profile/add", f"=name={router_profile}", *args)
-            except RouterOSError as e:
-                msg = str(e)
-                if "permission" in msg.lower() or "not enough" in msg.lower():
-                    msg += " — le compte « aderlink » du routeur doit avoir le droit write"
-                raise TicketError(f"Le routeur a refusé : {msg}") from e
+        self._push_profile(zone, router_profile, v)
         _, fid = self._q(
             "INSERT INTO forfaits (zone_id, name, router_profile, price, uptime_s, data_mb, validity_s, "
             "down_mbps, up_mbps, shared_users, created_at, color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (zone["id"], name, router_profile, price, uptime_s, data_mb, validity_s, down, up, shared,
-             int(time.time()), color), commit=True)
+            (zone["id"], v["name"], router_profile, v["price"], v["uptime_s"], v["data_mb"], v["validity_s"],
+             v["down_mbps"], v["up_mbps"], v["shared_users"], int(time.time()), v["color"]), commit=True)
         return self.get_forfait(fid)
+
+    def update_forfait(self, forfait_id, data):
+        """Modifie un profil. Vitesse, appareils et validité changent aussi pour les tickets déjà créés
+        (ils sont portés par le profil du routeur) ; prix, données et durée valent pour les prochains lots."""
+        f = self.get_forfait(forfait_id)
+        if not f or f["archived"]:
+            raise TicketError("Profil introuvable")
+        zone = self.zone(f["zone_id"])
+        v = self._forfait_values(data)
+        if self._name_taken(zone["id"], v["name"], forfait_id):
+            raise TicketError("Un profil porte déjà ce nom sur ce routeur")
+        self._push_profile(zone, f["router_profile"], v)  # le nom sur le routeur ne change pas
+        self._q("UPDATE forfaits SET name=?, price=?, uptime_s=?, data_mb=?, validity_s=?, down_mbps=?, up_mbps=?, "
+                "shared_users=?, color=? WHERE id = ?",
+                (v["name"], v["price"], v["uptime_s"], v["data_mb"], v["validity_s"], v["down_mbps"], v["up_mbps"],
+                 v["shared_users"], v["color"], forfait_id), commit=True)
+        return self.get_forfait(forfait_id)
 
     def archive_forfait(self, forfait_id):
         if not self.get_forfait(forfait_id):

@@ -28,7 +28,7 @@
     <ol class="stepper" id="stepper">
       <li data-step="routeur"><span class="dot-n">1</span><span class="lbl">Routeur</span></li>
       <li data-step="pv"><span class="dot-n">2</span><span class="lbl">Point de vente</span></li>
-      <li data-step="forfait"><span class="dot-n">3</span><span class="lbl">Forfait</span></li>
+      <li data-step="forfait"><span class="dot-n">3</span><span class="lbl">Profil</span></li>
       <li data-step="quantite"><span class="dot-n">4</span><span class="lbl">Quantité</span></li>
     </ol>
 
@@ -53,22 +53,23 @@
       </div>
     </div>
 
-    <!-- 2. Forfait -->
+    <!-- 2. Profil -->
     <div class="pane" id="pane-forfait" hidden>
-      <h2>Choisissez un forfait</h2>
+      <h2>Choisissez un profil</h2>
       <p class="pane-sub">Le profil de connexion appliqué aux tickets · <span id="ctxRouter"></span></p>
-      <div class="pick-list" id="forfaits" role="radiogroup" aria-label="Forfaits"></div>
-      <button class="add-row need-gerant" type="button" data-go="forfait/nouveau">+ Nouveau forfait</button>
-      <div class="manage-row need-gerant"><button class="link link-muted" type="button" id="manage" aria-pressed="false" hidden>Retirer un forfait</button></div>
+      <div class="pick-list" id="forfaits" role="radiogroup" aria-label="Profils"></div>
+      <button class="add-row need-gerant" type="button" data-go="forfait/nouveau">+ Nouveau profil</button>
+      <div class="manage-row need-gerant"><button class="link link-muted" type="button" id="manage" aria-pressed="false" hidden>Retirer un profil</button></div>
       <div class="pane-foot">
         <button class="btn-prev" type="button" data-back>← Précédent</button>
       </div>
     </div>
 
-    <!-- 2 bis. Nouveau forfait -->
+    <!-- 2 bis. Nouveau / modifier un profil -->
     <form class="pane" id="pane-nouveau" hidden autocomplete="off" novalidate>
       <div class="np-head"><span class="np-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z"/></svg></span>
-        <div><h2>Nouveau profil</h2><p class="pane-sub np-sub">Créé sur <span id="ctxRouter2"></span></p></div></div>
+        <div><h2 id="npTitle">Nouveau profil</h2><p class="pane-sub np-sub"><span id="npVerb">Créé sur</span> <span id="ctxRouter2"></span></p></div></div>
+      <div class="notice show notice-info" id="pEditHint" hidden>La vitesse, les appareils et la validité changent aussi pour les tickets déjà créés. Le prix, les données et la durée s'appliquent aux prochains lots.</div>
       <div class="form-grid form-grid-2">
         <div class="f">
           <label for="pName">Nom du profil <span class="req">*</span></label>

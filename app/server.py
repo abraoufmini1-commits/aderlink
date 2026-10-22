@@ -580,6 +580,11 @@ def make_handler(app):
                 self.need(who.can("forfaits_write"))
                 self.need(who.can_zone(str(body.get("zone_id", ""))))
                 return T.create_forfait(body)
+            if len(parts) == 4 and parts[2] == "forfaits" and parts[3].isdigit():
+                self.need(who.can("forfaits_write"))
+                f = T.get_forfait(int(parts[3]))
+                self.need(f and who.can_zone(f["zone_id"]), "Profil introuvable")
+                return T.update_forfait(int(parts[3]), body)
             if len(parts) == 5 and parts[2] == "forfaits" and parts[4] == "archive" and parts[3].isdigit():
                 self.need(who.can("forfaits_write"))
                 f = T.get_forfait(int(parts[3]))

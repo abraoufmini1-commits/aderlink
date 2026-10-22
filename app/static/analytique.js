@@ -44,7 +44,7 @@
       tile("wifi", "Heure de pointe", i.peak_hour != null ? hh(i.peak_hour) : "–", i.peak_hour != null ? nf.format(Math.round(i.peak_avg)) + " connectés en moyenne" : "Pas encore de relevés") +
       tile("ticket", "On achète surtout", i.sales_hour != null ? hh(i.sales_hour) : "–", nf.format(i.tickets) + " tickets vendus sur " + days + " jours") +
       tile("chart", "Meilleur jour", i.best_day || "–", i.best_day ? money(i.best_day_avg) + " en moyenne" : "Aucune vente") +
-      tile("layers", "Forfait n° 1", esc(i.top_forfait || "–"), i.avg_delay != null ? "Un ticket se vend en " + nf.format(i.avg_delay) + " j en moyenne" : "Ticket moyen : " + money(i.avg_ticket));
+      tile("layers", "Profil n° 1", esc(i.top_forfait || "–"), i.avg_delay != null ? "Un ticket se vend en " + nf.format(i.avg_delay) + " j en moyenne" : "Ticket moyen : " + money(i.avg_ticket));
 
     bars("hoursChart", A.hours.map(function (x) { return { v: x.avg, label: x.hour + "h", tip: hh(x.hour) + " : " + nf.format(Math.round(x.avg)) + " connectés en moyenne, pic " + nf.format(x.peak) }; }), 3, i.peak_hour);
     bars("salesHourChart", A.sales_hour.map(function (x) { return { v: x.tickets, label: x.hour + "h", tip: hh(x.hour) + " : " + nf.format(x.tickets) + " tickets · " + money(x.amount) }; }), 4, i.sales_hour);
@@ -55,7 +55,7 @@
       return "<tr><td><strong>" + esc(f.name) + "</strong></td><td class='r num'>" + nf.format(f.sold) + "</td><td class='r num'>" + money(f.amount) + "</td>" +
         "<td><div class='an-rate'><div class='rp-meter'><span data-w='" + f.sell_rate + "'></span></div><span class='num'>" + f.sell_rate + " %</span></div></td>" +
         "<td class='r num'>" + (f.delay_days != null ? nf.format(f.delay_days) + " j" : "–") + "</td><td class='r num'>" + nf.format(f.stock) + "</td></tr>";
-    }).join("") : "<tr><td colspan='6' class='pane-sub'>Aucun forfait pour l'instant.</td></tr>";
+    }).join("") : "<tr><td colspan='6' class='pane-sub'>Aucun profil pour l'instant.</td></tr>";
     Array.prototype.forEach.call(document.querySelectorAll("#fRows [data-w]"), function (s) { s.style.width = s.dataset.w + "%"; });
   }
 
