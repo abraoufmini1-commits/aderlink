@@ -351,7 +351,8 @@
         "<li><strong>L'accès d'ADER LINK</strong> : le compte « aderlink » (lecture, écriture, API — pas de Winbox ni SSH), l'API ouverte seulement pour " + esc(d.server_ip) + "</li>" +
         "<li><strong>Vos profils</strong> : un profil hotspot « AL-… » par profil ADER LINK, avec sa vitesse et ses appareils</li>" +
         "<li><strong>L'expiration des tickets</strong> : à la 1re connexion, le routeur lance le compte à rebours et supprime le ticket à la fin, même si ADER LINK est éteint</li>" +
-        "<li><strong>La liaison</strong> : le routeur se signale à ADER LINK toutes les 5 minutes</li></ul>" +
+        "<li><strong>La liaison</strong> : le routeur se signale à ADER LINK toutes les 5 minutes</li>" +
+        (d.tunnel ? "<li><strong>Le tunnel sécurisé</strong> vers le serveur en ligne (adresse du routeur : " + esc(d.tunnel) + ") — RouterOS 7 nécessaire</li>" : "") + "</ul>" +
         "Dans Winbox, vous verrez <strong>ADER LINK</strong> dans <strong>System → Scheduler</strong> et <strong>aderlink-login</strong>, <strong>aderlink-ping</strong> dans <strong>System → Scripts</strong>.<br>" +
         "<small>Déjà installé ? Recollez la ligne après avoir ajouté des profils : c'est sans danger.</small></div>" +
         "<div class='notice' id='bsMsg' role='status'></div>";

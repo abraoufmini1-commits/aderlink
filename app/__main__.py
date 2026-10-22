@@ -119,6 +119,15 @@ def cmd_init_vps(_args):
     print("ADMIN_PASSWORD=" + pwd)
 
 
+def cmd_wg_setup(args):
+    """Appelé par l'installation du serveur : réglages du tunnel des routeurs."""
+    cfg = load_config()
+    cfg["wireguard"] = {"enabled": True, "endpoint": args.endpoint, "port": args.port, "pubkey": args.pubkey,
+                        "server": "10.66.0.1", "net": "10.66.0"}
+    save_config(cfg)
+    print("Tunnel des routeurs : prêt")
+
+
 def cmd_password(_args):
     cfg = load_config()
     cfg["admin"]["password_hash"] = hash_password(ask_password())
@@ -174,6 +183,9 @@ def cmd_serve(args):
     collector = Collector(cfg, store, demo=args.demo)
     tickets = Tickets(cfg, store, demo=args.demo)
     routers = Routers(cfg, store, collector, save=save_config, demo=args.demo)
+    if not args.demo and (cfg.get("wireguard") or {}).get("enabled"):
+        routers.wg_file = DATA / "wg-peers.conf"
+        routers.write_peers()  # le tunnel du serveur est toujours à jour au démarrage
     for z in cfg.get("zones", []):
         routers.ensure_default_pv(z["id"])
     users = Users(cfg, store, routers, hash_password, verify_password)
@@ -294,6 +306,11 @@ def main():
     sub.add_parser("setup").set_defaults(func=cmd_setup)
     sub.add_parser("password").set_defaults(func=cmd_password)
     sub.add_parser("init-vps").set_defaults(func=cmd_init_vps)
+    w = sub.add_parser("wg-setup")
+    w.add_argument("--endpoint", required=True)
+    w.add_argument("--pubkey", required=True)
+    w.add_argument("--port", type=int, default=51820)
+    w.set_defaults(func=cmd_wg_setup)
     sub.add_parser("test-router").set_defaults(func=cmd_test)
     w = sub.add_parser("set-ssid", help="nom du Wi-Fi imprimé sur les cartes")
     w.add_argument("ssid")

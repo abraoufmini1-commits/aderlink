@@ -11,6 +11,8 @@ import socket
 import threading
 import time
 
+from pathlib import Path
+
 from .routeros import RouterOS, RouterOSError
 
 PUBLIC = ("id", "name", "location", "ssid", "code_length", "created_at")
@@ -47,6 +49,7 @@ class Routers:
         self.collector = collector
         self.save = save or (lambda cfg: None)
         self.demo = demo
+        self.wg_file = None  # data/wg-peers.conf, sur le serveur en ligne
         self.lock = threading.Lock()
         with store.lock:
             store.db.executescript(
@@ -315,17 +318,71 @@ class Routers:
         url = f"http://{base}/install/{token}.rsc"
         line = (f'/tool fetch url="{url}" dst-path=aderlink.rsc; :delay 1s; '
                 f'/import file-name=aderlink.rsc; /file remove aderlink.rsc')
-        return {"line": line, "url": url, "server_ip": self.server_ip_for(z), "router": self.public(z)}
+        wg = self.wg()
+        return {"line": line, "url": url, "router": self.public(z),
+                "server_ip": wg.get("server", "10.66.0.1") if wg else self.server_ip_for(z),
+                "tunnel": self.tunnel_ip(z) if wg else None}
+
+    # --- tunnel WireGuard (serveur en ligne) ------------------------------------------------
+    def wg(self):
+        w = self.config.get("wireguard") or {}
+        return w if w.get("enabled") and w.get("pubkey") and w.get("endpoint") else None
+
+    def tunnel_ip(self, z):
+        """Adresse du routeur dans le tunnel (10.66.0.10, .11, …), attribuée une fois pour toutes."""
+        r = z["router"]
+        if not r.get("tunnel_ip"):
+            net = (self.wg() or {}).get("net", "10.66.0")
+            with self.lock:
+                used = {(x.get("router") or {}).get("tunnel_ip") for x in self.zones()}
+                n = next(i for i in range(10, 251) if f"{net}.{i}" not in used)
+                r["tunnel_ip"] = f"{net}.{n}"
+                self._persist()
+        return r["tunnel_ip"]
+
+    def tunnel_up(self, z, pubkey):
+        """Le routeur a créé son tunnel et envoie sa clé publique : on l'ajoute au serveur."""
+        pubkey = (pubkey or "").replace(" ", "+").strip()
+        if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", pubkey):
+            raise RouterError("Clé du tunnel invalide")
+        r = z["router"]
+        ip = self.tunnel_ip(z)
+        with self.lock:
+            r["wg_pub"] = pubkey
+            r["host"], r["auto_host"] = ip, False  # ADER LINK passe désormais par le tunnel
+            z["installed_at"] = int(time.time())
+            self._persist()
+        self.write_peers()
+        return r["host"]
+
+    def peers_text(self):
+        out = []
+        for z in self.zones():
+            r = z.get("router") or {}
+            if r.get("wg_pub") and r.get("tunnel_ip"):
+                out += ["[Peer]", f"PublicKey = {r['wg_pub']}", f"AllowedIPs = {r['tunnel_ip']}/32", ""]
+        return "\n".join(out)
+
+    def write_peers(self):
+        """Le fichier est lu par l'aide système « aderlink-wg » (root), qui met le tunnel à jour."""
+        if self.demo or not self.wg_file:
+            return
+        Path(self.wg_file).write_text(self.peers_text())  # écrit sur place : l'aide système réagit à la fermeture
 
     def install_script(self, z, request_host="", profiles=(), roaming=None):
-        from .mikrotik import install_script
+        from .mikrotik import install_script, tunnel_lines
         r = z["router"]
         base, srv = self._base(z, request_host)
+        wg = self.wg()
+        extra = []
+        if wg:
+            extra += tunnel_lines(wg, self.tunnel_ip(z), f"http://{base}/install/{z['install_token']}/wg")
         g = roaming.group_of_zone(z["id"]) if roaming else None
-        extra = roaming.script_lines(g, srv) if g else ()
+        if g:  # par le tunnel s'il existe : le serveur reconnaît le routeur à son adresse de tunnel
+            extra += roaming.script_lines(g, wg.get("server", "10.66.0.1") if wg else srv)
         return install_script(z["name"], r["password"], srv, r.get("port", 8728),
                               f"http://{base}/install/{z['install_token']}/ok", profiles, r.get("username") or "aderlink",
-                              extra=extra)
+                              extra=extra, api_from=wg.get("server", "10.66.0.1") if wg else None)
 
     # --- points de vente ------------------------------------------------------------------
     def list_pv(self, zone_id):

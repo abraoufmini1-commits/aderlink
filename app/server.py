@@ -408,6 +408,18 @@ def make_handler(app):
                 profiles = app.tickets.profile_specs(z["id"]) if app.tickets else []
                 return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles, app.roaming).encode(),
                                  "text/plain; charset=utf-8")
+            if p.startswith("/install/") and p.endswith("/wg") and app.routers:
+                z = app.routers.by_token(p[len("/install/"):-3])
+                if not z or not app.routers.wg():
+                    return self.send(404, b"inconnu")
+                from .routers import RouterError
+                try:
+                    app.routers.tunnel_up(z, (parse_qs(urlparse(self.path).query, keep_blank_values=True).get("pub") or [""])[0])
+                except RouterError as e:
+                    return self.send(400, str(e).encode())
+                if app.collector and not app.demo:
+                    threading.Thread(target=lambda: (time.sleep(8), app.collector.poll_all()), daemon=True).start()
+                return self.send(200, b"ok")
             if p.startswith("/install/") and p.endswith("/ok") and app.routers:
                 z = app.routers.by_token(p[len("/install/"):-3])
                 if not z:
@@ -500,7 +512,8 @@ def make_handler(app):
                 g = app.roaming.group(int(parts[3]))
                 self.need(g and (who.role == "admin" or g["owner"] == who.username), "Réseau introuvable")
                 z = next((app.routers.zone(zid["id"]) for zid in g["zones"]), None)
-                srv = app.routers._base(z, self.headers.get("Host", ""))[1] if z else ""
+                wg = app.routers.wg()
+                srv = wg.get("server", "10.66.0.1") if wg else (app.routers._base(z, self.headers.get("Host", ""))[1] if z else "")
                 return {"script": "\r\n".join(app.roaming.script_lines(g, srv)), "server": srv}
             if app.tickets and p == "/api/batches":
                 zid = q.get("zone", [None])[0]

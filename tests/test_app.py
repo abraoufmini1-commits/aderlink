@@ -850,3 +850,43 @@ class RoamingTests(unittest.TestCase):
         lines = "\n".join(self.r.script_lines(self.r.group(self.g["id"]), "5.6.7.8"))
         self.assertIn('address=5.6.7.8 secret="%s"' % self.secret.decode(), lines)
         self.assertIn("use-radius=yes", lines)
+
+
+class TunnelTests(unittest.TestCase):
+    """Tunnel WireGuard : le routeur envoie sa clé, ADER LINK passe par le tunnel."""
+    def test_tunnel_flow(self):
+        import tempfile
+        from pathlib import Path
+        from app.mikrotik import install_script
+        from app.routers import RouterError, Routers
+        pub = "A" * 43 + "="
+        cfg = {"zones": [{"id": "z1", "name": "Zone 1", "router": {"host": "10.10.2.1", "username": "aderlink", "password": "p"}},
+                         {"id": "z2", "name": "Zone 2", "router": {"host": "", "username": "aderlink", "password": "p"}}],
+               "wireguard": {"enabled": True, "endpoint": "169.58.168.195", "port": 51820, "pubkey": "B" * 43 + "=",
+                             "server": "10.66.0.1", "net": "10.66.0"}}
+        r = Routers(cfg, Store(":memory:"), None)
+        r.wg_file = Path(tempfile.mkdtemp()) / "wg-peers.conf"
+        z1 = cfg["zones"][0]
+        r.ensure_token(z1)
+        s = r.install_script(z1, "169.58.168.195", [])
+        self.assertIn("address=10.66.0.1/32", s)              # l'API n'accepte que le serveur, par le tunnel
+        self.assertIn("endpoint-address=169.58.168.195", s)
+        self.assertIn("10.66.0.10/24", s)
+        self.assertIn("/install/%s/wg" % z1["install_token"], s)
+        self.assertIn(':if ([:pick [/system resource get version] 0 1] = "7")', s)
+        self.assertEqual(r.tunnel_ip(cfg["zones"][1]), "10.66.0.11")
+        with self.assertRaises(RouterError):
+            r.tunnel_up(z1, "PostUp = rm -rf /")
+        # la clé arrive par l'URL : « + » devient une espace, on le remet
+        self.assertEqual(r.tunnel_up(z1, ("A" * 20 + "+" + "A" * 22 + "=").replace("+", " ")), "10.66.0.10")
+        self.assertEqual(z1["router"]["host"], "10.66.0.10")
+        self.assertFalse(z1["router"]["auto_host"])
+        self.assertIn("AllowedIPs = 10.66.0.10/32", r.wg_file.read_text())
+        self.assertIn("PublicKey = " + "A" * 20 + "+", r.wg_file.read_text())
+        # le signal toutes les 5 min ne remplace plus l'adresse du tunnel
+        r.installed(z1, "41.0.0.5")
+        self.assertEqual(z1["router"]["host"], "10.66.0.10")
+        # sans tunnel configuré : script inchangé
+        s2 = install_script("Z", "p", "192.168.1.5", 8728, "http://x/ok", [])
+        self.assertNotIn("wireguard", s2)
+        self.assertIn("address=192.168.1.5/32", s2)

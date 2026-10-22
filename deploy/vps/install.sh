@@ -88,11 +88,56 @@ say "6/7 Tunnel des routeurs (WireGuard)"
 umask 077
 mkdir -p /etc/wireguard
 [ -f /etc/wireguard/vps.key ] || wg genkey | tee /etc/wireguard/vps.key | wg pubkey > /etc/wireguard/vps.pub
-if [ ! -f /etc/wireguard/wg0.conf ]; then
-  printf '[Interface]\nAddress = 10.66.0.1/24\nListenPort = 51820\nPrivateKey = %s\n' "$(cat /etc/wireguard/vps.key)" > /etc/wireguard/wg0.conf
-fi
-systemctl enable --now wg-quick@wg0 >/dev/null 2>&1 || true
 umask 022
+# Aide système : l'application (sans droits) écrit la liste des routeurs dans data/wg-peers.conf,
+# cette aide (root) la vérifie ligne par ligne puis met le tunnel à jour.
+cat > /usr/local/sbin/aderlink-wg-sync <<'HELPER'
+#!/usr/bin/env bash
+set -euo pipefail
+PEERS=/opt/aderlink/data/wg-peers.conf
+CONF=/etc/wireguard/wg0.conf
+umask 077
+{
+  printf '[Interface]\nAddress = 10.66.0.1/24\nListenPort = 51820\nPrivateKey = %s\n\n' "$(cat /etc/wireguard/vps.key)"
+  # seules ces lignes sont acceptées : rien d'autre ne peut entrer dans la configuration root
+  [ -f "$PEERS" ] && grep -E '^(\[Peer\]|PublicKey = [A-Za-z0-9+/]{43}=|AllowedIPs = 10\.66\.0\.[0-9]{1,3}/32|)$' "$PEERS" || true
+} > "$CONF.new"
+mv "$CONF.new" "$CONF"
+if ip link show wg0 >/dev/null 2>&1; then
+  wg syncconf wg0 <(wg-quick strip wg0)
+else
+  systemctl start wg-quick@wg0
+fi
+HELPER
+chmod 755 /usr/local/sbin/aderlink-wg-sync
+cat > /etc/systemd/system/aderlink-wg.service <<'UNIT'
+[Unit]
+Description=ADER LINK - mise a jour du tunnel des routeurs
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/aderlink-wg-sync
+UNIT
+cat > /etc/systemd/system/aderlink-wg.path <<'UNIT'
+[Unit]
+Description=ADER LINK - surveille la liste des routeurs du tunnel
+[Path]
+PathChanged=/opt/aderlink/data/wg-peers.conf
+[Install]
+WantedBy=multi-user.target
+UNIT
+touch "$DEST/data/wg-peers.conf"
+chown aderlink:aderlink "$DEST/data/wg-peers.conf"
+IP=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+systemctl stop aderlink  # l'application ne doit pas réécrire la configuration pendant ce réglage
+(cd "$DEST" && ADERLINK_CONFIG="$DEST/config.json" ADERLINK_DATA="$DEST/data" \
+  python3 -m app wg-setup --endpoint "$IP" --pubkey "$(cat /etc/wireguard/vps.pub)" >/dev/null)
+chown aderlink:aderlink "$DEST/config.json"
+chmod 600 "$DEST/config.json"
+systemctl daemon-reload
+systemctl enable wg-quick@wg0 >/dev/null 2>&1 || true
+/usr/local/sbin/aderlink-wg-sync || true
+systemctl enable --now aderlink-wg.path >/dev/null
+systemctl restart aderlink
 
 say "7/7 Pare-feu"
 ufw allow OpenSSH >/dev/null
@@ -102,7 +147,6 @@ ufw allow 51820/udp >/dev/null
 ufw allow 1812:1813/udp >/dev/null   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
 ufw --force enable >/dev/null
 
-IP=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 sleep 2
 if systemctl is-active --quiet aderlink; then STATE="EN MARCHE"; else STATE="PROBLEME (journalctl -u aderlink)"; fi
 echo

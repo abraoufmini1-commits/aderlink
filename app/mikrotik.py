@@ -55,10 +55,39 @@ def q(text):
     return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$") + '"'
 
 
-def install_script(name, password, server_ip, api_port, ok_url, profiles, username="aderlink", extra=()):
+def tunnel_lines(wg, tunnel_ip, report_url):
+    """Tunnel WireGuard vers le serveur ADER LINK (RouterOS 7 seulement).
+
+    Le routeur crée sa propre clé ; il l'envoie au serveur, qui l'ajoute aussitôt.
+    Les commandes sont lues au moment de l'exécution (:parse) : un RouterOS 6 ne bloque pas le script.
+    """
+    pub = re.sub(r"[^A-Za-z0-9+/=]", "", wg["pubkey"])
+    endpoint = re.sub(r"[^A-Za-z0-9.\-:]", "", wg["endpoint"])
+    server = wg.get("server", "10.66.0.1")
+    v7 = (
+        ':if ([:len [/interface wireguard find name="wg-aderlink"]] = 0) do={ '
+        '/interface wireguard add name="wg-aderlink" listen-port=13231 comment="ADER LINK" }; '
+        '/interface wireguard peers remove [find comment="ADER LINK"]; '
+        f'/interface wireguard peers add interface="wg-aderlink" public-key="{pub}" endpoint-address={endpoint} '
+        f'endpoint-port={int(wg.get("port", 51820))} allowed-address={server}/32 persistent-keepalive=25s comment="ADER LINK"; '
+        '/ip address remove [find comment="ADER LINK tunnel"]; '
+        f'/ip address add address={tunnel_ip}/24 interface="wg-aderlink" comment="ADER LINK tunnel"; '
+        ':if (([:len [/interface list find name="LAN"]] > 0) && ([:len [/interface list member find interface="wg-aderlink"]] = 0)) do={ '
+        '/interface list member add list=LAN interface="wg-aderlink" comment="ADER LINK" }; '
+        f'/tool fetch url=("{report_url}?pub=" . [/interface wireguard get [find name="wg-aderlink"] public-key]) output=none; '
+        ':put "Tunnel ADER LINK : OK"'
+    )
+    return [
+        "# 6. Tunnel securise vers le serveur ADER LINK (RouterOS 7)",
+        ':if ([:pick [/system resource get version] 0 1] = "7") do={ :local t [:parse ' + q(v7) + ']; $t } else={ '
+        ':put "ATTENTION : RouterOS 6 detecte. Le tunnel ADER LINK demande RouterOS 7 : mettez le routeur a jour." }',
+    ]
+
+
+def install_script(name, password, server_ip, api_port, ok_url, profiles, username="aderlink", extra=(), api_from=None):
     """Script complet, importé par le routeur avec la ligne « /tool fetch … /import … »."""
     name = re.sub(r"[^A-Za-z0-9 \-]", "", name)
-    srv = server_ip
+    srv = api_from or server_ip  # adresse d'où ADER LINK se connecte à l'API (le tunnel, s'il existe)
     user = re.sub(r"[^A-Za-z0-9._\-]", "", username) or "aderlink"
     lines = [
         f"# ADER LINK - installation automatique : {name}",
