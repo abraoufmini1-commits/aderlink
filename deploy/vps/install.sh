@@ -99,6 +99,7 @@ ufw allow OpenSSH >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw allow 51820/udp >/dev/null
+ufw allow 1812:1813/udp >/dev/null   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
 ufw --force enable >/dev/null
 
 IP=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')

@@ -1223,3 +1223,28 @@ button.rcard { border: 1px solid var(--border); }
 .btn-wa { background: #1f9d55; border-color: #1f9d55; color: #fff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .btn-wa:hover { background: #188046; border-color: #188046; }
 .btn-wa svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+/* ===================== ADER Roaming ===================== */
+.ro-intro { margin-bottom: 16px; padding: 16px 18px; }
+.ro-steps { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 6px; line-height: 1.45; }
+.ro-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.ro-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.ro-head { display: flex; align-items: center; gap: 12px; }
+.ro-head .avatar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
+.ro-main { min-width: 0; }
+.ro-name { font-weight: 750; font-size: 17px; }
+.ro-sub { font-size: 13px; color: var(--ink-2); }
+.ro-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ro-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: var(--blue-50); border: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+.ro-chip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.ro-card .lstats { margin-bottom: 0; }
+.ro-warn { display: block; font-size: 12px; color: #b45309; font-weight: 600; margin-top: 2px; }
+@media (prefers-color-scheme: dark) { .ro-warn { color: #f5a54a; } }
+.ro-toggle { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--blue-600); border-radius: 14px; background: var(--blue-50); cursor: pointer; }
+.ro-toggle input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--blue-600); flex: none; }
+.ro-toggle strong { display: block; }
+.ro-toggle small { color: var(--ink-2); font-size: 13px; }
+.ro-toggle:has(input:not(:checked)) { border-color: var(--border); background: var(--surface); }
+.ro-badge { width: fit-content; align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; background: var(--blue-600); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
+@media (max-width: 560px) { .ro-list { grid-template-columns: 1fr; } }
+.ro-toggle[hidden] { display: none; }

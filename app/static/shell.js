@@ -46,13 +46,12 @@
     { id: "rapports", href: "/rapports", label: "Rapport des ventes", icon: "chart" },
     { id: "analytique", href: "/analytique", label: "Analytique", icon: "trend" },
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
+    { id: "roaming", href: "/roaming", label: "ADER Roaming", icon: "zones", roles: "admin client" },
     { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", roles: "admin client" },
     { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
     { id: "profil", href: "/profil", label: "Mon profil", icon: "user" }
   ];
-  var soon = [
-    { label: "Multi-zones", icon: "zones" },
-  ];
+  var soon = [];
   function need(m) { return m.need ? ' data-need="' + m.need + '"' : m.roles ? ' data-roles="' + m.roles + '"' : ""; }
   function link(m) {
     return '<a href="' + m.href + '"' + need(m) + (m.id === page ? ' aria-current="page"' : "") + ">" + icon(m.icon) + "<span>" + m.label + "</span></a>";
@@ -85,8 +84,8 @@
     '<div class="drawer-head"><div><span class="drawer-title" id="meName">Menu</span><span class="drawer-role" id="meRole"></span></div><button class="icon-btn icon-btn-plain" type="button" id="menuClose" aria-label="Fermer le menu">' + icon("x") + "</button></div>" +
     '<nav class="drawer-nav">' + main.map(link).join("") +
     '<div class="drawer-sep"></div>' +
-    soon.map(function (m) { return '<span class="is-soon" aria-disabled="true">' + icon(m.icon) + "<span>" + m.label + '</span><em>Bientôt</em></span>'; }).join("") +
-    '<div class="drawer-sep"></div>' +
+    (soon.length ? soon.map(function (m) { return '<span class="is-soon" aria-disabled="true">' + icon(m.icon) + "<span>" + m.label + '</span><em>Bientôt</em></span>'; }).join("") +
+      '<div class="drawer-sep"></div>' : "") +
     '<a href="/logout">' + icon("logout") + "<span>Déconnexion</span></a></nav>" +
     '<div class="drawer-foot">ADER LINK<br>Gestion de zones Wi-Fi</div>';
   document.body.appendChild(shade);

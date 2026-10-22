@@ -179,17 +179,27 @@ def cmd_serve(args):
     users = Users(cfg, store, routers, hash_password, verify_password)
     updater = Updater(cfg)
     collector.ticket_hook = tickets.on_poll
+    from .roaming import Roaming
+    roaming = Roaming(cfg, store, tickets, collector)
+    tickets.roaming = roaming
     if args.demo:
         _demo_batches(tickets)
+        zids = [z["id"] for z in cfg.get("zones", [])]
+        roaming.save_group({"name": "Réseau Niamey", "zones": zids[:2]})
+        fs = tickets.list_forfaits(zids[0])
+        if fs:
+            tickets.create_batch({"forfait_id": fs[-1]["id"], "count": 20, "roaming": True, "note": "Pass Roaming"})
         _demo_users(cfg, users, tickets)
         _demo_samples(cfg, store)
     collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()
     if not args.demo:
         updater.start()
+        if (cfg.get("radius") or {}).get("enabled", True):
+            roaming.start()
     print(f"ADER LINK version {updater.state['current']}")
     serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
-              users=users, save_config=save_config,
+              users=users, save_config=save_config, roaming=roaming,
               paths={"config": CONFIG, "db": None if args.demo else DATA / "aderlink.db"}),
           args.host, args.port)
 

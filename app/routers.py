@@ -273,6 +273,7 @@ class Routers:
         with self.lock:
             if not r.get("host") or r.get("auto_host"):
                 r["host"], r["auto_host"] = client_ip, True
+            z["last_ip"] = client_ip  # ADER Roaming reconnaît le routeur à cette adresse
             z["installed_at"] = int(time.time())
             self._persist()
         return r["host"]
@@ -316,12 +317,15 @@ class Routers:
                 f'/import file-name=aderlink.rsc; /file remove aderlink.rsc')
         return {"line": line, "url": url, "server_ip": self.server_ip_for(z), "router": self.public(z)}
 
-    def install_script(self, z, request_host="", profiles=()):
+    def install_script(self, z, request_host="", profiles=(), roaming=None):
         from .mikrotik import install_script
         r = z["router"]
         base, srv = self._base(z, request_host)
+        g = roaming.group_of_zone(z["id"]) if roaming else None
+        extra = roaming.script_lines(g, srv) if g else ()
         return install_script(z["name"], r["password"], srv, r.get("port", 8728),
-                              f"http://{base}/install/{z['install_token']}/ok", profiles, r.get("username") or "aderlink")
+                              f"http://{base}/install/{z['install_token']}/ok", profiles, r.get("username") or "aderlink",
+                              extra=extra)
 
     # --- points de vente ------------------------------------------------------------------
     def list_pv(self, zone_id):

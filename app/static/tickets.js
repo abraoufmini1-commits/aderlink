@@ -291,6 +291,9 @@
       (f.uptime_s ? tile("t-time", "Durée", esc(dur(f.uptime_s))) : "") +
       tile("t-val", "Validité", esc(f.validity_s ? dur(f.validity_s) : "Sans limite")) +
       tile("t-data", "Données", esc(data(f.data_mb)));
+    var ro = zoneObj().roaming;
+    $("roBox").hidden = !ro;
+    if (ro) $("roText").textContent = "Valable sur les " + ro.routers + " routeurs du réseau « " + ro.name + " »";
     hideNotice("createNotice");
     total();
   }
@@ -324,12 +327,13 @@
     var btn = $("createBtn");
     btn.disabled = true; btn.textContent = "Envoi au routeur… (" + n + " tickets)";
     hideNotice("createNotice");
-    api("/api/batches", { forfait_id: S.forfait.id, pos_id: S.pv ? S.pv.id : null, count: n, code_length: len, password_mode: $("pwMode").value, note: $("note").value })
+    api("/api/batches", { forfait_id: S.forfait.id, pos_id: S.pv ? S.pv.id : null, count: n, code_length: len, password_mode: $("pwMode").value, note: $("note").value,
+      roaming: !!zoneObj().roaming && $("roOn").checked })
       .then(function (d) {
         S.result = d;
         $("doneTitle").textContent = "Lot n° " + d.id + " généré";
         $("doneSub").innerHTML = "<strong>" + nf.format(d.created) + " ticket" + (d.created > 1 ? "s" : "") + " « " + esc(S.forfait.name) + " »</strong> ajouté" +
-          (d.created > 1 ? "s" : "") + " sur " + esc(zoneObj().name) + " · valeur " + nf.format(d.created * S.forfait.price) + " F CFA" +
+          (d.created > 1 ? "s" : "") + (d.roaming ? " · <span class='ro-badge'>ADER Roaming</span> valables sur tout le réseau « " + esc(zoneObj().roaming.name) + " »" : " sur " + esc(zoneObj().name)) + " · valeur " + nf.format(d.created * S.forfait.price) + " F CFA" +
           (d.error ? "<br><span class='err-text'>Arrêt après une erreur du routeur : " + esc(d.error) + "</span>" : "");
         $("donePrint").href = "/imprimer?lot=" + d.id;
         $("note").value = "";

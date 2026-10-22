@@ -47,6 +47,7 @@ class Tickets:
         self.config = config
         self.store = store
         self.demo = demo
+        self.roaming = None  # ADER Roaming, branché au démarrage
         with store.lock:
             store.db.executescript(
                 """
@@ -70,7 +71,9 @@ class Tickets:
                 """
             )
             for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
-                               ("forfaits", "color TEXT"), ("batches", "created_by TEXT")):  # base créée par une version précédente
+                               ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
+                               ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
+                               ("tickets", "uptime_used INTEGER DEFAULT 0")):  # base créée par une version précédente
                 try:
                     store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
@@ -256,14 +259,20 @@ class Tickets:
         same_password = data.get("password_mode", "same") != "empty"
         profile = str(data.get("profile") or "default")[:64]
         note = str(data.get("note") or "")[:80]
+        group = None
+        if data.get("roaming"):
+            group = self.roaming.group_of_zone(zone["id"]) if self.roaming else None
+            if not group:
+                raise TicketError("Ce routeur ne fait partie d'aucun réseau ADER Roaming")
 
         _, batch_id = self._q(
             "INSERT INTO batches (zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, note, "
-            "forfait_id, pos_id, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "forfait_id, pos_id, created_by, roaming_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (zone["id"], int(time.time()), 0, profile, price, uptime_s, data_mb, validity_s, note,
-             forfait["id"] if forfait else None, pos_id, created_by), commit=True)
+             forfait["id"] if forfait else None, pos_id, created_by, group["id"] if group else None), commit=True)
 
-        rows, _ = self._q("SELECT code FROM tickets WHERE zone_id = ?", (zone["id"],))
+        zone_ids = [zone["id"]] + ([z["id"] for z in group["zones"]] if group else [])
+        rows, _ = self._q("SELECT code FROM tickets WHERE zone_id IN (%s)" % ",".join("?" * len(zone_ids)), zone_ids)
         taken = {r[0] for r in rows}
         added, error = [], None
 
@@ -281,7 +290,7 @@ class Tickets:
             args_common.append(f"=limit-bytes-total={data_mb * 1024 * 1024}")
 
         try:
-            if self.demo:
+            if self.demo or group:  # Roaming : rien sur les routeurs, ADER LINK vérifie les codes
                 added = [new_code() for _ in range(count)]
             else:
                 with open_router(zone) as api:
@@ -308,7 +317,8 @@ class Tickets:
         if error and not added:
             self._q("DELETE FROM batches WHERE id = ?", (batch_id,), commit=True)
             raise TicketError(f"Le routeur a refusé : {error}")
-        return {"id": batch_id, "created": len(added), "requested": count, "error": error}
+        return {"id": batch_id, "created": len(added), "requested": count, "error": error,
+                "roaming": bool(group)}
 
     # --- lecture ------------------------------------------------------------------
     def _batch_dict(self, row):
@@ -329,7 +339,13 @@ class Tickets:
             "pos_name": self._pos_name(row[12]) if len(row) > 12 and row[12] else None,
             "color": self._forfait_color(row[11]) if len(row) > 11 and row[11] else "bleu",
             "created_by": row[13] if len(row) > 13 else None,
+            "roaming_id": row[14] if len(row) > 14 else None,
+            "roaming_name": self._roaming_name(row[14]) if len(row) > 14 and row[14] else None,
         }
+
+    def _roaming_name(self, gid):
+        rows, _ = self._q("SELECT name FROM roaming_groups WHERE id = ?", (gid,))
+        return rows[0][0] if rows else "ADER Roaming"
 
     def _forfait_color(self, forfait_id):
         rows, _ = self._q("SELECT color FROM forfaits WHERE id = ?", (forfait_id,))
@@ -381,7 +397,7 @@ class Tickets:
         if not unused:
             return {"removed": 0}
         removed = []
-        if self.demo:
+        if self.demo or b.get("roaming_id"):
             removed = unused
         else:
             zone = self.zone(b["zone_id"])

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>ADER Roaming — ADER LINK</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="roaming">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main>
+  <div class="page-head">
+    <div>
+      <h1>ADER Roaming</h1>
+      <p class="subtitle">Un seul ticket, valable sur plusieurs MikroTik, même éloignés.</p>
+    </div>
+    <button class="btn" type="button" id="addBtn">+ Nouveau réseau</button>
+  </div>
+  <section class="card ro-intro" aria-label="Comment ça marche">
+    <ol class="ro-steps">
+      <li><strong>Créez un réseau</strong> et cochez ses routeurs (2 ou plus).</li>
+      <li><strong>Copiez le script</strong> du réseau dans le Terminal de chaque routeur.</li>
+      <li>Dans <strong>Créer des tickets</strong>, gardez <strong>« Ticket ADER Roaming »</strong> coché : le code marche sur tous les routeurs du réseau.</li>
+    </ol>
+    <p class="pane-sub">Le temps et les données sont comptés par ADER LINK pour tout le réseau : 2 Go utilisés ici et là-bas, c'est 2 Go en tout.</p>
+    <div class="notice" id="srvMsg" role="status"></div>
+  </section>
+  <div id="list" class="ro-list"></div>
+</main>
+
+<div class="bs-shade" id="bsShade"></div>
+<section class="bs" id="bs" role="dialog" aria-modal="true" aria-labelledby="bsTitle" hidden>
+  <div class="bs-head">
+    <span class="bs-ico" id="bsIco" aria-hidden="true"></span>
+    <h2 id="bsTitle"></h2>
+    <button class="icon-btn icon-btn-plain" type="button" id="bsClose" aria-label="Fermer"></button>
+  </div>
+  <div class="bs-body" id="bsBody"></div>
+  <div class="bs-foot" id="bsFoot"></div>
+</section>
+
+<script src="/static/shell.js"></script>
+<script src="/static/roaming.js"></script>
+</body>
+</html>

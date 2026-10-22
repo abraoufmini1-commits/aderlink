@@ -727,3 +727,126 @@ class MikrotikScriptTests(unittest.TestCase):
         self.assertIn('v=\\"01:00:00\\"', s)
         self.assertIn("keep-result=no", s)
         self.assertIn("output=none", s)
+
+
+class RoamingTests(unittest.TestCase):
+    """ADER Roaming : un ticket, plusieurs routeurs, temps et données comptés ensemble."""
+    def setUp(self):
+        from app.roaming import Roaming
+        from app.tickets import Tickets
+        self.config = {"zones": [
+            {"id": "a", "name": "Zone A", "router": {"host": "10.1.0.1", "username": "x", "password": "y"}},
+            {"id": "b", "name": "Zone B", "router": {"host": "10.2.0.1", "username": "x", "password": "y"}, "last_ip": "41.0.0.9"},
+            {"id": "c", "name": "Zone C", "router": {"host": "10.3.0.1", "username": "x", "password": "y"}}],
+            "radius": {"auth_port": 0, "acct_port": 0}}
+        self.store = Store(":memory:")
+        self.t = Tickets(self.config, self.store, demo=True)
+        self.r = Roaming(self.config, self.store, self.t, log=lambda m: None)
+        self.t.roaming = self.r
+        self.g = self.r.save_group({"name": "Réseau ADER", "zones": ["a", "b"]})
+        self.secret = self.r.group(self.g["id"])["secret"].encode()
+        f = self.t.create_forfait({"zone_id": "a", "name": "100F", "price": 100, "data_mb": 1, "validity_s": 3600,
+                                   "down_mbps": 2, "up_mbps": 1})
+        b = self.t.create_batch({"forfait_id": f["id"], "count": 2, "roaming": True})
+        self.batch = self.t.get_batch(b["id"])
+        self.codes = [x["code"] for x in self.batch["tickets"]]
+
+    def auth(self, ip, code, password=None, chap=False, secret=None):
+        import hashlib
+        import os
+        from app import radius as R
+        secret = secret or self.secret
+        ra = os.urandom(16)
+        attrs = [R.attr(R.USER_NAME, code), R.attr(R.NAS_IDENTIFIER, "x")]
+        pw = (password if password is not None else code)
+        if chap:
+            ch = os.urandom(16)
+            attrs += [R.attr(R.CHAP_PASSWORD, b"\x07" + hashlib.md5(b"\x07" + pw.encode() + ch).digest()),
+                      R.attr(R.CHAP_CHALLENGE, ch)]
+        else:
+            attrs.append(R.attr(R.USER_PASSWORD, R.pap_encrypt(pw, secret, ra)))
+        out = self.r.handle(R.build_request(R.ACCESS_REQUEST, 1, secret, attrs, ra), ip, "auth")
+        return None if out is None else R.Packet.parse(out)
+
+    def acct(self, ip, code, sid, status, octets, secs=60):
+        from app import radius as R
+        attrs = [R.attr(R.USER_NAME, code), R.attr(R.ACCT_SESSION_ID, sid), R.attr(R.ACCT_STATUS_TYPE, status),
+                 R.attr(R.ACCT_INPUT_OCTETS, octets // 2), R.attr(R.ACCT_OUTPUT_OCTETS, octets - octets // 2),
+                 R.attr(R.ACCT_SESSION_TIME, secs)]
+        out = self.r.handle(R.build_request(R.ACCOUNTING_REQUEST, 2, self.secret, attrs), ip, "acct")
+        return None if out is None else R.Packet.parse(out)
+
+    def test_batch_not_on_router_and_flagged(self):
+        self.assertEqual(self.batch["roaming_id"], self.g["id"])
+        self.assertEqual(self.batch["roaming_name"], "Réseau ADER")
+        self.assertEqual(len(self.codes), 2)
+        from app.tickets import TicketError
+        with self.assertRaises(TicketError):  # routeur hors réseau
+            self.t.create_batch({"zone_id": "c", "count": 1, "roaming": True})
+
+    def test_accept_on_both_routers_and_shared_counting(self):
+        from app import radius as R
+        code = self.codes[0]
+        p = self.auth("10.1.0.1", code)  # routeur A
+        self.assertEqual(p.code, R.ACCESS_ACCEPT)
+        self.assertTrue(0 < p.int(R.SESSION_TIMEOUT) <= 3600)
+        vs = [v for t, v in p.attrs if t == R.VENDOR_SPECIFIC]
+        self.assertTrue(any(v[4] == R.MT_TOTAL_LIMIT and int.from_bytes(v[6:10], "big") == 1024 * 1024 for v in vs))
+        self.assertTrue(any(v[4] == R.MT_RATE_LIMIT and v[6:] == b"1M/2M" for v in vs))
+        self.assertIsNotNone(self.t.find(code)[0]["first_used"])
+        # 700 Ko consommés sur A, session terminée
+        self.assertEqual(self.acct("10.1.0.1", code, "s1", R.ACCT_START, 0).code, R.ACCOUNTING_RESPONSE)
+        self.acct("10.1.0.1", code, "s1", R.ACCT_STOP, 700 * 1024)
+        # sur B (reconnu par sa dernière adresse publique) : il ne reste que 324 Ko
+        p = self.auth("41.0.0.9", code, chap=True)
+        self.assertEqual(p.code, R.ACCESS_ACCEPT)
+        vs = [v for t, v in p.attrs if t == R.VENDOR_SPECIFIC]
+        self.assertTrue(any(v[4] == R.MT_TOTAL_LIMIT and int.from_bytes(v[6:10], "big") == 324 * 1024 for v in vs))
+        # un 2e appareil pendant que le 1er est connecté : refusé (1 appareil par ticket)
+        self.acct("41.0.0.9", code, "s2", R.ACCT_START, 0)
+        p = self.auth("10.1.0.1", code)
+        self.assertEqual(p.code, R.ACCESS_REJECT)
+        self.assertIn(b"autre appareil", p.get(R.REPLY_MESSAGE))
+        # données épuisées
+        self.acct("41.0.0.9", code, "s2", R.ACCT_STOP, 400 * 1024)
+        p = self.auth("10.2.0.1", code)
+        self.assertEqual(p.code, R.ACCESS_REJECT)
+        self.assertIn(b"epuisees", p.get(R.REPLY_MESSAGE))
+
+    def test_rejections(self):
+        from app import radius as R
+        code = self.codes[1]
+        self.assertEqual(self.auth("10.1.0.1", code, password="faux").code, R.ACCESS_REJECT)
+        self.assertEqual(self.auth("10.1.0.1", "99999999").code, R.ACCESS_REJECT)
+        self.assertIsNone(self.auth("10.3.0.1", code))         # routeur hors réseau : ignoré
+        self.assertIsNone(self.auth("10.1.0.1", code, secret=b"mauvais"))  # mauvais secret : ignoré
+        # validité dépassée
+        self.store.db.execute("UPDATE tickets SET first_used = ? WHERE code = ?", (int(time.time()) - 4000, code))
+        p = self.auth("10.1.0.1", code)
+        self.assertEqual(p.code, R.ACCESS_REJECT)
+        self.assertIsNotNone(self.t.find(code)[0]["expired_at"])
+
+    def test_udp_server_and_script(self):
+        from app import radius as R
+        self.config["zones"][0]["router"]["host"] = "127.0.0.1"
+        self.r.start("127.0.0.1")
+        port = self.r.listening["auth"]
+        import os
+        ra = os.urandom(16)
+        req = R.build_request(R.ACCESS_REQUEST, 9, self.secret, [R.attr(R.USER_NAME, self.codes[0]),
+                              R.attr(R.USER_PASSWORD, R.pap_encrypt(self.codes[0], self.secret, ra))], ra)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(3)
+        s.sendto(req, ("127.0.0.1", port))
+        data, _ = s.recvfrom(4096)
+        p = R.Packet.parse(data)
+        self.assertEqual((p.code, p.ident), (R.ACCESS_ACCEPT, 9))
+        # la réponse est bien signée avec le secret
+        import hashlib
+        self.assertEqual(p.authenticator, hashlib.md5(data[:4] + ra + data[20:] + self.secret).digest())
+        resp = R.Packet.parse(data)
+        resp.raw = data[:4] + ra + data[20:]  # le Message-Authenticator de la réponse se calcule avec l'authentificateur de la demande
+        self.assertTrue(R.check_message_authenticator(resp, self.secret))
+        lines = "\n".join(self.r.script_lines(self.r.group(self.g["id"]), "5.6.7.8"))
+        self.assertIn('address=5.6.7.8 secret="%s"' % self.secret.decode(), lines)
+        self.assertIn("use-radius=yes", lines)

@@ -82,7 +82,7 @@ class Forbidden(Exception):
 
 class App:
     def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None,
-                 users=None, save_config=None, paths=None):
+                 users=None, save_config=None, paths=None, roaming=None):
         self.config = config
         self.collector = collector
         self.store = store
@@ -93,6 +93,7 @@ class App:
         self.users = users
         self.save_config = save_config or (lambda c: None)
         self.paths = paths or {}
+        self.roaming = roaming
         self.throttle = LoginThrottle()
 
     def offset(self):
@@ -108,8 +109,10 @@ class App:
             if who.is_reseller:  # le revendeur ne voit que son point de vente
                 mine = self.users.pv_for(who, z["id"]) if self.users else None
                 pvs = [p for p in pvs if p["id"] == mine]
+            g = self.roaming.group_of_zone(z["id"]) if self.roaming else None
             out.append({"id": z["id"], "name": z["name"], "ssid": z.get("ssid") or z["name"],
-                        "code_length": z.get("code_length", 8), "points_vente": pvs})
+                        "code_length": z.get("code_length", 8), "points_vente": pvs,
+                        "roaming": {"id": g["id"], "name": g["name"], "routers": len(g["zones"])} if g else None})
         return out
 
     def sales_scope(self, who):
@@ -221,7 +224,8 @@ class App:
 PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
-         "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/analytique": ("analytique.html", None), "/profil": ("profil.html", None)}
+         "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/analytique": ("analytique.html", None), "/profil": ("profil.html", None),
+         "/roaming": ("roaming.html", "routers_write")}
 
 
 def make_handler(app):
@@ -297,6 +301,7 @@ def make_handler(app):
             from .routers import RouterError
             from .tickets import TicketError
             from .users import UserError
+            from .roaming import RoamingError
             try:
                 out = fn()
                 if out is None:  # réponse déjà envoyée (image)
@@ -304,7 +309,7 @@ def make_handler(app):
                 return self.json(out, status)
             except Forbidden as e:
                 return self.json({"error": str(e) or "Accès refusé"}, 403)
-            except (RouterError, TicketError, UserError) as e:
+            except (RouterError, TicketError, UserError, RoamingError) as e:
                 return self.json({"error": str(e)}, 400)
 
         def send_backup(self):
@@ -401,7 +406,7 @@ def make_handler(app):
                 if not z:
                     return self.send(404, b"# Lien d'installation inconnu")
                 profiles = app.tickets.profile_specs(z["id"]) if app.tickets else []
-                return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles).encode(),
+                return self.send(200, app.routers.install_script(z, self.headers.get("Host", ""), profiles, app.roaming).encode(),
                                  "text/plain; charset=utf-8")
             if p.startswith("/install/") and p.endswith("/ok") and app.routers:
                 z = app.routers.by_token(p[len("/install/"):-3])
@@ -482,6 +487,21 @@ def make_handler(app):
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))
+            if p == "/api/roaming" and app.roaming:
+                self.need(who.can("routers_write"))
+                groups = app.roaming.groups(who.can_zone, who.username, who.role == "admin")
+                for g in groups:
+                    g.pop("secret", None)
+                return {"groups": groups, "listening": app.roaming.listening, "ports": app.roaming.ports(),
+                        "zones": [{"id": z["id"], "name": z["name"],
+                                   "group": (app.roaming.group_of_zone(z["id"]) or {}).get("id")} for z in app.zones_for(who)]}
+            if len(parts) == 5 and parts[2] == "roaming" and parts[4] == "script" and parts[3].isdigit() and app.roaming:
+                self.need(who.can("routers_write"))
+                g = app.roaming.group(int(parts[3]))
+                self.need(g and (who.role == "admin" or g["owner"] == who.username), "Réseau introuvable")
+                z = next((app.routers.zone(zid["id"]) for zid in g["zones"]), None)
+                srv = app.routers._base(z, self.headers.get("Host", ""))[1] if z else ""
+                return {"script": "\r\n".join(app.roaming.script_lines(g, srv)), "server": srv}
             if app.tickets and p == "/api/batches":
                 zid = q.get("zone", [None])[0]
                 lots = [b for b in app.tickets.list_batches(limit=300, zone_id=zid) if app.batch_visible(b, who)]
@@ -573,9 +593,23 @@ def make_handler(app):
                     pv = R.get_pv(int(body["pos_id"]))
                     self.need(pv and pv["zone_id"] == zid, "Point de vente invalide")
                 res = T.create_batch(body, created_by=who.username)
-                if app.collector and res.get("created"):
+                if app.collector and res.get("created") and not res.get("roaming"):
                     app.collector.add_tickets(zid, res["created"])
                 return res
+            # ADER Roaming
+            if app.roaming and (p == "/api/roaming" or (len(parts) >= 4 and parts[2] == "roaming" and parts[3].isdigit())):
+                self.need(who.can("routers_write"))
+                owner = None if who.role == "admin" else who.username
+                if p == "/api/roaming":
+                    g = app.roaming.save_group(body, owner, who.can_zone)
+                else:
+                    g = app.roaming.group(int(parts[3]))
+                    self.need(g and (who.role == "admin" or g["owner"] == who.username), "Réseau introuvable")
+                    if len(parts) == 5 and parts[4] == "delete":
+                        return app.roaming.delete_group(g["id"])
+                    g = app.roaming.save_group(body, g["owner"], who.can_zone, gid=g["id"])
+                g.pop("secret", None)
+                return g
             if p == "/api/forfaits":
                 self.need(who.can("forfaits_write"))
                 self.need(who.can_zone(str(body.get("zone_id", ""))))

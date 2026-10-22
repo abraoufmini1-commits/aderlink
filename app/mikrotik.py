@@ -55,7 +55,7 @@ def q(text):
     return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$") + '"'
 
 
-def install_script(name, password, server_ip, api_port, ok_url, profiles, username="aderlink"):
+def install_script(name, password, server_ip, api_port, ok_url, profiles, username="aderlink", extra=()):
     """Script complet, importé par le routeur avec la ligne « /tool fetch … /import … »."""
     name = re.sub(r"[^A-Za-z0-9 \-]", "", name)
     srv = server_ip
@@ -94,6 +94,7 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
                      f'/ip hotspot user profile add name="{prof}" }}')
         lines.append(f'/ip hotspot user profile set [find name="{prof}"] shared-users={int(p["shared"])} '
                      f'rate-limit={q(p["rate"])} on-login={q(on_login(p["validity_s"]))}')
+    lines += list(extra)
     lines += [
         ':if ([:len [/ip hotspot find]] = 0) do={ :put "ATTENTION : aucun serveur hotspot sur ce routeur. '
         'Creez-le dans IP > Hotspot > Hotspot Setup." }',
