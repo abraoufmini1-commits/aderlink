@@ -295,7 +295,7 @@
       var b = this; b.disabled = true; b.textContent = "Recherche…";
       api("/api/routers/" + encodeURIComponent(r.id) + "/scan").then(function (d) {
         $("devFound").innerHTML = d.found.length ? "<p class='pane-sub'>Touchez un appareil pour le remplir ci-dessous :</p>" + d.found.map(function (f) {
-          return "<button type='button' class='ra-row ra-pick' data-ip='" + esc(f.ip) + "' data-name='" + esc(f.name) + "'><div class='ra-main'>" +
+          return "<button type='button' class='ra-row ra-pick' data-ip='" + esc(f.ip) + "' data-name='" + esc(f.name) + "' data-mac='" + esc(f.mac || "") + "'><div class='ra-main'>" +
             "<div class='ra-label'>" + esc(f.name || "Appareil sans nom") + "</div><div class='ra-value mono'>" + esc(f.ip) + (f.mac ? " · " + esc(f.mac) : "") + "</div></div>" +
             "<span class='btn btn-sm btn-outline'>Choisir</span></button>";
         }).join("") : "<p class='pane-sub'>Aucun appareil trouvé. Entrez l'adresse à la main.</p>";
@@ -306,6 +306,7 @@
       var f = e.target.closest("[data-ip]");
       if (!f) return;
       $("dIp").value = f.dataset.ip;
+      $("devForm").dataset.mac = f.dataset.mac || "";
       $("dName").value = f.dataset.name || "Antenne";
       if (/grandstream|gwn/i.test(f.dataset.name)) { $("dProto").value = "https"; $("dPort").placeholder = "443"; }
       $("dName").focus();
@@ -316,8 +317,9 @@
       e.preventDefault();
       var b = $("dAdd"); b.disabled = true;
       api("/api/routers/" + encodeURIComponent(r.id) + "/devices", { name: $("dName").value, ip: $("dIp").value.trim(),
-        proto: $("dProto").value, port: $("dPort").value || ($("dProto").value === "https" ? 443 : 80) })
-        .then(function (d) { devices(d.devices); $("devForm").reset(); $("bsMsg").className = "notice";
+        proto: $("dProto").value, port: $("dPort").value || ($("dProto").value === "https" ? 443 : 80),
+        mac: $("dIp").value.trim() && $("devForm").dataset.mac ? $("devForm").dataset.mac : "" })
+        .then(function (d) { devices(d.devices); $("devForm").reset(); $("devForm").dataset.mac = ""; $("bsMsg").className = "notice";
           toast("Appareil ajouté : il s'ouvre maintenant de partout", true); })
         .catch(function (err) { var n = $("bsMsg"); n.className = "notice show notice-err"; n.textContent = err.message; })
         .then(function () { b.disabled = false; });

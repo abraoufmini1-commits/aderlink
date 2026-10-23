@@ -253,10 +253,22 @@ class Routers:
         # l'appareil répond au routeur, qui renvoie dans le tunnel
         api.query("/ip/firewall/nat/add", "=chain=srcnat", f"=src-address={src}", f"=dst-address={d['ip']}",
                   "=protocol=tcp", f"=dst-port={d['port']}", "=action=masquerade", f"=comment={tag}")
+        # sur un réseau hotspot, l'appareil doit passer sans ticket (sinon ses réponses sont bloquées)
+        if api.query("/ip/hotspot/print"):
+            target = f"=mac-address={d['mac']}" if d.get("mac") else f"=address={d['ip']}"
+            try:
+                api.query("/ip/hotspot/ip-binding/add", target, "=type=bypassed", f"=comment={tag}")
+            except RouterOSError:
+                pass  # déjà en bypass
 
     def _remove_rules(self, api, did):
         for n in api.query("/ip/firewall/nat/print", f"?comment=ADER LINK appareil {did}"):
             api.query("/ip/firewall/nat/remove", f"=.id={n['.id']}")
+        try:
+            for b in api.query("/ip/hotspot/ip-binding/print", f"?comment=ADER LINK appareil {did}"):
+                api.query("/ip/hotspot/ip-binding/remove", f"=.id={b['.id']}")
+        except RouterOSError:
+            pass
 
     def lan_scan(self, zone_id):
         """Appareils vus par le routeur (baux DHCP + voisins) : pour choisir une antenne sans chercher son adresse."""
@@ -307,7 +319,9 @@ class Routers:
             if seq > 999:
                 raise RouterError("Nombre maximum d'appareils atteint")
             self.config["device_seq"] = seq
-        d = {"id": seq, "name": name, "ip": ip, "port": port, "proto": proto}
+        mac = str(data.get("mac") or "").strip().upper()
+        mac = mac if re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", mac) else ""
+        d = {"id": seq, "name": name, "ip": ip, "port": port, "proto": proto, "mac": mac}
         if not self.demo:
             try:
                 with RouterOS(z["router"]["host"], z["router"]["username"], z["router"]["password"],
