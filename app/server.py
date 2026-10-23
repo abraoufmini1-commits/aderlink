@@ -510,6 +510,9 @@ def make_handler(app):
                 logo = app.routers.logo(parts[3])
                 self.need(logo is not None, "Pas de logo")
                 return self.send(200, bytes(logo[1]), logo[0], {"Cache-Control": "private, max-age=86400"})
+            if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "scan":
+                self.need(who.can("routers_write") and who.can_zone(parts[3]))
+                return app.routers.lan_scan(parts[3])
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))

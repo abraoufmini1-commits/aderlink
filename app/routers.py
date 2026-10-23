@@ -258,6 +258,33 @@ class Routers:
         for n in api.query("/ip/firewall/nat/print", f"?comment=ADER LINK appareil {did}"):
             api.query("/ip/firewall/nat/remove", f"=.id={n['.id']}")
 
+    def lan_scan(self, zone_id):
+        """Appareils vus par le routeur (baux DHCP + voisins) : pour choisir une antenne sans chercher son adresse."""
+        z = self.zone(zone_id)
+        if self.demo:
+            return {"found": [{"ip": "192.168.88.20", "name": "Grandstream GWN7660", "mac": "C0:74:AD:12:34:56"},
+                              {"ip": "192.168.88.21", "name": "Antenne LiteBeam", "mac": "24:5A:4C:AA:BB:CC"}]}
+        r = z["router"]
+        found = {}
+        try:
+            with RouterOS(r["host"], r["username"], r["password"], port=r.get("port", 8728), timeout=8) as api:
+                for l in api.query("/ip/dhcp-server/lease/print"):
+                    ip = l.get("active-address") or l.get("address")
+                    if ip and l.get("status", "bound") == "bound":
+                        found[ip] = {"ip": ip, "name": l.get("host-name") or l.get("comment") or "",
+                                     "mac": l.get("active-mac-address") or l.get("mac-address") or ""}
+                for n in api.query("/ip/neighbor/print"):
+                    ip = n.get("address4") or n.get("address")
+                    if ip and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", ip):
+                        name = " ".join(x for x in (n.get("identity"), n.get("board")) if x)
+                        f = found.setdefault(ip, {"ip": ip, "name": "", "mac": n.get("mac-address", "")})
+                        f["name"] = f["name"] or name
+        except RouterOSError as e:
+            raise RouterError(f"Le routeur ne répond pas : {e}") from e
+        known = {d["ip"] for d in z.get("devices", [])}
+        out = [f for ip, f in sorted(found.items(), key=lambda x: tuple(int(p) for p in x[0].split("."))) if ip not in known]
+        return {"found": out[:200]}
+
     def add_device(self, zone_id, data):
         z = self.zone(zone_id)
         if not self.remote(z):

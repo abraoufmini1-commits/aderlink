@@ -72,7 +72,7 @@
         st + "</div>" +
         (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
         "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Profils", "ticket") +
-        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", "Winbox", "winbox") : "") + "</div></article>";
+        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", r.remote ? "À distance" : "Winbox", "winbox") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
   $("search").addEventListener("input", render);
@@ -265,10 +265,12 @@
       "<h3 class='sub-h'>Appareils derrière ce routeur</h3>" +
       "<p class='pane-sub'>Antenne (Grandstream, Ubiquiti…), caméra, imprimante : ouvrez leur page de réglage de partout.</p>" +
       "<div class='ra-list' id='devList'></div>" +
+      "<button type='button' class='btn btn-outline btn-block' id='devScan'>Rechercher les appareils sur ce routeur</button>" +
+      "<div class='ra-list' id='devFound'></div>" +
       "<form class='dev-form' id='devForm' autocomplete='off' novalidate>" +
       "<div class='f'><label for='dName'>Nom</label><input id='dName' maxlength='40' placeholder='Ex : Antenne Grandstream'></div>" +
       "<div class='f'><label for='dIp'>Adresse IP locale</label><input id='dIp' inputmode='decimal' placeholder='Ex : 192.168.88.20'></div>" +
-      "<div class='f'><label for='dProto'>Page</label><select id='dProto'><option value='http'>http (port 80)</option><option value='https'>https (port 443)</option></select></div>" +
+      "<div class='f'><label for='dProto'>Page</label><select id='dProto'><option value='http'>http</option><option value='https'>https</option></select></div>" +
       "<div class='f'><label for='dPort'>Port</label><input id='dPort' type='number' min='1' max='65535' placeholder='80'></div>" +
       "<button class='btn' type='submit' id='dAdd'>+ Ajouter</button></form>" +
       "<div class='notice' id='bsMsg' role='status'></div>" +
@@ -289,6 +291,26 @@
       }).join("") : "<p class='pane-sub'>Aucun appareil pour l'instant.</p>";
     }
     devices(r.devices || []);
+    $("devScan").addEventListener("click", function () {
+      var b = this; b.disabled = true; b.textContent = "Recherche…";
+      api("/api/routers/" + encodeURIComponent(r.id) + "/scan").then(function (d) {
+        $("devFound").innerHTML = d.found.length ? "<p class='pane-sub'>Touchez un appareil pour le remplir ci-dessous :</p>" + d.found.map(function (f) {
+          return "<button type='button' class='ra-row ra-pick' data-ip='" + esc(f.ip) + "' data-name='" + esc(f.name) + "'><div class='ra-main'>" +
+            "<div class='ra-label'>" + esc(f.name || "Appareil sans nom") + "</div><div class='ra-value mono'>" + esc(f.ip) + (f.mac ? " · " + esc(f.mac) : "") + "</div></div>" +
+            "<span class='btn btn-sm btn-outline'>Choisir</span></button>";
+        }).join("") : "<p class='pane-sub'>Aucun appareil trouvé. Entrez l'adresse à la main.</p>";
+      }).catch(function (err) { $("devFound").innerHTML = "<p class='pane-sub'>" + esc(err.message) + "</p>"; })
+        .then(function () { b.disabled = false; b.textContent = "Rechercher les appareils sur ce routeur"; });
+    });
+    $("devFound").addEventListener("click", function (e) {
+      var f = e.target.closest("[data-ip]");
+      if (!f) return;
+      $("dIp").value = f.dataset.ip;
+      $("dName").value = f.dataset.name || "Antenne";
+      if (/grandstream|gwn/i.test(f.dataset.name)) { $("dProto").value = "https"; $("dPort").placeholder = "443"; }
+      $("dName").focus();
+      $("devForm").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
     $("dProto").addEventListener("change", function () { $("dPort").placeholder = this.value === "https" ? "443" : "80"; });
     $("devForm").addEventListener("submit", function (e) {
       e.preventDefault();

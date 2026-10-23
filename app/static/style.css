@@ -1281,3 +1281,9 @@ button.rcard { border: 1px solid var(--border); }
 .dev-form .f { margin: 0; }
 .ra-ip { font-weight: 500; color: var(--ink-3); font-size: 12px; }
 @media (max-width: 640px) { .dev-form { grid-template-columns: 1fr 1fr; } .dev-form .btn { grid-column: span 2; } }
+.ra-pick { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.ra-pick:hover { border-color: var(--blue-600); background: var(--blue-50); }
+#devScan { margin: 4px 0 8px; }
+.ra-copy { color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); width: 40px; height: 40px; flex: none; }
+.ra-copy:hover { color: var(--blue-600); }
+.ra-copy svg { fill: none; stroke: currentColor; stroke-width: 2; }
