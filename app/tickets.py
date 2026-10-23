@@ -294,16 +294,22 @@ class Tickets:
                 added = [new_code() for _ in range(count)]
             else:
                 with open_router(zone) as api:
-                    while len(added) < count:
-                        code = new_code()
-                        try:
-                            api.query("/ip/hotspot/user/add", f"=name={code}",
-                                      f"=password={code if same_password else ''}", *args_common)
-                        except RouterOSError as e:
-                            if "already" in str(e).lower():
-                                continue  # code déjà présent sur le routeur : on en tire un autre
-                            raise
-                        added.append(code)
+                    # tout est envoyé d'un coup (rapide même par le tunnel), puis on refait les rares doublons
+                    for _ in range(5):
+                        need = count - len(added)
+                        if need <= 0:
+                            break
+                        codes = [new_code() for _ in range(need)]
+                        res = api.pipeline([("/ip/hotspot/user/add", f"=name={c}",
+                                             f"=password={c if same_password else ''}", *args_common) for c in codes])
+                        fatal = None
+                        for c, err in zip(codes, res):
+                            if err is None:
+                                added.append(c)
+                            elif "already" not in err.lower():
+                                fatal = fatal or err
+                        if fatal:
+                            raise RouterOSError(fatal)
         except RouterOSError as e:
             error = str(e)
 

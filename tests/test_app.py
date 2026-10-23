@@ -69,6 +69,10 @@ class FakeRouter(threading.Thread):
         try:
             while True:
                 words = _sentence(conn)
+                tag = next((w for w in words if w.startswith(".tag=")), None)
+                words = [w for w in words if not w.startswith(".tag=")]
+                # réponses étiquetées (.tag) quand l'application envoie plusieurs commandes d'un coup
+                _send = (lambda c, *w, _t=tag: globals()["_send"](c, *w, _t)) if tag else globals()["_send"]
                 cmd = words[0]
                 attrs = dict(w[1:].split("=", 1) for w in words[1:] if w.startswith("="))
                 if cmd == "/login":

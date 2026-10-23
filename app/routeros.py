@@ -139,6 +139,40 @@ class RouterOS:
         """Exécute une commande et renvoie la liste des enregistrements (!re)."""
         return [attrs for kind, attrs in self._talk([command, *args]) if kind == "!re"]
 
+    def pipeline(self, commands, window=100):
+        """Envoie beaucoup de commandes d'un coup, sans attendre chaque réponse (étiquettes .tag).
+
+        Sur une liaison lente (tunnel, autre continent), 1000 ajouts prennent ainsi quelques
+        secondes au lieu de plusieurs minutes. Renvoie, pour chaque commande, None (réussie)
+        ou le message d'erreur du routeur.
+        """
+        results = [None] * len(commands)
+        done = set()
+        sent = 0
+        try:
+            while len(done) < len(commands):
+                while sent < len(commands) and sent - len(done) < window:
+                    self._send_sentence(list(commands[sent]) + [f".tag={sent}"])
+                    sent += 1
+                sentence = self._read_sentence()
+                if not sentence:
+                    continue
+                kind = sentence[0]
+                tag = next((w[5:] for w in sentence[1:] if w.startswith(".tag=")), None)
+                if kind == "!fatal":
+                    raise RouterOSError("Erreur fatale RouterOS")
+                if tag is None or not tag.isdigit():
+                    continue
+                i = int(tag)
+                if kind == "!trap":
+                    msg = next((w[len("=message="):] for w in sentence[1:] if w.startswith("=message=")), "Erreur RouterOS")
+                    results[i] = msg
+                elif kind == "!done":
+                    done.add(i)
+        except (OSError, ssl.SSLError) as e:
+            raise RouterOSError(f"Échange interrompu avec {self.host} : {e}") from e
+        return results
+
     def count(self, command):
         """Nombre d'éléments renvoyé par une commande print avec count-only."""
         replies = self._talk([command, "=count-only="])
