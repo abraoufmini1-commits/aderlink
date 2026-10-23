@@ -196,6 +196,16 @@ def cmd_serve(args):
     from .roaming import Roaming
     roaming = Roaming(cfg, store, tickets, collector)
     tickets.roaming = roaming
+
+    def kick(zid, code):  # coupe un ticket Roaming sur un routeur (et le désactive s'il y était en local)
+        from .tickets import open_router
+        z = next((z for z in cfg.get("zones", []) if z["id"] == zid), None)
+        if not z or not (z.get("router") or {}).get("host") or args.demo:
+            return
+        with open_router(z) as api:
+            for a in api.query("/ip/hotspot/active/print", f"?user={code}"):
+                api.query("/ip/hotspot/active/remove", f"=.id={a['.id']}")
+    roaming.kicker = kick
     from .guard import Guard
     guard = Guard(cfg, store, None if args.demo else DATA, save=save_config, tickets=tickets, demo=args.demo)
     if args.demo:

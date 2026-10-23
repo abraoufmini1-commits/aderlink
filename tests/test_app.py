@@ -747,6 +747,8 @@ class RoamingTests(unittest.TestCase):
         self.t = Tickets(self.config, self.store, demo=True)
         self.r = Roaming(self.config, self.store, self.t, log=lambda m: None)
         self.t.roaming = self.r
+        self.kicked = []
+        self.r.kicker = lambda zid, code: self.kicked.append((zid, code))
         self.g = self.r.save_group({"name": "Réseau ADER", "zones": ["a", "b"]})
         self.secret = self.r.group(self.g["id"])["secret"].encode()
         f = self.t.create_forfait({"zone_id": "a", "name": "100F", "price": 100, "data_mb": 1, "validity_s": 3600,
@@ -816,6 +818,9 @@ class RoamingTests(unittest.TestCase):
         p = self.auth("10.2.0.1", code)
         self.assertEqual(p.code, R.ACCESS_REJECT)
         self.assertIn(b"epuisees", p.get(R.REPLY_MESSAGE))
+        self.assertIsNotNone(self.t.find(code)[0]["expired_at"])   # fermé pour tout le réseau
+        time.sleep(0.3)
+        self.assertEqual(sorted(self.kicked), [("a", code), ("b", code)])  # coupé sur les deux routeurs
 
     def test_rejections(self):
         from app import radius as R

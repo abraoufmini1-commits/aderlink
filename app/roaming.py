@@ -30,6 +30,7 @@ class Roaming:
         self.log = log
         self.threads = []
         self.listening = {}
+        self.kicker = None  # fonction (zone_id, code) qui coupe une session sur un routeur
         with store.lock:
             store.db.executescript(
                 """
@@ -183,6 +184,8 @@ class Roaming:
         t = self._ticket(gid, code)
         if not t:
             return False, "Code inconnu sur ce reseau", {}
+        if t["data_mb"] and (t["bytes_used"] or 0) >= t["data_mb"] * 1024 * 1024:
+            return False, "Donnees epuisees", {}
         if t["expired_at"]:
             return False, "Ticket expire", {}
         limits = {}
@@ -241,6 +244,43 @@ class Roaming:
                        "first_used = COALESCE(first_used, ?) WHERE zone_id = ? AND code = ?",
                        (t["home"], code, t["home"], code, now, t["home"], code))
             db.commit()
+        if status != R.ACCT_START and self.finished(gid, code, now):
+            self.end_ticket(gid, code, t["home"], now)
+
+    def finished(self, gid, code, now=None):
+        """Vrai si le ticket n'a plus de temps ni de données (compté sur tout le réseau)."""
+        now = now or int(time.time())
+        t = self._ticket(gid, code)
+        if not t:
+            return False
+        if t["validity_s"] and t["first_used"] and t["first_used"] + t["validity_s"] <= now:
+            return True
+        if t["uptime_s"] and (t["uptime_used"] or 0) >= t["uptime_s"]:
+            return True
+        return bool(t["data_mb"] and (t["bytes_used"] or 0) >= t["data_mb"] * 1024 * 1024)
+
+    def end_ticket(self, gid, code, home, now=None):
+        """Ticket fini : refusé partout, et coupé sur TOUS les routeurs du réseau où il serait encore connecté."""
+        self._expire(home, code, now or int(time.time()))
+        if self.kicker:
+            threading.Thread(target=self._kick_all, args=(gid, code), daemon=True).start()
+
+    def _kick_all(self, gid, code):
+        for zid in self.member_zones(gid):
+            try:
+                self.kicker(zid, code)
+            except Exception as e:  # routeur injoignable : la limite envoyée au routeur coupe quand même
+                self.log(f"ADER Roaming : coupure de {code} sur {zid} impossible ({e})")
+
+    def sweep(self, now=None):
+        """Toutes les minutes : les tickets dont la validité est passée sont fermés sur tout le réseau."""
+        now = now or int(time.time())
+        rows, _ = self.tickets._q(
+            "SELECT b.roaming_id, t.code, t.zone_id FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "WHERE b.roaming_id IS NOT NULL AND t.expired_at IS NULL AND t.removed = 0 AND t.first_used IS NOT NULL "
+            "AND b.validity_s > 0 AND t.first_used + b.validity_s <= ?", (now,))
+        for gid, code, home in rows:
+            self.end_ticket(gid, code, home, now)
 
     def handle(self, data, ip, kind):
         """Traite un paquet reçu ; renvoie la réponse à envoyer (ou None pour l'ignorer)."""
@@ -299,6 +339,15 @@ class Roaming:
             self.threads.append(th)
         if self.listening:
             self.log(f"ADER Roaming : serveur RADIUS en écoute (UDP {auth}/{acct})")
+
+        def loop():
+            while True:
+                time.sleep(60)
+                try:
+                    self.sweep()
+                except Exception as e:
+                    self.log(f"ADER Roaming : vérification des tickets : {e!r}")
+        threading.Thread(target=loop, daemon=True, name="roaming-sweep").start()
 
     def _loop(self, sock, kind):
         while True:
