@@ -178,7 +178,7 @@ class Roaming:
              "forfait_id", "batch_id")
         return dict(zip(k, rows[0]))
 
-    def authorize(self, gid, code, now=None):
+    def authorize(self, gid, code, now=None, zone_id=None, mac=None):
         """Décide d'un Access-Request. Renvoie (accepté, message, attributs)."""
         now = now or int(time.time())
         t = self._ticket(gid, code)
@@ -206,10 +206,23 @@ class Roaming:
             limits["bytes"] = left
         f = self.tickets.get_forfait(t["forfait_id"]) if t["forfait_id"] else None
         shared = (f or {}).get("shared_users") or 1
-        active, _ = self._q("SELECT COUNT(*) FROM roaming_sessions WHERE home_zone = ? AND code = ? AND active = 1 "
-                            "AND updated >= ?", (t["home"], code, now - ACTIVE_S))
-        if active[0][0] >= shared:
-            return False, "Ticket deja connecte sur un autre appareil", {}
+        # Une seule connexion à la fois sur tout le réseau (ou « appareils par ticket » du profil) :
+        # sessions en cours + connexions acceptées il y a moins de 90 s (avant que le routeur ne confirme).
+        # Le même appareil qui se reconnecte sur le même routeur n'est pas compté contre lui-même.
+        rows, _ = self._q("SELECT nas_zone, mac, session_id, updated FROM roaming_sessions WHERE home_zone = ? AND code = ? "
+                          "AND active = 1 AND updated >= ?", (t["home"], code, now - ACTIVE_S))
+        busy = [r for r in rows if not (r[0] == zone_id and mac and (r[1] or "").upper() == mac.upper())
+                and not (r[2].startswith("pending-") and r[3] < now - 90)]
+        if len(busy) >= shared:
+            other = any(r[0] != zone_id for r in busy)
+            return False, ("Ticket deja connecte sur un autre routeur du reseau : deconnectez-le d'abord" if other
+                           else "Ticket deja connecte sur un autre appareil"), {}
+        if zone_id:  # réservation immédiate : bloque un 2e appareil pendant que le routeur ouvre la session
+            with self.store.lock:
+                self.store.db.execute(
+                    "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
+                    "VALUES (?,?,?,?,?,?,?,1)", (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, mac))
+                self.store.db.commit()
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
@@ -235,6 +248,8 @@ class Roaming:
         secs = pkt.int(R.ACCT_SESSION_TIME)
         with self.store.lock:
             db = self.store.db
+            db.execute("DELETE FROM roaming_sessions WHERE session_id LIKE 'pending-%' AND nas_zone = ? AND code = ?",
+                       (zone["id"], code))
             db.execute("INSERT OR IGNORE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac) "
                        "VALUES (?,?,?,?,?,?,?)", (sid, zone["id"], code, t["home"], now, now, pkt.text(R.CALLING_STATION_ID)))
             db.execute("UPDATE roaming_sessions SET updated = ?, bytes = MAX(bytes, ?), seconds = MAX(seconds, ?), active = ? "
@@ -303,7 +318,7 @@ class Roaming:
             if not R.password_ok(pkt, secret, code):
                 ok, msg, lim = False, "Code ou mot de passe incorrect", {}
             else:
-                ok, msg, lim = self.authorize(g["id"], code)
+                ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=pkt.text(R.CALLING_STATION_ID))
             if not ok:
                 return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, msg))
             attrs = R.attr(R.ACCT_INTERIM_INTERVAL, INTERIM_S)

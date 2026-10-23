@@ -812,7 +812,7 @@ class RoamingTests(unittest.TestCase):
         self.acct("41.0.0.9", code, "s2", R.ACCT_START, 0)
         p = self.auth("10.1.0.1", code)
         self.assertEqual(p.code, R.ACCESS_REJECT)
-        self.assertIn(b"autre appareil", p.get(R.REPLY_MESSAGE))
+        self.assertIn(b"autre routeur", p.get(R.REPLY_MESSAGE))
         # données épuisées
         self.acct("41.0.0.9", code, "s2", R.ACCT_STOP, 400 * 1024)
         p = self.auth("10.2.0.1", code)
@@ -821,6 +821,18 @@ class RoamingTests(unittest.TestCase):
         self.assertIsNotNone(self.t.find(code)[0]["expired_at"])   # fermé pour tout le réseau
         time.sleep(0.3)
         self.assertEqual(sorted(self.kicked), [("a", code), ("b", code)])  # coupé sur les deux routeurs
+
+    def test_no_simultaneous_use_on_two_routers(self):
+        from app import radius as R
+        code = self.codes[1]
+        self.assertEqual(self.auth("10.1.0.1", code).code, R.ACCESS_ACCEPT)        # connecté sur A
+        p = self.auth("41.0.0.9", code)                                            # aussitôt sur B : refusé,
+        self.assertEqual(p.code, R.ACCESS_REJECT)                                  # même avant que A confirme
+        self.assertIn(b"autre routeur", p.get(R.REPLY_MESSAGE))
+        self.acct("10.1.0.1", code, "sA", R.ACCT_START, 0)
+        self.assertEqual(self.auth("41.0.0.9", code).code, R.ACCESS_REJECT)
+        self.acct("10.1.0.1", code, "sA", R.ACCT_STOP, 1000)                       # déconnecté de A
+        self.assertEqual(self.auth("41.0.0.9", code).code, R.ACCESS_ACCEPT)        # maintenant possible sur B
 
     def test_rejections(self):
         from app import radius as R
