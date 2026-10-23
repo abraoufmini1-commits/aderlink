@@ -196,6 +196,8 @@ def cmd_serve(args):
     from .roaming import Roaming
     roaming = Roaming(cfg, store, tickets, collector)
     tickets.roaming = roaming
+    from .guard import Guard
+    guard = Guard(cfg, store, None if args.demo else DATA, save=save_config, tickets=tickets, demo=args.demo)
     if args.demo:
         _demo_batches(tickets)
         zids = [z["id"] for z in cfg.get("zones", [])]
@@ -211,9 +213,10 @@ def cmd_serve(args):
         updater.start()
         if (cfg.get("radius") or {}).get("enabled", True):
             roaming.start()
+        guard.start()
     print(f"ADER LINK version {updater.state['current']}")
     serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
-              users=users, save_config=save_config, roaming=roaming,
+              users=users, save_config=save_config, roaming=roaming, guard=guard,
               paths={"config": CONFIG, "db": None if args.demo else DATA / "aderlink.db"}),
           args.host, args.port)
 

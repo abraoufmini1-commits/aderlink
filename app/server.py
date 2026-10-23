@@ -82,7 +82,7 @@ class Forbidden(Exception):
 
 class App:
     def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None,
-                 users=None, save_config=None, paths=None, roaming=None):
+                 users=None, save_config=None, paths=None, roaming=None, guard=None):
         self.config = config
         self.collector = collector
         self.store = store
@@ -94,6 +94,7 @@ class App:
         self.save_config = save_config or (lambda c: None)
         self.paths = paths or {}
         self.roaming = roaming
+        self.guard = guard
         self.throttle = LoginThrottle()
 
     def offset(self):
@@ -306,6 +307,7 @@ def make_handler(app):
             from .tickets import TicketError
             from .users import UserError
             from .roaming import RoamingError
+            from .guard import GuardError
             try:
                 out = fn()
                 if out is None:  # réponse déjà envoyée (image)
@@ -313,28 +315,14 @@ def make_handler(app):
                 return self.json(out, status)
             except Forbidden as e:
                 return self.json({"error": str(e) or "Accès refusé"}, 403)
-            except (RouterError, TicketError, UserError, RoamingError) as e:
+            except (RouterError, TicketError, UserError, RoamingError, GuardError) as e:
                 return self.json({"error": str(e)}, 400)
 
         def send_backup(self):
             """Sauvegarde complète : config.json + base de données (copie cohérente)."""
-            import io
-            import sqlite3
-            import tempfile
-            import zipfile
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("config.json", json.dumps(app.config, ensure_ascii=False, indent=2))
-                with tempfile.TemporaryDirectory() as tmp:
-                    copy = Path(tmp) / "aderlink.db"
-                    dst = sqlite3.connect(copy)
-                    with app.store.lock:
-                        app.store.db.backup(dst)
-                    dst.close()
-                    zf.write(copy, "aderlink.db")
-                zf.writestr("LISEZMOI.txt", "Sauvegarde ADER LINK. A restaurer dans Parametres > Restaurer une sauvegarde.\n")
+            from .guard import make_backup
             name = time.strftime("aderlink-sauvegarde-%Y-%m-%d-%H%M.zip", time.localtime())
-            return self.send(200, buf.getvalue(), "application/zip",
+            return self.send(200, make_backup(app.config, app.store), "application/zip",
                              {"Content-Disposition": f'attachment; filename="{name}"'})
 
         def restore_backup(self, who):
@@ -361,7 +349,7 @@ def make_handler(app):
                     and db[:16] == b"SQLite format 3\x00"):
                 return self.json({"error": "Sauvegarde incomplète ou abîmée"}, 400)
             # le serveur garde ses propres réglages de réseau (adresse, HTTPS, proxy)
-            for k in ("secure_cookies", "behind_proxy", "server_ip_for_routers", "wireguard"):  # (OpenVPN : dans « wireguard »)
+            for k in ("secure_cookies", "behind_proxy", "server_ip_for_routers", "wireguard", "telegram"):  # (OpenVPN : dans « wireguard »)
                 if k in app.config:
                     cfg[k] = app.config[k]
                 else:
@@ -579,6 +567,15 @@ def make_handler(app):
             if p == "/api/backup":
                 self.need(who.can("settings"))
                 return self.send_backup()
+            if p == "/api/security" and app.guard:
+                self.need(who.can("settings"))
+                return app.guard.status()
+            if p.startswith("/api/backups/") and app.guard:
+                self.need(who.can("settings"))
+                f = app.guard.backup_path(p[len("/api/backups/"):])
+                self.need(f, "Sauvegarde introuvable")
+                return self.send(200, f.read_bytes(), "application/zip",
+                                 {"Content-Disposition": f'attachment; filename="{f.name}"'})
             if app.updater and p == "/api/settings":
                 self.need(who.can("settings"))
                 from .routers import local_ip_towards
@@ -626,6 +623,14 @@ def make_handler(app):
                 if app.collector and res.get("created") and not res.get("roaming"):
                     app.collector.add_tickets(zid, res["created"])
                 return res
+            # sécurité : Telegram et sauvegardes
+            if p.startswith("/api/security/") and app.guard:
+                self.need(who.can("settings"))
+                G, act = app.guard, p[len("/api/security/"):]
+                fn = {"telegram": lambda: G.set_token(body.get("token")), "link": G.link, "unlink": G.unlink,
+                      "test": G.test, "backup": lambda: dict(G.backup_now(), **G.status())}.get(act)
+                self.need(fn, "Introuvable")
+                return fn()
             # ADER Roaming
             if app.roaming and (p == "/api/roaming" or (len(parts) >= 4 and parts[2] == "roaming" and parts[3].isdigit())):
                 self.need(who.can("routers_write"))

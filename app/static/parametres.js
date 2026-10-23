@@ -87,3 +87,75 @@
   load();
   setInterval(load, 15000);
 })();
+
+/* Sécurité : alertes Telegram et sauvegardes automatiques */
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  if (!$("secCard")) return;
+  var ic = window.AderShell.icon;
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function api(path, body) {
+    var opt = { credentials: "same-origin", headers: {} };
+    if (body !== undefined) {
+      opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.headers["X-AderLink"] = "1";
+      opt.body = JSON.stringify(body);
+    }
+    return fetch(path, opt).then(function (r) {
+      return r.json().catch(function () { throw new Error("Redémarrez ADER LINK"); })
+        .then(function (d) { if (!r.ok) throw new Error(d.error || "Erreur"); return d; });
+    });
+  }
+  function msg(kind, text) { var n = $("secMsg"); n.className = "notice show notice-" + kind; n.textContent = text; }
+  function size(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko"; }
+  function when(ts) { return new Date(ts * 1000).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+
+  function render(s) {
+    var t = s.telegram, box = $("tgBox");
+    if (t.linked) {
+      box.innerHTML = "<div class='sub-state sub-ok'>" + ic("check") + "<div><strong>Relié à Telegram" + (t.who ? " (" + esc(t.who) + ")" : "") + "</strong>" +
+        "<span>Vous recevez : routeur hors ligne (après 3 min) et de retour, ventes du jour à " + s.summary_hour + " h, sauvegarde de la nuit.</span></div></div>" +
+        "<div class='bk-actions'><button class='btn btn-outline' type='button' id='tgTest'>Envoyer un message de test</button>" +
+        "<button class='btn-prev' type='button' id='tgOff'>Délier</button></div>";
+      $("tgTest").onclick = function () { api("/api/security/test", {}).then(function () { msg("ok", "Message envoyé : regardez Telegram."); }).catch(function (e) { msg("err", e.message); }); };
+      $("tgOff").onclick = function () { api("/api/security/unlink", {}).then(render); };
+    } else if (t.token) {
+      box.innerHTML = "<ol class='wb-steps'><li>Ouvrez votre bot <strong>@" + esc(t.bot) + "</strong> dans Telegram : " +
+        "<a class='link' href='https://t.me/" + encodeURIComponent(t.bot) + "' target='_blank' rel='noopener'>t.me/" + esc(t.bot) + "</a></li>" +
+        "<li>Appuyez sur <strong>DÉMARRER</strong> (ou écrivez <strong>/start</strong>).</li><li>Revenez ici et cliquez :</li></ol>" +
+        "<div class='bk-actions'><button class='btn' type='button' id='tgLink'>J'ai écrit au bot : relier</button>" +
+        "<button class='btn-prev' type='button' id='tgOff'>Changer de bot</button></div>";
+      $("tgLink").onclick = function () { api("/api/security/link", {}).then(function (d) { render(d); msg("ok", "Relié ! Un message de bienvenue est arrivé sur Telegram."); }).catch(function (e) { msg("err", e.message); }); };
+      $("tgOff").onclick = function () { api("/api/security/unlink", {}).then(render); };
+    } else {
+      box.innerHTML = "<ol class='wb-steps'><li>Dans Telegram, ouvrez <a class='link' href='https://t.me/BotFather' target='_blank' rel='noopener'>@BotFather</a> et envoyez <strong>/newbot</strong>.</li>" +
+        "<li>Donnez un nom (ex : <em>ADER LINK Alertes</em>) puis un identifiant finissant par <em>bot</em> (ex : <em>aderlink_alertes_bot</em>).</li>" +
+        "<li>BotFather vous donne un <strong>jeton</strong> (ex : <span class='mono'>123456789:AAH…</span>). Collez-le ici :</li></ol>" +
+        "<div class='dev-form tg-form'><div class='f'><label for='tgToken'>Jeton du bot</label><input id='tgToken' autocomplete='off' spellcheck='false' placeholder='123456789:AA…'></div>" +
+        "<button class='btn' type='button' id='tgSave'>Valider</button></div>";
+      $("tgSave").onclick = function () {
+        var b = this; b.disabled = true;
+        api("/api/security/telegram", { token: $("tgToken").value }).then(function (d) { render(d); $("secMsg").className = "notice"; })
+          .catch(function (e) { msg("err", e.message); }).then(function () { b.disabled = false; });
+      };
+    }
+    $("bkList").innerHTML = s.backups.length ? s.backups.map(function (b) {
+      return "<div class='ra-row'><div class='ra-main'><div class='ra-label'>" + esc(when(b.ts)) + "</div><div class='ra-value mono'>" + esc(b.name) + " · " + size(b.size) + "</div></div>" +
+        "<a class='btn btn-sm btn-outline' href='/api/backups/" + encodeURIComponent(b.name) + "' download>" + ic("download") + " Télécharger</a></div>";
+    }).join("") : "<p class='pane-sub'>Aucune sauvegarde automatique pour l'instant : la première sera faite cette nuit, ou cliquez sur « Sauvegarder maintenant ».</p>";
+    $("bkNow").disabled = !s.available;
+    if (!s.available) $("bkAutoText").textContent = "La sauvegarde automatique fonctionne sur le serveur en ligne (pas en démonstration).";
+  }
+  function load() { api("/api/security").then(render).catch(function (e) { msg("err", e.message); }); }
+  $("bkNow").addEventListener("click", function () {
+    var b = this; b.disabled = true; b.textContent = "Sauvegarde…";
+    api("/api/security/backup", {}).then(function (d) {
+      render(d); msg("ok", "Sauvegarde faite" + (d.telegram ? " et envoyée sur Telegram." : "."));
+    }).catch(function (e) { msg("err", e.message); }).then(function () { b.disabled = false; b.textContent = "Sauvegarder maintenant"; });
+  });
+  load();
+})();

@@ -1287,3 +1287,5 @@ button.rcard { border: 1px solid var(--border); }
 .ra-copy { color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); width: 40px; height: 40px; flex: none; }
 .ra-copy:hover { color: var(--blue-600); }
 .ra-copy svg { fill: none; stroke: currentColor; stroke-width: 2; }
+.tg-form { grid-template-columns: 1fr auto; }
+@media (max-width: 640px) { .tg-form { grid-template-columns: 1fr; } .tg-form .btn { grid-column: auto; } }

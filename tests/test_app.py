@@ -925,3 +925,47 @@ class TunnelTests(unittest.TestCase):
         s2 = install_script("Z", "p", "192.168.1.5", 8728, "http://x/ok", [])
         self.assertNotIn("wireguard", s2)
         self.assertIn("address=192.168.1.5/32", s2)
+
+
+class GuardTests(unittest.TestCase):
+    """Sécurité : alertes (avec délai anti-micro-coupure), résumé, sauvegardes gardées 14 jours."""
+    def test_alerts_and_backups(self):
+        import tempfile
+        from app.guard import Guard, GuardError
+        cfg = {"zones": [{"id": "z1", "name": "Zone A"}], "telegram": {"token": "x", "chat_id": 1}}
+        store = Store(":memory:")
+        tmp = tempfile.mkdtemp()
+        g = Guard(cfg, store, tmp)
+        sent = []
+        g.send = lambda text: sent.append(text) or True
+        t0 = int(time.time()) - 1000
+        g.last_event = t0 - 1
+        store.add_event(t0, "z1", "offline", "Zone A hors ligne")
+        g.check_events(t0 + 60)
+        self.assertEqual(sent, [])                       # micro-coupure : on attend
+        g.check_events(t0 + 200)
+        self.assertIn("Zone A</b> est hors ligne", sent[-1])
+        store.add_event(t0 + 300, "z1", "online", "Zone A de nouveau en ligne")
+        g.check_events(t0 + 310)
+        self.assertIn("de nouveau en ligne", sent[-1])
+        # coupure de 1 min : aucune alerte
+        n = len(sent)
+        store.add_event(t0 + 400, "z1", "offline", "x")
+        store.add_event(t0 + 450, "z1", "online", "x")
+        g.check_events(t0 + 700)
+        self.assertEqual(len(sent), n)
+        # sauvegardes : 14 gardées
+        from pathlib import Path
+        d = Path(tmp) / "backups"
+        d.mkdir()
+        for i in range(20):
+            (d / f"aderlink-auto-2026-01-{i + 1:02d}.zip").write_bytes(b"x")
+        r = g.backup_now(send=False)
+        self.assertEqual(len(g.backups()), 14)
+        self.assertTrue(g.backup_path(r["name"]))
+        self.assertIsNone(g.backup_path("../config.json"))
+        import zipfile
+        with zipfile.ZipFile(g.backup_path(r["name"])) as zf:
+            self.assertEqual(set(zf.namelist()), {"config.json", "aderlink.db", "LISEZMOI.txt"})
+        with self.assertRaises(GuardError):
+            g.set_token("pas un jeton")

@@ -34,6 +34,20 @@
     <div class="pane-foot"><button class="btn btn-big" type="button" id="ctSave">Enregistrer le contact</button></div>
   </section>
 
+  <section class="card wizard" aria-labelledby="secTitle" id="secCard">
+    <h2 id="secTitle">Sécurité</h2>
+    <p class="pane-sub">Vos données protégées chaque nuit, et vos routeurs surveillés jour et nuit.</p>
+
+    <h3 class="sub-h">Alertes sur Telegram</h3>
+    <div id="tgBox"></div>
+
+    <h3 class="sub-h">Sauvegarde automatique</h3>
+    <p class="pane-sub" id="bkAutoText">Chaque nuit à 3 h, ADER LINK fait une sauvegarde complète et garde les 14 derniers jours.</p>
+    <div class="ra-list" id="bkList"></div>
+    <div class="bk-actions"><button class="btn btn-outline" type="button" id="bkNow">Sauvegarder maintenant</button></div>
+    <div class="notice" id="secMsg" role="status"></div>
+  </section>
+
   <section class="card wizard" aria-labelledby="bkTitle">
     <h2 id="bkTitle">Sauvegarde</h2>
     <p class="pane-sub">Un seul fichier contient tout : routeurs, profils, lots, ventes, comptes et réglages. Gardez-en une copie régulièrement (clé USB, Google Drive). Il sert aussi à déménager ADER LINK de ce PC vers le serveur en ligne.</p>
