@@ -1309,3 +1309,6 @@ button.rcard { border: 1px solid var(--border); }
 .zp-name { color: var(--ink-2); font-size: 13px; }
 @media (prefers-color-scheme: dark) { .zp-head span { color: var(--series); } }
 @media (max-width: 1250px) { .me-txt { display: none; } .me-chip { padding: 3px; } }
+.rp-zone select { min-height: 44px; border: 1px solid var(--border); border-radius: 10px; padding: 0 10px; font: inherit; background: var(--surface); color: var(--ink); min-width: 200px; }
+.rp-zone[hidden] { display: none; }
+.zp-print { margin-top: 8px; font-size: 13px; }

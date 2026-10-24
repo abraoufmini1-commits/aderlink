@@ -45,11 +45,20 @@
 
   // --- chargement ------------------------------------------------------------------------
   function load(from, to) {
-    var q = from ? "?from=" + from + "&to=" + to : "";
+    var z = $("zoneSel").value;
+    var q = (from ? "?from=" + from + "&to=" + to : "?") + (z ? "&zone=" + encodeURIComponent(z) : "");
     return api("/api/report" + q).then(function (d) {
       R = d;
       $("demoBanner").hidden = !d.demo;
       $("dFrom").value = d.from; $("dTo").value = d.to;
+      var sel = $("zoneSel");
+      if (sel.options.length !== d.zone_list.length + 1) {
+        sel.innerHTML = "<option value=''>Tous les routeurs</option>" + d.zone_list.map(function (x) {
+          return "<option value='" + esc(x.id) + "'>" + esc(x.name) + "</option>";
+        }).join("");
+      }
+      sel.value = d.zone || "";
+      sel.closest(".rp-zone").hidden = d.zone_list.length < 2;
       $("dFrom").max = $("dTo").max = d.today;
       render();
       try { localStorage.setItem("aderlink-report", preset); } catch (e) { /* ignoré */ }
@@ -74,6 +83,7 @@
     Array.prototype.forEach.call(document.querySelectorAll("#presets [data-p]"), function (b) { b.setAttribute("aria-pressed", "false"); });
     load($("dFrom").value, $("dTo").value);
   }
+  $("zoneSel").addEventListener("change", function () { if (R) load($("dFrom").value, $("dTo").value); });
   $("dFrom").addEventListener("change", custom);
   $("dTo").addEventListener("change", custom);
 
@@ -123,16 +133,24 @@
     $("fA").textContent = money(t.amount);
   }
 
+  $("byZonePrice").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-zp]");
+    if (!b) return;
+    $("zoneSel").value = b.dataset.zp;
+    load($("dFrom").value, $("dTo").value).then(function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
+  });
   // Par routeur et par prix : une carte par routeur, une ligne par prix (100 F, 200 F…)
   function zonePrice(list) {
     $("byZonePrice").innerHTML = list.length ? list.map(function (z) {
+      var zid = (R.zone_list.find(function (x) { return x.name === z.zone; }) || {}).id || "";
       return "<div class='zp-card'><div class='zp-head'><strong>" + esc(z.zone) + "</strong><span class='num'>" + money(z.amount) + "</span></div>" +
         "<table class='zp-table'><thead><tr><th>Ticket</th><th class='r'>Vendus</th><th class='r'>Montant</th></tr></thead><tbody>" +
         z.lines.map(function (l) {
           return "<tr><td><span class='zp-price num'>" + nf.format(l.price) + " F</span> <span class='zp-name'>" + esc(l.label) + "</span></td>" +
             "<td class='r num'>" + nf.format(l.tickets) + "</td><td class='r num'>" + money(l.amount) + "</td></tr>";
         }).join("") +
-        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table></div>";
+        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table>" +
+        (zid && !R.zone ? "<button type='button' class='link zp-print no-print' data-zp='" + esc(zid) + "'>Voir et imprimer ce routeur seul →</button>" : "") + "</div>";
     }).join("") : "<p class='pane-sub'>Aucune vente sur la période.</p>";
   }
 
@@ -197,7 +215,7 @@
   $("printBtn").addEventListener("click", function () { window.print(); });
   $("csvBtn").addEventListener("click", function () {
     if (!R) return;
-    var lines = [["Rapport des ventes ADER LINK", R.from + " au " + R.to], [],
+    var lines = [["Rapport des ventes ADER LINK", R.from + " au " + R.to, R.zone ? R.zones[0] : "Tous les routeurs"], [],
       ["Jour", "Tickets vendus", "Montant (F CFA)"]];
     R.by_day.forEach(function (d) { lines.push([d.date, d.tickets, d.amount]); });
     lines.push(["Total", R.totals.tickets, R.totals.amount]);
@@ -217,7 +235,7 @@
     }).join("\r\n");
     var a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = "ventes-aderlink-" + R.from + "-au-" + R.to + ".csv";
+    a.download = "ventes-" + (R.zone ? R.zones[0].replace(/[^A-Za-z0-9]+/g, "-").toLowerCase() : "aderlink") + "-" + R.from + "-au-" + R.to + ".csv";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   });

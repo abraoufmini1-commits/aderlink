@@ -202,6 +202,10 @@ class App:
         d1, d2 = min(d1, d2), max(d1, d2)
         d1 = max(d1, d2 - 366)  # un an au plus
         zone_ids, mine = self.sales_scope(who)
+        only = (q.get("zone") or [""])[0]
+        chosen = next((z for z in self.zones_for(who) if z["id"] == only), None)
+        if chosen:  # rapport d'un seul routeur
+            zone_ids = [chosen["id"]]
         names = {self.config["admin"]["username"]: "Administrateur"}
         if self.users:
             rows, _ = self.users._q("SELECT username, name FROM users")
@@ -211,7 +215,9 @@ class App:
                     "to": str(dt.date(1970, 1, 1) + dt.timedelta(days=d2)),
                     "today": str(dt.date(1970, 1, 1) + dt.timedelta(days=today)),
                     "me": who.public(), "demo": self.demo,
-                    "zones": [z["name"] for z in self.zones_for(who)]})
+                    "zones": [chosen["name"]] if chosen else [z["name"] for z in self.zones_for(who)],
+                    "zone_list": [{"id": z["id"], "name": z["name"]} for z in self.zones_for(who)],
+                    "zone": chosen["id"] if chosen else ""})
         if who.is_reseller:
             rep["commission"] = round(rep["totals"]["amount"] * (who.commission or 0) / 100)
         return rep

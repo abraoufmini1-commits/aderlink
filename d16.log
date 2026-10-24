@@ -1,0 +1,27 @@
+Mode démonstration — identifiants : admin / aderlink
+Comptes démo : gerant, revendeur, tassi (client) — mot de passe aderlink
+ADER LINK version 6.22.0
+ADER LINK en écoute sur http://127.0.0.1:8804  (mode démonstration)
+127.0.0.1 - - [24/Oct/2026 21:38:34] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:34] "GET /static/logo-white.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:34] "GET /static/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:34] "GET /static/login.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:34] "GET /static/wordmark-blue.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "POST /login HTTP/1.1" 303 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/shell.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/dashboard.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/logo-white.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/home.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/logo-blue.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /static/wordmark-white.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:35] "GET /sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /rapports HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/style.css HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/shell.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/rapports.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/wordmark-blue.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/logo-blue.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:36] "GET /static/wordmark-white.svg HTTP/1.1" 200 -
+127.0.0.1 - - [24/Oct/2026 21:38:37] "GET /sw.js HTTP/1.1" 200 -
