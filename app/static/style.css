@@ -783,6 +783,10 @@ body.no-scroll { overflow: hidden; }
 .c-nuit { --c1: #0b1320; --c2: #24344f; --cs: #eef1f5; --chip: #f08a1c; }
 .c-vert { --c1: #0b5e35; --c2: #13804a; --cs: #e6f4ec; --chip: #f08a1c; }
 .c-rouge { --c1: #8f1919; --c2: #c62828; --cs: #fdecec; --chip: #f08a1c; }
+.c-violet { --c1: #4c1d95; --c2: #6d28d9; --cs: #f1ecfd; --chip: #f08a1c; }
+.c-cyan { --c1: #0b4f5e; --c2: #0e7490; --cs: #e3f4f8; --chip: #f08a1c; }
+.c-rose { --c1: #83103f; --c2: #be185d; --cs: #fce8f1; --chip: #f08a1c; }
+.c-marron { --c1: #4a2c12; --c2: #7c4a1e; --cs: #f5ede6; --chip: #f08a1c; }
 .avatar-ticket[class*="c-"] { background: var(--c2); color: #fff; }
 .np-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .np-ico { width: 48px; height: 48px; border-radius: 14px; background: var(--blue-600); color: #fff; display: grid; place-items: center; flex: none; }
@@ -798,6 +802,7 @@ body.no-scroll { overflow: hidden; }
 .sw { position: relative; width: 48px; height: 48px; border-radius: 14px; cursor: pointer; background: linear-gradient(135deg, var(--c1), var(--c2)); }
 .sw-bleu { --c1: #0a3f8a; --c2: #0d4fa8; } .sw-orange { --c1: #b85f05; --c2: #f08a1c; } .sw-nuit { --c1: #0b1320; --c2: #24344f; }
 .sw-vert { --c1: #0b5e35; --c2: #13804a; } .sw-rouge { --c1: #8f1919; --c2: #c62828; }
+.sw-violet { --c1: #4c1d95; --c2: #6d28d9; } .sw-cyan { --c1: #0b4f5e; --c2: #0e7490; } .sw-rose { --c1: #83103f; --c2: #be185d; } .sw-marron { --c1: #4a2c12; --c2: #7c4a1e; }
 .sw input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .sw:has(input:checked) { outline: 3px solid var(--ink); outline-offset: 3px; }
 .sw:has(input:checked)::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 20px; }

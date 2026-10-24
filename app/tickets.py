@@ -108,7 +108,7 @@ class Tickets:
     # --- forfaits (profils) -------------------------------------------------------
     FORFAIT_COLS = ("id", "zone_id", "name", "router_profile", "price", "uptime_s", "data_mb",
                     "validity_s", "down_mbps", "up_mbps", "shared_users", "created_at", "archived", "color")
-    COLORS = ("bleu", "orange", "nuit", "vert", "rouge")
+    COLORS = ("bleu", "orange", "vert", "rouge", "violet", "cyan", "rose", "marron", "nuit")
 
     def _forfait(self, row):
         f = dict(zip(self.FORFAIT_COLS, row))

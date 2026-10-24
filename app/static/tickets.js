@@ -70,7 +70,7 @@
     if (view !== "routeur" && !S.zone) view = "routeur";
     if ((view === "forfait" || view === "forfait/nouveau" || view === "forfait/modifier" || view === "quantite") && !S.pv) view = "pv";
     if (view === "forfait/modifier" && !S.editing) view = "forfait";
-    if (view === "forfait/nouveau" && S.editing) { S.editing = null; resetProfileForm(); }
+    if (view === "forfait/nouveau" && (S.editing || !$("pName").value)) { S.editing = null; resetProfileForm(); }
     if (view === "quantite" && !S.forfait) view = "forfait";
     if (view === "fini" && !S.result) view = "routeur";
     var pane = { "routeur": "routeur", "pv": "pv", "forfait": "forfait", "forfait/nouveau": "nouveau", "forfait/modifier": "nouveau", "quantite": "quantite", "fini": "fini" }[view] || "routeur";
@@ -256,9 +256,15 @@
     $("pMore").checked = more;
     $("pMoreBox").hidden = !more;
   }
+  var ORDER = ["bleu", "orange", "vert", "rouge", "violet", "cyan", "rose", "marron", "nuit"];
   function resetProfileForm() {
     $("pane-nouveau").reset();
     $("pMoreBox").hidden = true;
+    // chaque profil prend une couleur différente : la première pas encore utilisée sur ce routeur
+    var used = S.forfaits.map(function (f) { return f.color || "bleu"; });
+    var free = ORDER.find(function (c) { return used.indexOf(c) < 0; }) || ORDER[S.forfaits.length % ORDER.length];
+    var r = document.querySelector("input[name=pColor][value='" + free + "']");
+    if (r) r.checked = true;
   }
   function profileMode() {
     var ed = !!S.editing;

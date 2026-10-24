@@ -119,7 +119,7 @@ body {
 .grid-mini .tk-band { height: 6.4mm; gap: 1mm; padding: 0 1.2mm; }
 .grid-mini .tk-mark { width: 3.8mm; height: 3.8mm; }
 .grid-mini .tk-word { height: 1.7mm; }
-.grid-mini .tk-ssid { font-size: 1.45mm; }
+.grid-mini .tk-ssid { font-size: 1.9mm; font-weight: 800; color: #000; text-transform: uppercase; }
 .grid-mini .tk-price { font-size: 2.5mm; }
 .grid-mini .tk-price small { font-size: 1.5mm; }
 .grid-mini .tk-code { margin: 0 1.4mm; font-size: 4.4mm; line-height: 1.35; letter-spacing: 0.1mm; }
@@ -132,13 +132,14 @@ body {
 .sheet-bw { padding: 5mm 6mm; }
 .grid-bw { display: grid; grid-template-columns: repeat(5, 39.6mm); grid-auto-rows: 14.3mm; }
 .bw { width: 39.6mm; height: 14.3mm; padding: 0.5mm; }               /* espace blanc entre deux tickets */
-.bw .tk { width: 100%; height: 100%; outline: 0.25mm solid #9aa6b8; outline-offset: -0.125mm; justify-content: flex-start; }
+.bw .tk { width: 100%; height: 100%; outline: 0.3mm solid var(--c2, #9aa6b8); outline-offset: -0.15mm; justify-content: flex-start; }
+.bw .tk-band { background: var(--cs, #fff); border-bottom-color: var(--c2, #d5dbe5); }  /* chaque prix a sa couleur, en teinte légère */
 .bw .tk-band { height: 4.6mm; gap: 0.8mm; padding: 0 1mm; }
 .bw .tk-mark { width: 3mm; height: 3mm; }
 .bw .tk-brand { gap: 0.3mm; }
-.bw .tk-word { height: 1.35mm; }
-.bw .tk-ssid { font-size: 1.2mm; }
-.bw .tk-price { font-size: 2.2mm; }
+.bw .tk-word { height: 1.25mm; }
+.bw .tk-ssid { font-size: 1.75mm; font-weight: 800; color: #000; text-transform: uppercase; letter-spacing: 0.02mm; }  /* nom du Wi-Fi bien lisible */
+.bw .tk-price { font-size: 2.2mm; color: var(--c2, #f08a1c); }
 .bw .tk-price small { font-size: 1.3mm; }
 .bw .tk-code.tk-code-bw {
   margin: 0.5mm 1.2mm 0; background: #fff; color: #000; border: 0.25mm dashed #000; border-radius: 0.6mm;
@@ -165,3 +166,7 @@ body {
 .c-nuit { --c1: #0b1320; --c2: #24344f; --cs: #eef1f5; --chip: #f08a1c; }
 .c-vert { --c1: #0b5e35; --c2: #13804a; --cs: #e6f4ec; --chip: #f08a1c; }
 .c-rouge { --c1: #8f1919; --c2: #c62828; --cs: #fdecec; --chip: #f08a1c; }
+.c-violet { --c1: #4c1d95; --c2: #6d28d9; --cs: #f1ecfd; --chip: #f08a1c; }
+.c-cyan { --c1: #0b4f5e; --c2: #0e7490; --cs: #e3f4f8; --chip: #f08a1c; }
+.c-rose { --c1: #83103f; --c2: #be185d; --cs: #fce8f1; --chip: #f08a1c; }
+.c-marron { --c1: #4a2c12; --c2: #7c4a1e; --cs: #f5ede6; --chip: #f08a1c; }
