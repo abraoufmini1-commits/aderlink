@@ -3,10 +3,10 @@
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var nf = new Intl.NumberFormat("fr-FR");
-  var FORMATS = { mini: 70, petits: 33, cartes: 10 };
-  var format = "mini";
-  try { format = localStorage.getItem("aderlink-print-format2") || "mini"; } catch (e) { /* ignoré */ }
-  if (!FORMATS[format]) format = "mini";
+  var FORMATS = { nb100: 100, mini: 70, petits: 33, cartes: 10 };
+  var format = "nb100";
+  try { format = localStorage.getItem("aderlink-print-format3") || "nb100"; } catch (e) { /* ignoré */ }
+  if (!FORMATS[format]) format = "nb100";
   var batch = null;
   var WIFI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a14.5 14.5 0 0 1 20 0"/><path d="M12 19.5h.01"/></svg>';
   var ROUTER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0"/></svg>';
@@ -41,6 +41,17 @@
   }
   function money(b) { return nf.format(b.price) + " " + (b.currency || "FCFA"); }
   function pairs(code) { return code.replace(/(\d{2})(?=\d)/g, "$1 "); }
+
+  // Noir et blanc, 100 par page : nom de la zone, code dans un cadre en pointillés, une ligne en dessous
+  function bw(code, b) {
+    var name = b.roaming_id ? b.roaming_name : (b.ssid || b.zone_name);
+    var cur = b.currency === "FCFA" || !b.currency ? "FCFA" : b.currency;
+    var line = [+b.data_mb ? data(b.data_mb) : "", nf.format(b.price) + " " + cur, b.validity_s ? longDur(b.validity_s) : ""].filter(Boolean).join(" • ");
+    return '<div class="bw"><div class="bw-in">' +
+      '<div class="bw-head">' + WIFI + '<span class="bw-name">' + esc(name) + "</span></div>" +
+      '<div class="bw-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +
+      '<div class="bw-line">' + esc(line) + "</div></div></div>";
+  }
 
   // Petit ticket : l'en-tête ADER LINK (logo, Wi-Fi, prix), le code, puis données et validité
   function small(code, b) {
@@ -85,9 +96,9 @@
     $("printBtn").disabled = false;
     var html = "";
     for (var i = 0; i < codes.length; i += PER_PAGE) {
-      var cls = { mini: ["sheet-small sheet-mini", "grid-small grid-mini"], petits: ["sheet-small", "grid-small"], cartes: ["", "grid"] }[format];
+      var cls = { nb100: ["sheet-bw", "grid-bw"], mini: ["sheet-small sheet-mini", "grid-small grid-mini"], petits: ["sheet-small", "grid-small"], cartes: ["", "grid"] }[format];
       html += '<section class="sheet ' + cls[0] + '"><div class="' + cls[1] + '">' +
-        codes.slice(i, i + PER_PAGE).map(function (c) { return format === "cartes" ? card(c, batch) : small(c, batch); }).join("") + "</div></section>";
+        codes.slice(i, i + PER_PAGE).map(function (c) { return format === "cartes" ? card(c, batch) : format === "nb100" ? bw(c, batch) : small(c, batch); }).join("") + "</div></section>";
     }
     $("sheets").innerHTML = html;
   }
@@ -109,7 +120,7 @@
   $("format").value = format;
   $("format").addEventListener("change", function () {
     format = this.value;
-    try { localStorage.setItem("aderlink-print-format2", format); } catch (e) { /* ignoré */ }
+    try { localStorage.setItem("aderlink-print-format3", format); } catch (e) { /* ignoré */ }
     if (batch) render();
   });
   $("printBtn").addEventListener("click", function () { window.print(); });

@@ -128,12 +128,31 @@ body {
 .tb-format { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
 .tb-format select { min-height: 40px; border: 1px solid #cfd8e5; border-radius: 10px; padding: 0 10px; font: inherit; color: var(--ink); background: #fff; }
 
+/* --- Noir et blanc, 100 par page (5 × 20), économique --- */
+.sheet-bw { padding: 5mm 6mm; }
+.grid-bw { display: grid; grid-template-columns: repeat(5, 39.6mm); grid-auto-rows: 14.3mm; }
+.bw { width: 39.6mm; height: 14.3mm; padding: 0.55mm; }            /* espace blanc entre deux tickets */
+.bw-in {
+  height: 100%; border: 0.25mm solid #000; border-radius: 0.8mm; color: #000; background: #fff;
+  display: flex; flex-direction: column; align-items: stretch; padding: 0.6mm 1.2mm 0.7mm;
+}
+.bw-head { display: flex; align-items: center; justify-content: center; gap: 0.8mm; height: 2.6mm; }
+.bw-head svg { width: 2.4mm; height: 2.4mm; flex: none; }
+.bw-name { font-size: 1.85mm; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bw-code {
+  margin-top: 0.5mm; border: 0.25mm dashed #000; border-radius: 0.6mm; text-align: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-weight: 800; font-size: 4.3mm; line-height: 5.3mm; letter-spacing: 0.15mm; white-space: nowrap;
+}
+.bw-code.long { font-size: 3.4mm; }
+.bw-line { margin-top: 0.45mm; text-align: center; font-size: 1.65mm; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 @page { size: A4 portrait; margin: 0; }
 @media print {
   body { background: #fff; }
   .toolbar { display: none; }
   #sheets { padding: 0; }
-  .sheet { margin: 0; box-shadow: none; break-after: page; }
+  .sheet { margin: 0; box-shadow: none; break-after: page; height: 296.5mm; overflow: hidden; } /* jamais plus haut qu'une page : pas de décalage */
   .sheet:last-child { break-after: auto; }
 }
 @media screen and (max-width: 860px) {

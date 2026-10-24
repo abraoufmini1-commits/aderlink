@@ -19,14 +19,15 @@
   <div class="tb-right">
     <label class="tb-format">Format
       <select id="format">
-        <option value="mini">Petits tickets (70 par page)</option>
+        <option value="nb100">Noir et blanc (100 par page)</option>
+        <option value="mini">Petits tickets couleur (70 par page)</option>
         <option value="petits">Tickets moyens (33 par page)</option>
         <option value="cartes">Grandes cartes (10 par page)</option>
       </select></label>
     <label class="tb-check"><input type="checkbox" id="onlyNew" checked> Seulement les tickets non utilisés</label>
     <button class="tb-btn" id="printBtn" type="button">Imprimer</button>
   </div>
-  <p class="tb-hint">Dans la fenêtre d'impression : format <strong>A4</strong>, échelle <strong>100 %</strong> (taille réelle), marges <strong>par défaut</strong>. Découpez le long des pointillés.</p>
+  <p class="tb-hint">Pour que rien ne se décale, dans la fenêtre d'impression : papier <strong>A4</strong>, marges <strong>Aucune</strong>, échelle <strong>100 %</strong> (ou « Taille réelle »), et décochez <strong>« Ajuster à la page »</strong>. Découpez le long des traits.</p>
 </div>
 <div id="sheets"></div>
 <script src="/static/print.js"></script>
