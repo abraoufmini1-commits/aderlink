@@ -196,8 +196,15 @@
     if (d.length === 8) d = "227" + d;  // numéro nigérien sans indicatif
     return d;
   }
+  // WhatsApp ne rend pas cliquable une adresse en chiffres (169.58.168.195) : on donne la même adresse
+  // sous forme de nom (169.58.168.195.sslip.io), qui mène au même serveur et devient un lien bleu.
+  function publicOrigin() {
+    var h = location.hostname;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) && !isLocal()) return location.protocol + "//" + h + ".sslip.io" + (location.port ? ":" + location.port : "");
+    return location.origin;
+  }
   function showPassword(u, pwd, title) {
-    var link = location.origin + "/login?u=" + encodeURIComponent(u.username);
+    var link = publicOrigin() + "/login?u=" + encodeURIComponent(u.username);
     var text = "Bonjour " + u.name + ", voici votre accès ADER LINK :\n" + link + "\nIdentifiant : " + u.username + "\nMot de passe : " + pwd;
     sheet(title, "key",
       "<p class='pane-sub'>Envoyez ces informations à <strong>" + esc(u.name) + "</strong>. Il clique sur le lien, tape le mot de passe, et il est dans son compte. Le mot de passe ne sera plus affiché ensuite.</p>" +
