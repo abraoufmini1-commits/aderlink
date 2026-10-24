@@ -538,7 +538,20 @@ class Tickets:
             "by_forfait": [line(k or "–", n, a) for k, n, a in group("COALESCE(f.name, b.profile)")],
             "by_pos": [line(k or "Sans point de vente", n, a) for k, n, a in group("pv.name")],
             "by_seller": [line(names.get(k, k) if k else "Administrateur", n, a) for k, n, a in group("b.created_by")],
+            "by_zone_price": self._zone_price(base, params, zones),
         }
+
+    def _zone_price(self, base, params, zones):
+        """Pour chaque routeur : combien de tickets de 100 F, 200 F, 500 F… vendus, et le montant."""
+        rows, _ = self._q(f"SELECT b.zone_id, b.price, COALESCE(f.name, b.profile), COUNT(*), COALESCE(SUM(b.price), 0) {base} "
+                          "GROUP BY b.zone_id, b.price, COALESCE(f.name, b.profile) ORDER BY b.zone_id, b.price", params)
+        out = {}
+        for zid, price, name, n, amount in rows:
+            z = out.setdefault(zid, {"zone": zones.get(zid, zid), "tickets": 0, "amount": 0, "lines": []})
+            z["lines"].append({"price": price, "label": name or "–", "tickets": n, "amount": amount})
+            z["tickets"] += n
+            z["amount"] += amount
+        return sorted(out.values(), key=lambda z: -z["amount"])
 
     def sales(self, since, zone_ids=None, created_by=None):
         sc, sp = self._scope(zone_ids, created_by)

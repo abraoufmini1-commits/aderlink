@@ -33,6 +33,7 @@
     var d = parse(today);
     if (p === "today") return [today, today];
     if (p === "yesterday") return [addDays(today, -1), addDays(today, -1)];
+    if (p === "week") { var wd = (d.getUTCDay() + 6) % 7; return [addDays(today, -wd), today]; }  // depuis lundi
     if (p === "month") return [today.slice(0, 8) + "01", today];
     if (p === "lastmonth") {
       var first = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1));
@@ -107,6 +108,7 @@
     }
 
     bars();
+    zonePrice(R.by_zone_price || []);
     table("byZone", R.by_zone, t);
     table("byForfait", R.by_forfait, t);
     table("byPos", R.by_pos, t);
@@ -119,6 +121,19 @@
     }).join("");
     $("fT").textContent = nf.format(t.tickets);
     $("fA").textContent = money(t.amount);
+  }
+
+  // Par routeur et par prix : une carte par routeur, une ligne par prix (100 F, 200 F…)
+  function zonePrice(list) {
+    $("byZonePrice").innerHTML = list.length ? list.map(function (z) {
+      return "<div class='zp-card'><div class='zp-head'><strong>" + esc(z.zone) + "</strong><span class='num'>" + money(z.amount) + "</span></div>" +
+        "<table class='zp-table'><thead><tr><th>Ticket</th><th class='r'>Vendus</th><th class='r'>Montant</th></tr></thead><tbody>" +
+        z.lines.map(function (l) {
+          return "<tr><td><span class='zp-price num'>" + nf.format(l.price) + " F</span> <span class='zp-name'>" + esc(l.label) + "</span></td>" +
+            "<td class='r num'>" + nf.format(l.tickets) + "</td><td class='r num'>" + money(l.amount) + "</td></tr>";
+        }).join("") +
+        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table></div>";
+    }).join("") : "<p class='pane-sub'>Aucune vente sur la période.</p>";
   }
 
   function table(id, rows, t) {
@@ -190,6 +205,11 @@
       if (g[0] === "Vendeur" && R.me.role === "revendeur") return;
       lines.push([], [g[0], "Tickets vendus", "Montant (F CFA)"]);
       g[1].forEach(function (r) { lines.push([r.label, r.tickets, r.amount]); });
+    });
+    lines.push([], ["Routeur", "Prix du ticket (F CFA)", "Profil", "Tickets vendus", "Montant (F CFA)"]);
+    (R.by_zone_price || []).forEach(function (z) {
+      z.lines.forEach(function (l) { lines.push([z.zone, l.price, l.label, l.tickets, l.amount]); });
+      lines.push([z.zone + " - total", "", "", z.tickets, z.amount]);
     });
     // point-virgule : Excel en français ouvre le fichier directement en colonnes
     var csv = "﻿" + lines.map(function (l) {

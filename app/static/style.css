@@ -1294,3 +1294,18 @@ button.rcard { border: 1px solid var(--border); }
 .ra-copy svg { fill: none; stroke: currentColor; stroke-width: 2; }
 .tg-form { grid-template-columns: 1fr auto; }
 @media (max-width: 640px) { .tg-form { grid-template-columns: 1fr; } .tg-form .btn { grid-column: auto; } }
+
+/* Rapport : par routeur et par prix */
+.zp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.zp-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); break-inside: avoid; }
+.zp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.zp-head strong { font-size: 15px; }
+.zp-head span { font-weight: 800; color: var(--blue-600); }
+.zp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.zp-table th, .zp-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; }
+.zp-table .r { text-align: right; }
+.zp-table tfoot th { border-bottom: 0; }
+.zp-price { display: inline-block; min-width: 54px; font-weight: 800; color: var(--orange-hover, #d97606); }
+.zp-name { color: var(--ink-2); font-size: 13px; }
+@media (prefers-color-scheme: dark) { .zp-head span { color: var(--series); } }
+@media (max-width: 1250px) { .me-txt { display: none; } .me-chip { padding: 3px; } }

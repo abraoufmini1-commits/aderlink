@@ -30,6 +30,7 @@
     <div class="chips rp-chips" id="presets">
       <button type="button" data-p="today">Aujourd'hui</button>
       <button type="button" data-p="yesterday">Hier</button>
+      <button type="button" data-p="week">Cette semaine</button>
       <button type="button" data-p="7">7 jours</button>
       <button type="button" data-p="30">30 jours</button>
       <button type="button" data-p="month">Ce mois</button>
@@ -55,6 +56,12 @@
       <div class="kpi-value num" id="kGen">–</div><div class="kpi-sub" id="kGenSub">–</div></div>
     <div class="card kpi" id="kLastCard"><div class="kpi-label" id="kLastLabel">En stock</div>
       <div class="kpi-value num" id="kLast">–</div><div class="kpi-sub" id="kLastSub">tickets pas encore utilisés</div></div>
+  </section>
+
+  <section class="card rp-table" aria-labelledby="tzp">
+    <h2 id="tzp">Par routeur et par prix</h2>
+    <p class="pane-sub">Combien de tickets de chaque prix ont été vendus sur chaque routeur, pour la période choisie.</p>
+    <div id="byZonePrice" class="zp-grid"></div>
   </section>
 
   <section class="card chart-card" aria-labelledby="dayTitle">
