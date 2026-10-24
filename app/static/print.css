@@ -128,24 +128,24 @@ body {
 .tb-format { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
 .tb-format select { min-height: 40px; border: 1px solid #cfd8e5; border-radius: 10px; padding: 0 10px; font: inherit; color: var(--ink); background: #fff; }
 
-/* --- Noir et blanc, 100 par page (5 × 20), économique --- */
+/* --- 100 par page (5 × 20) : en-tête ADER LINK gardé, code sans couleur (économique) --- */
 .sheet-bw { padding: 5mm 6mm; }
 .grid-bw { display: grid; grid-template-columns: repeat(5, 39.6mm); grid-auto-rows: 14.3mm; }
-.bw { width: 39.6mm; height: 14.3mm; padding: 0.55mm; }            /* espace blanc entre deux tickets */
-.bw-in {
-  height: 100%; border: 0.25mm solid #000; border-radius: 0.8mm; color: #000; background: #fff;
-  display: flex; flex-direction: column; align-items: stretch; padding: 0.6mm 1.2mm 0.7mm;
+.bw { width: 39.6mm; height: 14.3mm; padding: 0.5mm; }               /* espace blanc entre deux tickets */
+.bw .tk { width: 100%; height: 100%; outline: 0.25mm solid #9aa6b8; outline-offset: -0.125mm; justify-content: flex-start; }
+.bw .tk-band { height: 4.6mm; gap: 0.8mm; padding: 0 1mm; }
+.bw .tk-mark { width: 3mm; height: 3mm; }
+.bw .tk-brand { gap: 0.3mm; }
+.bw .tk-word { height: 1.35mm; }
+.bw .tk-ssid { font-size: 1.2mm; }
+.bw .tk-price { font-size: 2.2mm; }
+.bw .tk-price small { font-size: 1.3mm; }
+.bw .tk-code.tk-code-bw {
+  margin: 0.5mm 1.2mm 0; background: #fff; color: #000; border: 0.25mm dashed #000; border-radius: 0.6mm;
+  font-size: 3.7mm; line-height: 4.4mm; letter-spacing: 0.1mm;
 }
-.bw-head { display: flex; align-items: center; justify-content: center; gap: 0.8mm; height: 2.6mm; }
-.bw-head svg { width: 2.4mm; height: 2.4mm; flex: none; }
-.bw-name { font-size: 1.85mm; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bw-code {
-  margin-top: 0.5mm; border: 0.25mm dashed #000; border-radius: 0.6mm; text-align: center;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  font-weight: 800; font-size: 4.3mm; line-height: 5.3mm; letter-spacing: 0.15mm; white-space: nowrap;
-}
-.bw-code.long { font-size: 3.4mm; }
-.bw-line { margin-top: 0.45mm; text-align: center; font-size: 1.65mm; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bw .tk-code.tk-code-bw.long { font-size: 3mm; }
+.bw .tk-line { margin-top: 0.35mm; padding: 0 1mm; font-size: 1.45mm; line-height: 1.1; color: #000; }
 
 @page { size: A4 portrait; margin: 0; }
 @media print {

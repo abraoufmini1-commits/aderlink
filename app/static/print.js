@@ -42,15 +42,9 @@
   function money(b) { return nf.format(b.price) + " " + (b.currency || "FCFA"); }
   function pairs(code) { return code.replace(/(\d{2})(?=\d)/g, "$1 "); }
 
-  // Noir et blanc, 100 par page : nom de la zone, code dans un cadre en pointillés, une ligne en dessous
+  // 100 par page : le même en-tête ADER LINK (logo, Wi-Fi, prix), mais le code en noir dans un cadre en pointillés
   function bw(code, b) {
-    var name = b.roaming_id ? b.roaming_name : (b.ssid || b.zone_name);
-    var cur = b.currency === "FCFA" || !b.currency ? "FCFA" : b.currency;
-    var line = [+b.data_mb ? data(b.data_mb) : "", nf.format(b.price) + " " + cur, b.validity_s ? longDur(b.validity_s) : ""].filter(Boolean).join(" • ");
-    return '<div class="bw"><div class="bw-in">' +
-      '<div class="bw-head">' + WIFI + '<span class="bw-name">' + esc(name) + "</span></div>" +
-      '<div class="bw-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +
-      '<div class="bw-line">' + esc(line) + "</div></div></div>";
+    return '<div class="bw">' + small(code, b).replace('class="tk-code', 'class="tk-code tk-code-bw') + "</div>";
   }
 
   // Petit ticket : l'en-tête ADER LINK (logo, Wi-Fi, prix), le code, puis données et validité
