@@ -11,7 +11,8 @@ import secrets
 import time
 
 ROLES = ("admin", "client", "gerant", "revendeur")
-ROLE_LABEL = {"admin": "Administrateur", "client": "Client", "gerant": "Gérant", "revendeur": "Revendeur"}
+ROLE_LABEL = {"admin": "Administrateur", "client": "Gérant", "gerant": "Employé", "revendeur": "Client"}
+# (noms affichés : « client » = gérant de ses propres routeurs ; « revendeur » = client qui vend des tickets)
 
 
 class UserError(Exception):

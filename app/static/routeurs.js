@@ -381,7 +381,7 @@
     }).join("");
     sheet("Points de vente de " + r.name, "store",
       "<div class='pv-list'>" + list + "</div>" +
-      "<form id='pvForm' class='pv-add' hidden><div class='f'><label for='pvName'>Nom du point de vente</label><input id='pvName' maxlength='40' placeholder='ex : Revendeur Moussa' required></div></form>" +
+      "<form id='pvForm' class='pv-add' hidden><div class='f'><label for='pvName'>Nom du point de vente</label><input id='pvName' maxlength='40' placeholder='ex : Boutique Moussa' required></div></form>" +
       "<div class='notice' id='bsMsg' role='status'></div>",
       "<button class='btn-prev' type='button' data-close>Fermer</button><button class='btn btn-big' type='button' id='pvAdd'>+ Nouveau point</button>");
     $("pvAdd").addEventListener("click", function () {

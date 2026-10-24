@@ -60,7 +60,7 @@
       if (client) {
         setTab("staff");
         document.querySelector("h1").textContent = "Mon équipe";
-        document.querySelector(".page-head .subtitle").textContent = "Vos gérants et revendeurs, sur vos routeurs. Ils suivent votre abonnement.";
+        document.querySelector(".page-head .subtitle").textContent = "Vos clients, sur vos routeurs. Ils suivent votre abonnement.";
       }
       api("/api/me").then(function (m) { $("demoBanner").hidden = !m.demo; });
       render();
@@ -91,14 +91,14 @@
     var over = all.filter(function (u) { return u.expired; }).length;
     var used = all.reduce(function (n, u) { return n + u.routers_used; }, 0), max = all.reduce(function (n, u) { return n + u.max_routers; }, 0);
     var tile = function (k, v, cls) { return "<div class='card u-tile" + (cls ? " " + cls : "") + "'><span>" + k + "</span><strong class='num'>" + v + "</strong></div>"; };
-    $("cSummary").innerHTML = tile("Clients actifs", nf.format(active) + " / " + nf.format(all.length)) +
+    $("cSummary").innerHTML = tile("Gérants actifs", nf.format(active) + " / " + nf.format(all.length)) +
       tile("Finissent sous 3 jours", nf.format(soon), soon ? "u-tile-soon" : "") + tile("Abonnements terminés", nf.format(over), over ? "u-tile-over" : "") +
       tile("Routeurs utilisés", nf.format(used) + " / " + nf.format(max));
     $("cRows").innerHTML = list.length ? list.map(function (u) {
       var x = sub(u), full = u.routers_used >= u.max_routers;
       var btn = function (a, label, cls) { return "<button type='button' class='btn btn-sm " + cls + "' data-act='" + a + "' data-id='" + u.id + "'>" + label + "</button>"; };
       return "<tr class='" + (u.active ? "" : "is-off") + "'>" +
-        "<td data-label='Client'><div class='c-who'><span class='avatar av-blue'>" + esc(initials(u.name)) + "</span><div><strong>" + esc(u.name) + "</strong>" +
+        "<td data-label='Gérant'><div class='c-who'><span class='avatar av-blue'>" + esc(initials(u.name)) + "</span><div><strong>" + esc(u.name) + "</strong>" +
         (u.active ? "" : " <span class='pill pill-offline'>Désactivé</span>") +
         "<div class='rp-sub'><span class='mono'>" + esc(u.username) + "</span>" + (u.phone ? " · " + esc(u.phone) : "") + "</div></div></div></td>" +
         "<td data-label='Routeurs'><div class='c-quota" + (full ? " is-full" : "") + "'><strong class='num'>" + nf.format(u.routers_used) + " / " + nf.format(u.max_routers) + "</strong>" +
@@ -108,8 +108,8 @@
         "<td data-label='Ventes du mois' class='r'><strong class='num'>" + money(u.stats.amount) + "</strong><div class='rp-sub'>" + nf.format(u.stats.sold) + " tickets</div></td>" +
         "<td data-label='Actions' class='r'><div class='c-acts'>" + btn("routers", "+ Routeurs", "") + btn("subscription", "+ Temps", "") +
         btn("more", "•••", "btn-outline c-more") + "</div></td></tr>";
-    }).join("") : "<tr><td colspan='5' class='pane-sub'>" + (all.length ? "Aucun client ne correspond." :
-      "Aucun client pour l'instant. Cliquez sur <strong>+ Ajouter</strong> et choisissez <strong>Client</strong>.") + "</td></tr>";
+    }).join("") : "<tr><td colspan='5' class='pane-sub'>" + (all.length ? "Aucun gérant ne correspond." :
+      "Aucun gérant pour l'instant. Cliquez sur <strong>+ Ajouter</strong> et choisissez <strong>Gérant</strong>.") + "</td></tr>";
     Array.prototype.forEach.call($("cRows").querySelectorAll("[data-w]"), function (el) { el.style.width = el.dataset.w + "%"; });
   }
   $("cRows").addEventListener("click", function (e) {
@@ -140,14 +140,14 @@
         (function () {
           var x = sub(u);
           if (u.follows_parent) return "<div class='sub-bar " + x.cls + "'>" + ic("clock") + "<span><strong>" + esc(x.title) + "</strong><small>Suit l'abonnement de " +
-            esc(u.parent_name || "son client") + "</small></span></div>";
+            esc(u.parent_name || "son gérant") + "</small></span></div>";
           return "<button type='button' class='sub-bar " + x.cls + "' data-act='subscription' data-id='" + u.id + "'>" + ic("clock") +
             "<span><strong>" + esc(x.title) + "</strong><small>" + esc(x.text) + "</small></span><em>Gérer</em></button>";
         })() +
         "<div class='rc-meta u-last'>Dernière connexion : " + when(u.last_login) + "</div>" +
         "<div class='act-grid " + (u.follows_parent ? "act-grid-3" : "act-grid-4") + "'>" + (u.follows_parent ? "" : act("subscription", "Abonnement", "clock")) + act("edit", "Modifier", "pencil") + act("send", "Envoyer l'accès", "phone") +
         act("toggle", u.active ? "Désactiver" : "Activer", u.active ? "x" : "check") + "</div></article>";
-    }).join("") : "<div class='card empty'>Aucun gérant ni revendeur pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour en créer un.</div>";
+    }).join("") : "<div class='card empty'>Aucun client pour l'instant. Cliquez sur <strong>+ Ajouter</strong> pour en créer un.</div>";
   }
   $("list").addEventListener("click", function (e) {
     var b = e.target.closest("[data-act]");
@@ -237,16 +237,16 @@
       f("uLogin", "Identifiant de connexion <span class='req'>*</span>", v.username, "maxlength='32' autocapitalize='off' spellcheck='false' placeholder='ex : moussa'", "Lettres minuscules et chiffres, sans espace") +
       (u ? "" : f("uPwd", "Mot de passe", "", "type='text' autocapitalize='off' spellcheck='false' placeholder='Laisser vide = créé automatiquement'", "6 caractères minimum")) +
       "<fieldset class='span2 role-pick'><legend>Rôle <span class='req'>*</span></legend>" +
-      (S.role === "admin" ? role("client", "Client", "Ajoute et gère ses propres routeurs, jusqu'à sa limite") : "") +
-      role("revendeur", "Revendeur", "Crée et imprime ses tickets, voit ses ventes") +
-      role("gerant", "Gérant", "Tickets, profils et lots de vos routeurs") + "</fieldset>" +
+      (S.role === "admin" ? role("client", "Gérant", "Ajoute et gère ses propres routeurs, jusqu'à sa limite") : "") +
+      role("revendeur", "Client", "Crée et imprime ses tickets, voit ses ventes") +
+      (v.role === "gerant" ? role("gerant", "Employé", "Tickets, profils et lots de vos routeurs") : "") + "</fieldset>" +
       "<div class='f' id='uMaxBox'><label for='uMax'>Routeurs autorisés</label><div class='unit-field'><input id='uMax' type='number' min='0' max='1000' step='1' inputmode='numeric' value='" + esc(v.max_routers || 1) + "'><span class='unit'>routeur(s)</span></div>" +
-      "<div class='hint'>Nombre de MikroTik que le client peut ajouter</div></div>" +
+      "<div class='hint'>Nombre de MikroTik que le gérant peut ajouter</div></div>" +
       "<fieldset class='span2 zone-pick' id='uZoneBox'><legend>Routeurs autorisés <span class='req'>*</span></legend>" +
       (S.zones.length ? S.zones.map(function (z) {
         return "<label class='check-opt'><input type='checkbox' name='uZone' value='" + esc(z.id) + "'" + (v.zones.indexOf(z.id) >= 0 ? " checked" : "") + "><span>" + esc(z.name) + "</span></label>";
       }).join("") : "<p class='pane-sub'>Ajoutez d'abord un routeur.</p>") + "</fieldset>" +
-      "<div class='f' id='uComBox'><label for='uCom'>Commission du revendeur</label><div class='unit-field'><input id='uCom' type='number' min='0' max='100' step='any' inputmode='decimal' value='" + esc(v.commission || "") + "' placeholder='0'><span class='unit'>%</span></div>" +
+      "<div class='f' id='uComBox'><label for='uCom'>Commission du client</label><div class='unit-field'><input id='uCom' type='number' min='0' max='100' step='any' inputmode='decimal' value='" + esc(v.commission || "") + "' placeholder='0'><span class='unit'>%</span></div>" +
       "<div class='hint'>Calculée sur les tickets vendus</div></div>" +
       (u || S.role !== "admin" ? "" : "<fieldset class='span2 sub-pick'><legend>Abonnement de départ</legend>" +
         "<div class='f'><div class='sub-add'><input id='uSubN' type='number' min='1' step='1' inputmode='numeric' value='1' aria-label='Durée'>" +
@@ -320,7 +320,7 @@
       $("qPrev").innerHTML = !ok ? "Saisissez un nombre entier entre 0 et 1000."
         : n === u.max_routers ? "Aucun changement."
         : "Avant : <strong>" + u.max_routers + "</strong> → après : <strong>" + n + "</strong> routeur" + (n > 1 ? "s" : "") +
-          (n < u.routers_used ? "<br><span class='warn-txt'>Le client a déjà " + u.routers_used + " routeurs : il les garde, mais ne pourra plus en ajouter.</span>" : "");
+          (n < u.routers_used ? "<br><span class='warn-txt'>Le gérant a déjà " + u.routers_used + " routeurs : il les garde, mais ne pourra plus en ajouter.</span>" : "");
     }
     $("qN").addEventListener("input", update);
     $("qMinus").addEventListener("click", function () { $("qN").value = Math.max(0, (val() || 0) - 1); update(); });

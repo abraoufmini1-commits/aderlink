@@ -18,30 +18,29 @@
   <div class="page-head">
     <div>
       <h1>Utilisateurs</h1>
-      <p class="subtitle">Vos clients, gérants et revendeurs : routeurs, abonnements et ventes.</p>
+      <p class="subtitle">Vos gérants et vos clients : routeurs, abonnements et ventes.</p>
     </div>
     <button class="btn" type="button" id="addBtn">+ Ajouter</button>
   </div>
   <div class="seg u-tabs" role="tablist" aria-label="Type de compte">
-    <button type="button" role="tab" id="tabClients" aria-pressed="true" aria-controls="clientsBox">Clients <span class="num" id="nClients"></span></button>
-    <button type="button" role="tab" id="tabStaff" aria-pressed="false" aria-controls="staffBox">Gérants et revendeurs <span class="num" id="nStaff"></span></button>
+    <button type="button" role="tab" id="tabClients" aria-pressed="true" aria-controls="clientsBox">Gérants <span class="num" id="nClients"></span></button>
+    <button type="button" role="tab" id="tabStaff" aria-pressed="false" aria-controls="staffBox">Clients <span class="num" id="nStaff"></span></button>
   </div>
 
-  <section id="clientsBox" aria-label="Tableau des clients">
+  <section id="clientsBox" aria-label="Tableau des gérants">
     <div class="u-summary" id="cSummary"></div>
-    <label class="search"><span class="sr-only">Rechercher un client</span>
+    <label class="search"><span class="sr-only">Rechercher un gérant</span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="cSearch" type="search" placeholder="Rechercher un client (nom, identifiant, téléphone)…" autocomplete="off"></label>
+      <input id="cSearch" type="search" placeholder="Rechercher un gérant (nom, identifiant, téléphone)…" autocomplete="off"></label>
     <div class="card ctable-card"><div class="table-scroll"><table class="ctable">
-      <thead><tr><th>Client</th><th>Routeurs</th><th>Abonnement</th><th class="r">Ventes du mois</th><th class="r">Actions</th></tr></thead>
+      <thead><tr><th>Gérant</th><th>Routeurs</th><th>Abonnement</th><th class="r">Ventes du mois</th><th class="r">Actions</th></tr></thead>
       <tbody id="cRows"><tr><td colspan="5" class="pane-sub">Chargement…</td></tr></tbody>
     </table></div></div>
   </section>
 
-  <section id="staffBox" hidden aria-label="Gérants et revendeurs">
+  <section id="staffBox" hidden aria-label="Clients">
     <div class="role-help card">
-      <div><strong>Gérant</strong> — crée des tickets et des profils, voit les lots et les ventes de ses routeurs.</div>
-      <div><strong>Revendeur</strong> — crée et imprime des tickets avec son propre point de vente. Il ne voit que ses lots et ses ventes.</div>
+            <div><strong>Client</strong> — crée et imprime ses tickets avec son propre point de vente. Il ne voit que ses lots et ses ventes.</div>
     </div>
     <section class="router-cards" id="list" aria-live="polite"></section>
   </section>

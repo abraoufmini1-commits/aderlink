@@ -186,7 +186,7 @@
       ["Jour", "Tickets vendus", "Montant (F CFA)"]];
     R.by_day.forEach(function (d) { lines.push([d.date, d.tickets, d.amount]); });
     lines.push(["Total", R.totals.tickets, R.totals.amount]);
-    [["Routeur", R.by_zone], ["Forfait", R.by_forfait], ["Point de vente", R.by_pos], ["Vendeur", R.by_seller]].forEach(function (g) {
+    [["Routeur", R.by_zone], ["Profil", R.by_forfait], ["Point de vente", R.by_pos], ["Vendeur", R.by_seller]].forEach(function (g) {
       if (g[0] === "Vendeur" && R.me.role === "revendeur") return;
       lines.push([], [g[0], "Tickets vendus", "Montant (F CFA)"]);
       g[1].forEach(function (r) { lines.push([r.label, r.tickets, r.amount]); });
