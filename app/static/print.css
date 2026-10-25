@@ -57,6 +57,7 @@ body {
 .brand-name .word { height: 2.9mm; width: auto; display: block; }
 .brand-name b { color: var(--orange); }
 .ssid { font-size: 2.3mm; opacity: 0.85; margin-top: 0.6mm; letter-spacing: 0; font-weight: 500; }
+.ssid.ssid-big { font-size: 3.4mm; opacity: 1; font-weight: 800; margin-top: 0; }
 .price {
   background: var(--chip, #f08a1c); color: #fff; font-weight: 800; font-size: 3.6mm;
   padding: 1.2mm 2.4mm; border-radius: 1.6mm; white-space: nowrap; line-height: 1.1;
@@ -100,7 +101,7 @@ body {
 .tk-mark { width: 5mm; height: 5mm; flex: none; }
 .tk-brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5mm; }
 .tk-word { height: 2.3mm; width: auto; display: block; align-self: flex-start; }
-.tk-ssid { font-size: 1.9mm; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+.tk-ssid { font-size: 2.6mm; font-weight: 800; color: #000; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
 .tk-price { color: var(--orange, #f08a1c); font-weight: 800; font-size: 3.2mm; white-space: nowrap; line-height: 1.1; flex: none; }
 .tk-price small { font-size: 1.9mm; margin-left: 0.4mm; }
 .tk-code {
@@ -119,7 +120,7 @@ body {
 .grid-mini .tk-band { height: 6.4mm; gap: 1mm; padding: 0 1.2mm; }
 .grid-mini .tk-mark { width: 3.8mm; height: 3.8mm; }
 .grid-mini .tk-word { height: 1.7mm; }
-.grid-mini .tk-ssid { font-size: 1.9mm; font-weight: 800; color: #000; text-transform: uppercase; }
+.grid-mini .tk-ssid { font-size: 2.3mm; font-weight: 800; color: #000; text-transform: uppercase; }
 .grid-mini .tk-price { font-size: 2.5mm; }
 .grid-mini .tk-price small { font-size: 1.5mm; }
 .grid-mini .tk-code { margin: 0 1.4mm; font-size: 4.4mm; line-height: 1.35; letter-spacing: 0.1mm; }
@@ -138,7 +139,7 @@ body {
 .bw .tk-mark { width: 3mm; height: 3mm; }
 .bw .tk-brand { gap: 0.3mm; }
 .bw .tk-word { height: 1.25mm; }
-.bw .tk-ssid { font-size: 1.75mm; font-weight: 800; color: #000; text-transform: uppercase; letter-spacing: 0.02mm; }  /* nom du Wi-Fi bien lisible */
+.bw .tk-ssid { font-size: 2.1mm; font-weight: 800; color: #000; text-transform: uppercase; letter-spacing: 0.02mm; }  /* nom du Wi-Fi bien lisible */
 .bw .tk-price { font-size: 2.2mm; color: var(--c2, #f08a1c); }
 .bw .tk-price small { font-size: 1.3mm; }
 .bw .tk-code.tk-code-bw {

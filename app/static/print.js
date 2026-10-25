@@ -42,17 +42,17 @@
   function money(b) { return nf.format(b.price) + " " + (b.currency || "FCFA"); }
   function pairs(code) { return code.replace(/(\d{2})(?=\d)/g, "$1 "); }
 
-  // 100 par page : le même en-tête ADER LINK (logo, Wi-Fi, prix), mais le code en noir dans un cadre en pointillés
+  // 100 par page : le même en-tête (nom du Wi-Fi, prix), mais le code en noir dans un cadre en pointillés
   function bw(code, b) {
     return '<div class="bw">' + small(code, b).replace('class="tk-code', 'class="tk-code tk-code-bw') + "</div>";
   }
 
-  // Petit ticket : l'en-tête ADER LINK (logo, Wi-Fi, prix), le code, puis données et validité
+  // Petit ticket : l'en-tête (nom du Wi-Fi, prix) — sans « ADER LINK », le code, puis données et validité
   function small(code, b) {
     var line = [+b.data_mb ? data(b.data_mb) : "", b.validity_s ? "Validité " + longDur(b.validity_s) : "Sans limite de validité"].filter(Boolean).join(" • ");
     return '<div class="tk c-' + esc(b.color || "bleu") + '">' +
       '<div class="tk-band"><img class="tk-mark" src="/static/logo-blue.svg" alt="">' +
-      '<div class="tk-brand"><img class="tk-word" src="/static/wordmark-blue.svg" alt="ADER LINK">' +
+      '<div class="tk-brand">' +
       '<div class="tk-ssid">' + esc(b.roaming_id ? "Roaming · " + b.roaming_name : b.ssid) + "</div></div>" +
       '<div class="tk-price">' + nf.format(b.price) + "<small>" + esc(b.currency === "FCFA" ? "F" : (b.currency || "F")) + "</small></div></div>" +
       '<div class="tk-code' + (code.length > 10 ? " long" : "") + '">' + esc(pairs(code)) + "</div>" +
@@ -62,8 +62,8 @@
   function card(code, b) {
     return '<div class="card c-' + esc(b.color || "bleu") + '">' +
       '<div class="band"><div class="brand"><img class="mark" src="/static/logo-blue.svg" alt="">' +
-      '<div><div class="brand-name"><img class="word" src="/static/' + (b.color === "orange" ? "wordmark-mono.svg" : "wordmark-white.svg") + '" alt="ADER LINK">' + (b.demo ? '<span class="demo">Démo</span>' : "") + "</div>" +
-      '<div class="ssid">' + esc(b.roaming_id ? "ADER Roaming : " + b.roaming_name : "Wi-Fi : " + b.ssid) + "</div></div></div>" +
+      '<div>' + (b.demo ? '<div class="brand-name"><span class="demo">Démo</span></div>' : "") +
+      '<div class="ssid ssid-big">' + esc(b.roaming_id ? "ADER Roaming : " + b.roaming_name : "Wi-Fi : " + b.ssid) + "</div></div></div>" +
       '<div class="price">' + nf.format(b.price) + " <small>" + esc(b.currency === "FCFA" ? "F CFA" : (b.currency || "F CFA")) + "</small></div></div>" +
       '<div class="body"><div class="code-box"><div class="code-label">Code d\'accès</div>' +
       '<div class="code' + (code.length > 8 ? " long" : "") + '">' + esc(spaced(code)) + "</div></div>" +

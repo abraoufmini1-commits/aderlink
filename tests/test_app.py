@@ -59,6 +59,7 @@ class FakeRouter(threading.Thread):
         self.added = []
         self.profiles = {"default": {".id": "*0", "name": "default"}, "1-heure": {".id": "*1", "name": "1-heure"}}
         self.active_users = ["482915", "771204"]
+        self.tables = {"/system/script": {}, "/system/scheduler": {}}  # .id -> enregistrement
 
     def run(self):
         while True:
@@ -139,6 +140,21 @@ class FakeRouter(threading.Thread):
                     for u in self.users.values():
                         if u[".id"] == attrs[".id"]:
                             u.update({k: v for k, v in attrs.items() if k != ".id"})
+                    _send(conn, "!done")
+                elif cmd.rsplit("/", 1)[0] in self.tables:
+                    table, op = self.tables[cmd.rsplit("/", 1)[0]], cmd.rsplit("/", 1)[1]
+                    if op == "print":
+                        flt = [w[1:].split("=", 1) for w in words if w.startswith("?")]
+                        for r in list(table.values()):
+                            if all(r.get(k) == v for k, v in flt):
+                                _send(conn, "!re", *[f"={k}={v}" for k, v in r.items()])
+                    elif op == "add":
+                        i = f"*S{len(table) + 1}"
+                        table[i] = dict(attrs, **{".id": i})
+                    elif op == "set":
+                        table[attrs[".id"]].update({k: v for k, v in attrs.items() if k != ".id"})
+                    elif op == "remove":
+                        table.pop(attrs[".id"], None)
                     _send(conn, "!done")
                 elif cmd == "/interface/print":
                     self.rx += 2_500_000
@@ -325,6 +341,31 @@ class TicketTests(unittest.TestCase):
             self.t.on_poll(self.config["zones"][0], api, [])
         self.assertNotIn(code, self.router.users)  # 8 jours : supprimé
         self.assertTrue(self.t.find(code)[0]["first_used"])  # la vente reste dans l'historique
+
+    def test_sync_existing_router(self):
+        """Un routeur installé avec une ancienne version est mis à jour à distance, sans rien recoller."""
+        from app import mikrotik as m
+        from app.routeros import RouterOS
+        self.router.tables["/system/script"]["*S1"] = {".id": "*S1", "name": "aderlink-end", "source": "ancien"}
+        self.router.tables["/system/scheduler"]["*S9"] = {".id": "*S9", "name": "AL-EXP-123456",
+                                                          "comment": "ADER LINK : fin du ticket", "on-event": "ancien"}
+        self.router.profiles["AL-1h"] = {".id": "*P9", "name": "AL-1h",
+                                         "on-login": ':local f [:parse [/system script get [find name="aderlink-login"] source]]; $f u=$user v="01:00:00"'}
+        with RouterOS("127.0.0.1", "aderlink", "secret", port=self.router.port) as api:
+            self.t.sync_router(api)
+            scripts = {r["name"]: r for r in self.router.tables["/system/script"].values()}
+            self.assertEqual(scripts["aderlink-end"]["source"], m.END_SOURCE)
+            self.assertEqual(scripts["aderlink-start"]["source"], m.LOGIN_SOURCE)
+            self.assertEqual(scripts["aderlink-logout"]["source"], m.LOGOUT_SOURCE)
+            pr = self.router.profiles["AL-1h"]
+            self.assertEqual(pr["on-logout"], m.ON_LOGOUT)
+            self.assertIn('name="aderlink-start"', pr["on-login"])
+            self.assertNotIn("on-logout", self.router.profiles["default"])  # profils hors ADER LINK : pas touchés
+            self.assertIn('u="123456"', self.router.tables["/system/scheduler"]["*S9"]["on-event"])
+            # une erreur du routeur ne décale pas les réponses suivantes
+            with self.assertRaises(RouterOSError):
+                api.query("/commande/inconnue")
+            self.assertEqual(api.query("/system/identity/print")[0]["name"], "Zone Test")
 
     def test_end_scripts(self):
         from app import mikrotik as m
@@ -676,7 +717,7 @@ class UsersAndRolesTests(unittest.TestCase):
         info = self.get(t, f"/api/routers/{r['id']}/install")
         script = urllib.request.urlopen(info["url"]).read().decode()
         self.assertIn("/ok", script)
-        for part in ('/system scheduler add name="ADER LINK"', 'name="aderlink-login"', 'name="aderlink-ping"'):
+        for part in ('/system scheduler add name="ADER LINK"', 'name="aderlink-start"', 'name="aderlink-ping"'):
             self.assertIn(part, script)
         self.assertEqual(urllib.request.urlopen(info["url"][:-4] + "/ok").read(), b"ok")  # le routeur se signale
         mine = self.get(t, "/api/routers")["routers"][0]

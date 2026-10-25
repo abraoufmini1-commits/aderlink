@@ -114,7 +114,7 @@ class RouterOS:
     def _talk(self, words):
         try:
             self._send_sentence(words)
-            replies = []
+            replies, trap = [], None
             while True:
                 sentence = self._read_sentence()
                 if not sentence:
@@ -125,11 +125,13 @@ class RouterOS:
                         key, _, val = w[1:].partition("=")
                         attrs[key] = val
                 replies.append((kind, attrs))
-                if kind == "!trap":
-                    raise RouterOSError(attrs.get("message", "Erreur RouterOS"))
+                if kind == "!trap":  # le routeur envoie ensuite « !done » : on le lit, sinon la réponse suivante serait décalée
+                    trap = trap or attrs.get("message", "Erreur RouterOS")
                 if kind == "!fatal":
                     raise RouterOSError("Erreur fatale RouterOS")
                 if kind == "!done":
+                    if trap:
+                        raise RouterOSError(trap)
                     return replies
         except (OSError, ssl.SSLError) as e:
             raise RouterOSError(f"Échange interrompu avec {self.host} : {e}") from e

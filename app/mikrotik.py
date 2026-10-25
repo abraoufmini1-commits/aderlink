@@ -80,7 +80,7 @@ def on_login(validity_s):
     """Script « on-login » d'un profil : vide si le forfait n'a pas de validité."""
     if not validity_s:
         return ""
-    return (':local f [:parse [/system script get [find name="aderlink-login"] source]]; '
+    return (':local f [:parse [/system script get [find name="aderlink-start"] source]]; '
             f'$f u=$user v="{duration(validity_s)}"')
 
 
@@ -161,13 +161,14 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
         ':do { :local n [:parse "/system ntp client set enabled=yes server-dns-names=pool.ntp.org"]; $n } on-error={} }',
         "# 3. Expiration des tickets par le routeur lui-meme",
         '/system script remove [find name="aderlink-login"]',
-        '/system script add name="aderlink-login" dont-require-permissions=yes policy=read,write,policy,test '
+        '/system script remove [find name="aderlink-start"]',
+        '/system script add name="aderlink-start" dont-require-permissions=yes policy=read,write '
         f'comment="ADER LINK : expiration des tickets" source={q(LOGIN_SOURCE)}',
         '/system script remove [find name="aderlink-end"]',
-        '/system script add name="aderlink-end" dont-require-permissions=yes policy=read,write,policy,test '
+        '/system script add name="aderlink-end" dont-require-permissions=yes policy=read,write '
         f'comment="ADER LINK : ticket fini = desactive, supprime apres {KEEP_DAYS} jours" source={q(END_SOURCE)}',
         '/system script remove [find name="aderlink-logout"]',
-        '/system script add name="aderlink-logout" dont-require-permissions=yes policy=read,write,policy,test '
+        '/system script add name="aderlink-logout" dont-require-permissions=yes policy=read,write '
         f'comment="ADER LINK : Go ou temps consommes = ticket fini" source={q(LOGOUT_SOURCE)}',
         "# 4. Liaison avec l application toutes les 5 minutes",
         '/system script remove [find name="aderlink-ping"]',

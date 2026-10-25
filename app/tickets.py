@@ -48,6 +48,7 @@ class Tickets:
         self.store = store
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
+        self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
         with store.lock:
             store.db.executescript(
                 """
@@ -467,8 +468,55 @@ class Tickets:
                     self.store.add_event(now, zid, "offline", f"Ticket {code} non désactivé : {e}")
                     continue
             self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
+        last = self._synced.get(zid)
+        if api is not None and not self.demo and last != "ok" and now - (last or 0) > 3600:
+            try:
+                self.sync_router(api)
+                self._synced[zid] = "ok"  # fait une fois par démarrage d'ADER LINK
+            except RouterOSError as e:
+                self._synced[zid] = now  # on réessaiera dans 1 heure
+                self.store.add_event(now, zid, "offline", f"Ticket : mise à jour des scripts du routeur impossible : {e}")
         if api is not None:
             self._purge(zid, api, now)
+
+    @staticmethod
+    def sync_router(api):
+        """Met à jour, à distance, les scripts ADER LINK d'un routeur déjà installé
+        (pas besoin de recoller la ligne d'installation) :
+        scripts aderlink-start / -end / -logout, « on-logout » des profils AL-…,
+        et les comptes à rebours déjà lancés passent à la règle « désactivé puis supprimé après 7 jours »."""
+        from .mikrotik import END_SOURCE, LOGIN_SOURCE, LOGOUT_SOURCE, ON_LOGOUT
+        for name, src, comment in (
+                ("aderlink-start", LOGIN_SOURCE, "ADER LINK : expiration des tickets"),
+                ("aderlink-end", END_SOURCE, "ADER LINK : ticket fini = desactive, supprime apres 7 jours"),
+                ("aderlink-logout", LOGOUT_SOURCE, "ADER LINK : Go ou temps consommes = ticket fini")):
+            found = api.query("/system/script/print", f"?name={name}")
+            if found:
+                if found[0].get("source") != src:
+                    api.query("/system/script/set", f"=.id={found[0]['.id']}", f"=source={src}")
+            else:
+                api.query("/system/script/add", f"=name={name}", f"=source={src}", f"=comment={comment}",
+                          "=policy=read,write", "=dont-require-permissions=yes")
+        for p in api.query("/ip/hotspot/user/profile/print"):
+            if not (p.get("name") or "").startswith("AL-"):
+                continue
+            words = []
+            if p.get("on-logout") != ON_LOGOUT:
+                words.append(f"=on-logout={ON_LOGOUT}")
+            login = p.get("on-login") or ""
+            if 'name="aderlink-login"' in login:  # ancien nom du script
+                words.append("=on-login=" + login.replace('name="aderlink-login"', 'name="aderlink-start"'))
+            if words:
+                api.query("/ip/hotspot/user/profile/set", f"=.id={p['.id']}", *words)
+        cmds = []
+        for t in api.query("/system/scheduler/print", "?comment=ADER LINK : fin du ticket"):
+            code = (t.get("name") or "")[len("AL-EXP-"):]
+            ev = (':local f [:parse [/system script get [find name="aderlink-end"] source]]; '
+                  f'$f u="{code}"')
+            if t.get("name", "").startswith("AL-EXP-") and code and "aderlink-end" not in (t.get("on-event") or ""):
+                cmds.append(["/system/scheduler/set", f"=.id={t['.id']}", f"=on-event={ev}"])
+        if cmds:
+            api.pipeline(cmds)
 
     def _purge(self, zid, api, now):
         """Filet de sécurité : un ticket fini depuis 7 jours est supprimé du routeur
