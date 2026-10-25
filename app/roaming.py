@@ -6,6 +6,7 @@
 - Le temps (validité, durée) et les données sont comptés ici, pour tout le réseau :
   2 Go utilisés ici et là-bas = 2 Go en tout.
 """
+import re
 import secrets
 import socket
 import threading
@@ -13,6 +14,7 @@ import time
 
 from . import radius as R
 
+MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
 INTERIM_S = 60              # le routeur envoie la consommation toutes les minutes
 ACTIVE_S = 3 * INTERIM_S    # une session sans nouvelles depuis 3 min est considérée finie
 
@@ -140,6 +142,9 @@ class Roaming:
             '/radius remove [find comment="ADER Roaming"]',
             pick + add,
             f"/ip hotspot profile set [find] use-radius=yes radius-interim-update={INTERIM_S}s",
+            "# Roaming automatique : un telephone deja connecte sur un autre routeur du reseau entre sans retaper son code",
+            ':do { /ip hotspot profile set [find] login-by=mac,http-chap,http-pap,cookie mac-auth-mode=mac-as-username-and-password } '
+            'on-error={ :do { /ip hotspot profile set [find] login-by=mac,http-chap,http-pap,cookie } on-error={} }',
             f':put "ADER Roaming active : reseau {_ascii(group["name"])}"',
         ]
 
@@ -211,12 +216,20 @@ class Roaming:
         # Le même appareil qui se reconnecte sur le même routeur n'est pas compté contre lui-même.
         rows, _ = self._q("SELECT nas_zone, mac, session_id, updated FROM roaming_sessions WHERE home_zone = ? AND code = ? "
                           "AND active = 1 AND updated >= ?", (t["home"], code, now - ACTIVE_S))
-        busy = [r for r in rows if not (r[0] == zone_id and mac and (r[1] or "").upper() == mac.upper())
-                and not (r[2].startswith("pending-") and r[3] < now - 90)]
+        same = lambda r: bool(mac) and (r[1] or "").upper() == mac.upper()
+        busy = [r for r in rows if not same(r) and not (r[2].startswith("pending-") and r[3] < now - 90)]
+        moved = {r[0] for r in rows if same(r) and r[0] != zone_id}  # le même téléphone est passé sur un autre routeur
         if len(busy) >= shared:
             other = any(r[0] != zone_id for r in busy)
             return False, ("Ticket deja connecte sur un autre routeur du reseau : deconnectez-le d'abord" if other
                            else "Ticket deja connecte sur un autre appareil"), {}
+        if moved and zone_id:
+            with self.store.lock:
+                self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? AND upper(mac) = ? "
+                                      "AND nas_zone != ?", (t["home"], code, mac.upper(), zone_id))
+                self.store.db.commit()
+            if self.kicker:  # on ferme l'ancienne connexion là où il était
+                threading.Thread(target=self._kick_zones, args=(moved, [code, mac]), daemon=True).start()
         if zone_id:  # réservation immédiate : bloque un 2e appareil pendant que le routeur ouvre la session
             with self.store.lock:
                 self.store.db.execute(
@@ -238,6 +251,11 @@ class Roaming:
     def account(self, gid, zone, pkt, now=None):
         now = now or int(time.time())
         code = pkt.text(R.USER_NAME) or ""
+        cls = pkt.text(R.CLASS) or ""
+        if cls.startswith("AL:"):
+            code = cls[3:]
+        elif MAC_RE.match(code):  # session ouverte automatiquement : le nom est l'adresse MAC
+            code = self.code_for_mac(gid, code) or code
         t = self._ticket(gid, code)
         if not t:
             return
@@ -281,11 +299,26 @@ class Roaming:
             threading.Thread(target=self._kick_all, args=(gid, code), daemon=True).start()
 
     def _kick_all(self, gid, code):
-        for zid in self.member_zones(gid):
-            try:
-                self.kicker(zid, code)
-            except Exception as e:  # routeur injoignable : la limite envoyée au routeur coupe quand même
-                self.log(f"ADER Roaming : coupure de {code} sur {zid} impossible ({e})")
+        rows, _ = self._q("SELECT DISTINCT mac FROM roaming_sessions WHERE code = ? AND mac IS NOT NULL", (code,))
+        self._kick_zones(self.member_zones(gid), [code] + [r[0] for r in rows if r[0]])
+
+    def _kick_zones(self, zones, names):
+        for zid in zones:
+            for name in names:  # la session porte le code, ou l'adresse MAC si le téléphone est entré tout seul
+                try:
+                    self.kicker(zid, name)
+                except Exception as e:  # routeur injoignable : la limite envoyée au routeur coupe quand même
+                    self.log(f"ADER Roaming : coupure de {name} sur {zid} impossible ({e})")
+
+    def code_for_mac(self, gid, mac):
+        """Le ticket Roaming en cours de ce téléphone sur ce réseau (le plus récent), s'il y en a un."""
+        zones = self.member_zones(gid)
+        if not zones or not mac:
+            return None
+        rows, _ = self._q("SELECT s.code FROM roaming_sessions s JOIN roaming_members m ON m.zone_id = s.nas_zone "
+                          "WHERE m.group_id = ? AND upper(s.mac) = ? AND s.code NOT LIKE '%:%' ORDER BY s.updated DESC LIMIT 1",
+                          (gid, mac.upper().replace("-", ":")))
+        return rows[0][0] if rows else None
 
     def sweep(self, now=None):
         """Toutes les minutes : les tickets dont la validité est passée sont fermés sur tout le réseau."""
@@ -315,13 +348,22 @@ class Roaming:
             if not R.check_message_authenticator(pkt, secret):
                 return None
             code = pkt.text(R.USER_NAME) or ""
-            if not R.password_ok(pkt, secret, code):
+            mac = pkt.text(R.CALLING_STATION_ID)
+            if MAC_RE.match(code):
+                # connexion automatique : ce téléphone a-t-il un ticket Roaming en cours sur ce réseau ?
+                mac = code.upper().replace("-", ":")
+                found = self.code_for_mac(g["id"], mac)
+                if not found or not any(R.password_ok(pkt, secret, pw) for pw in (code, mac, "")):
+                    return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, "Entrez votre code"))
+                code = found
+                ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=mac)
+            elif not R.password_ok(pkt, secret, code):
                 ok, msg, lim = False, "Code ou mot de passe incorrect", {}
             else:
-                ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=pkt.text(R.CALLING_STATION_ID))
+                ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=mac)
             if not ok:
                 return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, msg))
-            attrs = R.attr(R.ACCT_INTERIM_INTERVAL, INTERIM_S)
+            attrs = R.attr(R.ACCT_INTERIM_INTERVAL, INTERIM_S) + R.attr(R.CLASS, f"AL:{code}")
             if "timeout" in lim:
                 attrs += R.attr(R.SESSION_TIMEOUT, max(1, int(lim["timeout"])))
             if "bytes" in lim:

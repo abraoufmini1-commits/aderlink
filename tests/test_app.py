@@ -757,13 +757,13 @@ class RoamingTests(unittest.TestCase):
         self.batch = self.t.get_batch(b["id"])
         self.codes = [x["code"] for x in self.batch["tickets"]]
 
-    def auth(self, ip, code, password=None, chap=False, secret=None):
+    def auth(self, ip, code, password=None, chap=False, secret=None, mac=None):
         import hashlib
         import os
         from app import radius as R
         secret = secret or self.secret
         ra = os.urandom(16)
-        attrs = [R.attr(R.USER_NAME, code), R.attr(R.NAS_IDENTIFIER, "x")]
+        attrs = [R.attr(R.USER_NAME, code), R.attr(R.NAS_IDENTIFIER, "x")] + ([R.attr(R.CALLING_STATION_ID, mac)] if mac else [])
         pw = (password if password is not None else code)
         if chap:
             ch = os.urandom(16)
@@ -774,9 +774,11 @@ class RoamingTests(unittest.TestCase):
         out = self.r.handle(R.build_request(R.ACCESS_REQUEST, 1, secret, attrs, ra), ip, "auth")
         return None if out is None else R.Packet.parse(out)
 
-    def acct(self, ip, code, sid, status, octets, secs=60):
+    def acct(self, ip, code, sid, status, octets, secs=60, mac=None, cls=None):
         from app import radius as R
-        attrs = [R.attr(R.USER_NAME, code), R.attr(R.ACCT_SESSION_ID, sid), R.attr(R.ACCT_STATUS_TYPE, status),
+        attrs = [R.attr(R.USER_NAME, code), R.attr(R.ACCT_SESSION_ID, sid), R.attr(R.ACCT_STATUS_TYPE, status)]
+        attrs += ([R.attr(R.CALLING_STATION_ID, mac)] if mac else []) + ([R.attr(R.CLASS, cls)] if cls else [])
+        attrs += [
                  R.attr(R.ACCT_INPUT_OCTETS, octets // 2), R.attr(R.ACCT_OUTPUT_OCTETS, octets - octets // 2),
                  R.attr(R.ACCT_SESSION_TIME, secs)]
         out = self.r.handle(R.build_request(R.ACCOUNTING_REQUEST, 2, self.secret, attrs), ip, "acct")
@@ -833,6 +835,33 @@ class RoamingTests(unittest.TestCase):
         self.assertEqual(self.auth("41.0.0.9", code).code, R.ACCESS_REJECT)
         self.acct("10.1.0.1", code, "sA", R.ACCT_STOP, 1000)                       # déconnecté de A
         self.assertEqual(self.auth("41.0.0.9", code).code, R.ACCESS_ACCEPT)        # maintenant possible sur B
+
+    def test_seamless_roaming_by_mac(self):
+        """Le téléphone connecté sur A passe sur B : B le connecte tout seul, A est coupé, la conso continue."""
+        from app import radius as R
+        code, phone, other = self.codes[0], "AA:BB:CC:11:22:33", "DE:AD:BE:EF:00:01"
+        p = self.auth("10.1.0.1", code, mac=phone)                              # code tapé sur A
+        self.assertEqual(p.code, R.ACCESS_ACCEPT)
+        self.assertEqual(p.get(R.CLASS), b"AL:" + code.encode())
+        self.acct("10.1.0.1", code, "sA", R.ACCT_START, 0, mac=phone)
+        self.acct("10.1.0.1", code, "sA", R.ACCT_INTERIM, 300 * 1024, mac=phone)
+        # il arrive sur B : le routeur essaie l'adresse MAC, sans page de connexion
+        p = self.auth("41.0.0.9", phone, password=phone, mac=phone)
+        self.assertEqual(p.code, R.ACCESS_ACCEPT)
+        vs = [v for t, v in p.attrs if t == R.VENDOR_SPECIFIC]
+        self.assertTrue(any(v[4] == R.MT_TOTAL_LIMIT and int.from_bytes(v[6:10], "big") == 724 * 1024 for v in vs))
+        time.sleep(0.3)
+        self.assertIn(("a", code), self.kicked)                                  # ancienne connexion fermée sur A
+        # la consommation sur B (nom = MAC, Class = code) s'ajoute au même ticket
+        self.acct("41.0.0.9", phone, "sB", R.ACCT_START, 0, mac=phone, cls="AL:" + code)
+        self.acct("41.0.0.9", phone, "sB", R.ACCT_INTERIM, 200 * 1024, mac=phone, cls="AL:" + code)
+        self.assertEqual(self.t.find(code)[0]["batch"]["id"], self.batch["id"])
+        used = self.store.db.execute("SELECT bytes_used FROM tickets WHERE code = ?", (code,)).fetchone()[0]
+        self.assertEqual(used, 500 * 1024)
+        # un autre téléphone inconnu : pas de connexion automatique
+        self.assertEqual(self.auth("41.0.0.9", other, password=other, mac=other).code, R.ACCESS_REJECT)
+        # un autre téléphone avec le même code pendant ce temps : refusé
+        self.assertEqual(self.auth("10.1.0.1", code, mac=other).code, R.ACCESS_REJECT)
 
     def test_rejections(self):
         from app import radius as R
