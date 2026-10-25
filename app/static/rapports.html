@@ -61,8 +61,14 @@
 
   <section class="card rp-table" aria-labelledby="tzp">
     <h2 id="tzp">Par routeur et par prix</h2>
-    <p class="pane-sub">Combien de tickets de chaque prix ont été vendus sur chaque routeur, pour la période choisie.</p>
+    <p class="pane-sub">Combien de tickets de chaque prix ont été vendus sur chaque routeur, pour la période choisie (les tickets Roaming sont comptés à part, plus bas).</p>
     <div id="byZonePrice" class="zp-grid"></div>
+  </section>
+
+  <section class="card rp-table" aria-labelledby="tro" id="roSection" hidden>
+    <h2 id="tro">ADER Roaming</h2>
+    <p class="pane-sub">Ventes des tickets Roaming, pour chaque réseau : par prix, et le routeur où chaque ticket s'est connecté la première fois.</p>
+    <div id="byRoaming" class="zp-grid"></div>
   </section>
 
   <section class="card chart-card" aria-labelledby="dayTitle">

@@ -119,6 +119,7 @@
 
     bars();
     zonePrice(R.by_zone_price || []);
+    roaming(R.by_roaming || []);
     table("byZone", R.by_zone, t);
     table("byForfait", R.by_forfait, t);
     table("byPos", R.by_pos, t);
@@ -152,6 +153,22 @@
         "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table>" +
         (zid && !R.zone ? "<button type='button' class='link zp-print no-print' data-zp='" + esc(zid) + "'>Voir et imprimer ce routeur seul →</button>" : "") + "</div>";
     }).join("") : "<p class='pane-sub'>Aucune vente sur la période.</p>";
+  }
+
+  // ADER Roaming : une carte par réseau (par prix, puis routeur de 1re connexion)
+  function roaming(list) {
+    $("roSection").hidden = !list.length;
+    $("byRoaming").innerHTML = list.map(function (g) {
+      var row = function (a, b, c) { return "<tr><td>" + a + "</td><td class='r num'>" + nf.format(b) + "</td><td class='r num'>" + money(c) + "</td></tr>"; };
+      return "<div class='zp-card'><div class='zp-head'><strong>" + esc(g.name) + "</strong><span class='num'>" + money(g.amount) + "</span></div>" +
+        "<table class='zp-table'><thead><tr><th>Ticket</th><th class='r'>Vendus</th><th class='r'>Montant</th></tr></thead><tbody>" +
+        g.lines.map(function (l) {
+          return row("<span class='zp-price num'>" + nf.format(l.price) + " F</span> <span class='zp-name'>" + esc(l.label) + "</span>", l.tickets, l.amount);
+        }).join("") +
+        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(g.tickets) + "</th><th class='r num'>" + money(g.amount) + "</th></tr></tfoot></table>" +
+        "<table class='zp-table ro-first'><thead><tr><th>1re connexion sur</th><th class='r'>Tickets</th><th class='r'>Montant</th></tr></thead><tbody>" +
+        g.routers.map(function (r) { return row(esc(r.zone), r.tickets, r.amount); }).join("") + "</tbody></table></div>";
+    }).join("");
   }
 
   function table(id, rows, t) {
@@ -228,6 +245,13 @@
     (R.by_zone_price || []).forEach(function (z) {
       z.lines.forEach(function (l) { lines.push([z.zone, l.price, l.label, l.tickets, l.amount]); });
       lines.push([z.zone + " - total", "", "", z.tickets, z.amount]);
+    });
+    (R.by_roaming || []).forEach(function (g) {
+      lines.push([], ["ADER Roaming : " + g.name, "Prix du ticket (F CFA)", "Profil", "Tickets vendus", "Montant (F CFA)"]);
+      g.lines.forEach(function (l) { lines.push([g.name, l.price, l.label, l.tickets, l.amount]); });
+      lines.push([g.name + " - total", "", "", g.tickets, g.amount]);
+      lines.push(["1re connexion sur", "", "", "Tickets", "Montant (F CFA)"]);
+      g.routers.forEach(function (r) { lines.push([r.zone, "", "", r.tickets, r.amount]); });
     });
     // point-virgule : Excel en français ouvre le fichier directement en colonnes
     var csv = "﻿" + lines.map(function (l) {

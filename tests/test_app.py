@@ -853,6 +853,23 @@ class RoamingTests(unittest.TestCase):
         out = self.r.handle(R.build_request(R.ACCOUNTING_REQUEST, 2, self.secret, attrs), ip, "acct")
         return None if out is None else R.Packet.parse(out)
 
+    def test_roaming_sales_report(self):
+        from app import radius as R
+        self.auth("10.1.0.1", self.codes[0])          # 1er ticket : 1re connexion sur A
+        self.acct("10.1.0.1", self.codes[0], "s1", R.ACCT_START, 0)
+        time.sleep(0.01)
+        self.auth("41.0.0.9", self.codes[1])          # 2e ticket : 1re connexion sur B
+        self.acct("41.0.0.9", self.codes[1], "s2", R.ACCT_START, 0)
+        self.store.db.execute("CREATE TABLE IF NOT EXISTS points_vente (id INTEGER PRIMARY KEY, name TEXT)")
+        now = int(time.time())
+        rep = self.t.report(now - 3600, now + 3600)
+        self.assertEqual(rep["totals"]["amount"], 200)
+        self.assertEqual(rep["by_zone_price"], [])     # Roaming compté à part
+        g = rep["by_roaming"][0]
+        self.assertEqual((g["name"], g["tickets"], g["amount"]), ("Réseau ADER", 2, 200))
+        self.assertEqual(g["lines"][0]["price"], 100)
+        self.assertEqual(sorted(r["zone"] for r in g["routers"]), ["Zone A", "Zone B"])
+
     def test_batch_not_on_router_and_flagged(self):
         self.assertEqual(self.batch["roaming_id"], self.g["id"])
         self.assertEqual(self.batch["roaming_name"], "Réseau ADER")
