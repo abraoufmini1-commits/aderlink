@@ -396,6 +396,68 @@ class Tickets:
                         "ends_at": ends})
         return out
 
+    def status(self, results):
+        """État en direct de chaque ticket trouvé : Go et temps restants, connecté ou non, fini et pourquoi."""
+        from .collector import parse_duration
+        from .mikrotik import KEEP_DAYS
+        now = int(time.time())
+        for t in results:
+            b = t["batch"]
+            code, zid = t["code"], b["zone_id"]
+            live = {"bytes": 0, "uptime": 0, "online": [], "disabled": False, "source": "app"}
+            row, _ = self._q("SELECT bytes_used, uptime_used, purged_at FROM tickets WHERE zone_id = ? AND code = ?", (zid, code))
+            bytes_used, uptime_used, purged = row[0] if row else (0, 0, None)
+            if b.get("roaming_id"):
+                live.update(bytes=bytes_used or 0, uptime=uptime_used or 0, source="roaming")
+                try:
+                    from .roaming import ACTIVE_S
+                    on, _ = self._q("SELECT DISTINCT nas_zone FROM roaming_sessions WHERE home_zone = ? AND code = ? "
+                                    "AND active = 1 AND updated >= ?", (zid, code, now - ACTIVE_S))
+                    names = {z["id"]: z["name"] for z in self.config.get("zones", [])}
+                    live["online"] = [{"zone": names.get(r[0], r[0])} for r in on]
+                except Exception:
+                    pass
+            elif t["first_used"] and not t["removed"] and not purged and not self.demo:
+                try:
+                    with open_router(self.zone(zid)) as api:
+                        users = api.query("/ip/hotspot/user/print", f"?name={code}")
+                        if users:
+                            u = users[0]
+                            live.update(bytes=int(u.get("bytes-in") or 0) + int(u.get("bytes-out") or 0),
+                                        uptime=parse_duration(u.get("uptime")), disabled=u.get("disabled") == "true"
+                                        or u.get("disabled") == "yes", source="router")
+                        else:
+                            live["source"] = "gone"
+                        for a in api.query("/ip/hotspot/active/print", f"?user={code}"):
+                            live["online"].append({"zone": b["zone_name"], "ip": a.get("address", ""),
+                                                   "mac": a.get("mac-address", "")})
+                except (RouterOSError, TicketError, OSError):
+                    live["source"] = "offline"
+            elif self.demo and t["first_used"]:
+                live.update(bytes=int((b["data_mb"] or 500) * 1024 * 1024 * 0.37), uptime=1800, source="router")
+            limit_b = (b["data_mb"] or 0) * 1024 * 1024
+            limit_u = b["uptime_s"] or 0
+            live["data_left"] = max(0, limit_b - live["bytes"]) if limit_b else None
+            live["uptime_left"] = max(0, limit_u - live["uptime"]) if limit_u else None
+            reason = None
+            if t["removed"]:
+                reason = "removed"
+            elif purged or live["source"] == "gone":
+                reason = "purged"
+            elif limit_b and live["bytes"] >= limit_b:
+                reason = "data"
+            elif limit_u and live["uptime"] >= limit_u:
+                reason = "uptime"
+            elif t["expired_at"] or (t["ends_at"] and t["ends_at"] <= now):
+                reason = "validity"
+            elif live["disabled"]:
+                reason = "disabled"
+            live["finished"] = reason
+            end = t["expired_at"] or (t["ends_at"] if reason == "validity" else None)
+            live["delete_at"] = end + KEEP_DAYS * 86400 if end and reason == "validity" and not b.get("roaming_id") else None
+            t["live"] = live
+        return results
+
     # --- suppression des tickets non utilisés ---------------------------------------------
     def remove_unused(self, batch_id):
         b = self.get_batch(batch_id)

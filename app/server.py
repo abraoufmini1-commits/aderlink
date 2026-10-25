@@ -557,7 +557,7 @@ def make_handler(app):
             if app.tickets and p == "/api/tickets/find":
                 code = q.get("code", [""])[0].strip()[:20]
                 res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]
-                return {"results": res}
+                return {"results": app.tickets.status(res)}
             if app.users and p == "/api/users":
                 self.need(who.can("team"))
                 off = app.offset()

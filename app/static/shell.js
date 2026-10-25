@@ -42,7 +42,7 @@
     { id: "accueil", href: "/", label: "Accueil", icon: "home" },
     { id: "creer", href: "/tickets", label: "Créer des tickets", icon: "ticket" },
     { id: "lots", href: "/lots", label: "Lots", icon: "layers" },
-    { id: "controle", href: "/controle", label: "Contrôler un ticket", icon: "scan" },
+    { id: "controle", href: "/controle", label: "État du ticket", icon: "scan" },
     { id: "rapports", href: "/rapports", label: "Rapport des ventes", icon: "chart" },
     { id: "analytique", href: "/analytique", label: "Analytique", icon: "trend" },
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },

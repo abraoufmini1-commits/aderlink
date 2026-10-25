@@ -1314,3 +1314,15 @@ button.rcard { border: 1px solid var(--border); }
 .zp-print { margin-top: 8px; font-size: 13px; }
 .ro-first { margin-top: 10px; }
 .ro-first th { color: var(--ink-2, #5b6678); font-weight: 600; }
+
+/* État du ticket */
+.st-meters { display: grid; gap: 10px; margin: 6px 0 12px; }
+.st-meter-head { display: flex; align-items: baseline; gap: 6px; font-size: 14px; margin-bottom: 4px; }
+.st-meter-head span { flex: 1; color: var(--ink-2); font-weight: 600; }
+.st-meter-head small { color: var(--ink-3); }
+.st-bar { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.st-bar span { display: block; height: 100%; width: 0; background: var(--good); border-radius: inherit; }
+.st-bar span.low { background: var(--critical); }
+.st-online { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.st-online span { background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 6px 10px; font-size: 14px; }
+.st-warn { font-size: 13px; color: var(--critical); margin: 0 0 10px; }

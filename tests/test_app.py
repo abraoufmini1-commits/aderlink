@@ -367,6 +367,23 @@ class TicketTests(unittest.TestCase):
                 api.query("/commande/inconnue")
             self.assertEqual(api.query("/system/identity/print")[0]["name"], "Zone Test")
 
+    def test_ticket_status(self):
+        res = self.t.create_batch({"zone_id": "z1", "count": 2, "price": 200, "data_mb": 100, "uptime_s": 3600,
+                                   "validity_s": 86400})
+        codes = [x["code"] for x in self.t.get_batch(res["id"])["tickets"]]
+        st = self.t.status(self.t.find(codes[0]))[0]["live"]
+        self.assertIsNone(st["finished"])  # neuf
+        self.t._mark_used("z1", codes[0])
+        self.router.users[codes[0]].update({"bytes-in": str(30 * 1048576), "bytes-out": str(10 * 1048576), "uptime": "20m"})
+        st = self.t.status(self.t.find(codes[0]))[0]["live"]
+        self.assertEqual(st["data_left"], 60 * 1048576)
+        self.assertEqual(st["uptime_left"], 2400)
+        self.assertIsNone(st["finished"])
+        self.t._mark_used("z1", codes[1])
+        self.router.users[codes[1]].update({"bytes-in": str(100 * 1048576), "bytes-out": "0", "uptime": "5m"})
+        st = self.t.status(self.t.find(codes[1]))[0]["live"]
+        self.assertEqual(st["finished"], "data")
+
     def test_end_scripts(self):
         from app import mikrotik as m
         self.assertIn("aderlink-end", m.LOGIN_SOURCE)
