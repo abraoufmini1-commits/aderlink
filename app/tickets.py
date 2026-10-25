@@ -73,7 +73,8 @@ class Tickets:
             for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
                                ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
                                ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
-                               ("tickets", "uptime_used INTEGER DEFAULT 0")):  # base créée par une version précédente
+                               ("tickets", "uptime_used INTEGER DEFAULT 0"),
+                               ("tickets", "purged_at INTEGER")):  # base créée par une version précédente
                 try:
                     store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
@@ -164,11 +165,11 @@ class Tickets:
         """Crée ou met à jour le profil hotspot sur le routeur (vitesse, appareils, validité)."""
         if self.demo:
             return
-        from .mikrotik import on_login
+        from .mikrotik import ON_LOGOUT, on_login
         try:
             with open_router(zone) as api:
                 args = [f"=shared-users={v['shared_users']}", f"=rate-limit={self._rate(v['down_mbps'], v['up_mbps'])}",
-                        f"=on-login={on_login(v['validity_s'])}"]
+                        f"=on-login={on_login(v['validity_s'])}", f"=on-logout={ON_LOGOUT}"]
                 found = api.query("/ip/hotspot/user/profile/print", f"?name={router_profile}")
                 if found:
                     api.query("/ip/hotspot/user/profile/set", f"=.id={found[0]['.id']}", *args)
@@ -466,6 +467,30 @@ class Tickets:
                     self.store.add_event(now, zid, "offline", f"Ticket {code} non désactivé : {e}")
                     continue
             self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
+        if api is not None:
+            self._purge(zid, api, now)
+
+    def _purge(self, zid, api, now):
+        """Filet de sécurité : un ticket fini depuis 7 jours est supprimé du routeur
+        (le routeur le fait lui-même ; ceci rattrape un routeur resté éteint ce jour-là)."""
+        from .mikrotik import KEEP_DAYS
+        old, _ = self._q(
+            "SELECT t.code FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE t.zone_id = ? "
+            "AND b.roaming_id IS NULL AND t.expired_at IS NOT NULL AND t.expired_at <= ? "
+            "AND t.purged_at IS NULL AND t.removed = 0 LIMIT 200", (zid, now - KEEP_DAYS * 86400))
+        for (code,) in old:
+            try:
+                for u in api.query("/ip/hotspot/user/print", f"?name={code}"):
+                    api.query("/ip/hotspot/user/remove", f"=.id={u['.id']}")
+            except RouterOSError as e:
+                self.store.add_event(now, zid, "offline", f"Ticket {code} non supprimé : {e}")
+                return
+            try:
+                for t in api.query("/system/scheduler/print", f"?name=AL-EXP-{code}"):
+                    api.query("/system/scheduler/remove", f"=.id={t['.id']}")
+            except RouterOSError:
+                pass  # la tâche n'existe plus : rien à faire
+            self._q("UPDATE tickets SET purged_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
 
     # --- ventes ---------------------------------------------------------------------------
     @staticmethod

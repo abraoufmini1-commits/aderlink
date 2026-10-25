@@ -310,6 +310,34 @@ class TicketTests(unittest.TestCase):
         self.assertNotIn(code, self.router.active_users)
         self.assertTrue(self.t.find(code)[0]["expired_at"])
 
+    def test_finished_ticket_kept_one_week(self):
+        res = self.t.create_batch({"zone_id": "z1", "count": 1, "price": 500, "validity_s": 86400})
+        code = self.t.get_batch(res["id"])["tickets"][0]["code"]
+        self.t._mark_used("z1", code, int(time.time()) - 90000)
+        from app.routeros import RouterOS
+        with RouterOS("127.0.0.1", "aderlink", "secret", port=self.router.port) as api:
+            self.t.on_poll(self.config["zones"][0], api, [])
+            self.assertEqual(self.router.users[code]["disabled"], "yes")  # désactivé, gardé
+            self.t._q("UPDATE tickets SET expired_at = ? WHERE code = ?", (int(time.time()) - 6 * 86400, code), commit=True)
+            self.t.on_poll(self.config["zones"][0], api, [])
+            self.assertIn(code, self.router.users)  # 6 jours : toujours là
+            self.t._q("UPDATE tickets SET expired_at = ? WHERE code = ?", (int(time.time()) - 8 * 86400, code), commit=True)
+            self.t.on_poll(self.config["zones"][0], api, [])
+        self.assertNotIn(code, self.router.users)  # 8 jours : supprimé
+        self.assertTrue(self.t.find(code)[0]["first_used"])  # la vente reste dans l'historique
+
+    def test_end_scripts(self):
+        from app import mikrotik as m
+        self.assertIn("aderlink-end", m.LOGIN_SOURCE)
+        self.assertNotIn("user remove", m.LOGIN_SOURCE)
+        self.assertIn("disabled=yes", m.END_SOURCE)
+        self.assertIn("interval=7d", m.END_SOURCE)
+        self.assertIn("aderlink-end", m.LOGOUT_SOURCE)
+        s = m.install_script("Z", "p", "1.2.3.4", 8728, "http://x/ok",
+                             [{"profile": "AL-1h", "shared": 1, "rate": "", "validity_s": 3600}])
+        for part in ('name="aderlink-end"', 'name="aderlink-logout"', "on-logout="):
+            self.assertIn(part, s)
+
     def test_forfait_then_batch(self):
         f = self.t.create_forfait({"zone_id": "z1", "name": "1 heure", "price": 200, "uptime_s": 3600,
                                    "data_mb": 500, "validity_s": 86400, "down_mbps": 2, "up_mbps": 1,

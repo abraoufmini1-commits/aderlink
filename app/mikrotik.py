@@ -2,8 +2,9 @@
 
 Le routeur doit fonctionner seul, même quand ADER LINK est éteint :
 - chaque profil hotspot « AL-… » lance, à la 1re connexion d'un ticket, un compte à rebours
-  (une tâche du Scheduler « AL-EXP-<code> ») ; à la fin de la validité, le routeur coupe la
-  session et supprime le ticket, puis efface la tâche ;
+  (une tâche du Scheduler « AL-EXP-<code> ») ; à la fin de la validité — ou dès que les Go
+  ou le temps sont consommés — le routeur coupe la session et DÉSACTIVE le ticket ; il le
+  supprime 7 jours plus tard ;
 - le Scheduler « ADER LINK » se signale toutes les 5 minutes à l'application, qui retient
   ainsi l'adresse du routeur même si elle change.
 
@@ -11,17 +12,59 @@ Compatible RouterOS 6 et 7.
 """
 import re
 
+KEEP_DAYS = 7  # un ticket fini reste visible (désactivé) une semaine, puis il est supprimé
+
+# Tâche du Scheduler qui appelle « aderlink-end » pour le ticket $u.
+_END_CALL = ('(":local f [:parse [/system script get [find name=\\"aderlink-end\\"] source]]; '
+             '\\$f u=\\"" . $u . "\\"")')
+
 # Script appelé par le profil hotspot à chaque connexion : $u = code du ticket, $v = validité.
+# Il lance le compte à rebours « AL-EXP-<code> » ; à la fin, « aderlink-end » prend le relais.
 LOGIN_SOURCE = (
     ':if ([:len [/system scheduler find name=("AL-EXP-" . $u)]] = 0) do={ '
     '/system scheduler add name=("AL-EXP-" . $u) '
     'start-date=[/system clock get date] start-time=[/system clock get time] interval=[:totime $v] '
     'comment="ADER LINK : fin du ticket" '
-    'on-event=("/ip hotspot active remove [find user=\\"" . $u . "\\"]; '
-    '/ip hotspot user remove [find name=\\"" . $u . "\\"]; '
-    '/system scheduler remove [find name=\\"AL-EXP-" . $u . "\\"]") '
+    f'on-event={_END_CALL} '
     '}'
 )
+
+# Fin d'un ticket (validité écoulée, ou Go / temps consommés), en 2 temps :
+#  1. le client est coupé et le ticket DÉSACTIVÉ (il reste visible dans Winbox) ;
+#     la tâche « AL-EXP-<code> » est reprogrammée dans 7 jours ;
+#  2. 7 jours plus tard, le ticket et sa tâche sont supprimés.
+END_SOURCE = (
+    ':local n ("AL-EXP-" . $u); '
+    ':local s [/system scheduler find name=$n]; '
+    ':local last false; '
+    ':if ([:len $s] > 0) do={ :if ([/system scheduler get $s comment] = "ADER LINK : a supprimer") do={ :set last true } }; '
+    '/ip hotspot active remove [find user=$u]; '
+    ':if ($last) do={ /ip hotspot user remove [find name=$u]; /system scheduler remove $s } else={ '
+    '/ip hotspot user set [find name=$u] disabled=yes; '
+    ':if ([:len $s] > 0) do={ '
+    '/system scheduler set $s comment="ADER LINK : a supprimer" start-date=[/system clock get date] '
+    f'start-time=[/system clock get time] interval={KEEP_DAYS}d '
+    '} else={ '
+    '/system scheduler add name=$n comment="ADER LINK : a supprimer" start-date=[/system clock get date] '
+    f'start-time=[/system clock get time] interval={KEEP_DAYS}d on-event={_END_CALL} '
+    '} }'
+)
+
+# Script appelé à chaque déconnexion : si le ticket a tout consommé (Go ou temps de connexion),
+# le ticket est fini tout de suite (désactivé, puis supprimé 7 jours après).
+LOGOUT_SOURCE = (
+    ':local i [/ip hotspot user find name=$u]; '
+    ':if ([:len $i] > 0) do={ '
+    ':local fin false; '
+    ':local l [/ip hotspot user get $i limit-bytes-total]; '
+    ':if ([:typeof $l] = "num" && $l > 0) do={ '
+    ':if (([/ip hotspot user get $i bytes-in] + [/ip hotspot user get $i bytes-out]) >= $l) do={ :set fin true } }; '
+    ':local t [/ip hotspot user get $i limit-uptime]; '
+    ':if ([:typeof $t] = "time" && $t > 0s) do={ :if ([/ip hotspot user get $i uptime] >= $t) do={ :set fin true } }; '
+    ':if ($fin) do={ :local e [:parse [/system script get [find name="aderlink-end"] source]]; $e u=$u } '
+    '}'
+)
+ON_LOGOUT = ':local f [:parse [/system script get [find name="aderlink-logout"] source]]; $f u=$user'
 
 
 def duration(seconds):
@@ -120,6 +163,12 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
         '/system script remove [find name="aderlink-login"]',
         '/system script add name="aderlink-login" dont-require-permissions=yes policy=read,write,policy,test '
         f'comment="ADER LINK : expiration des tickets" source={q(LOGIN_SOURCE)}',
+        '/system script remove [find name="aderlink-end"]',
+        '/system script add name="aderlink-end" dont-require-permissions=yes policy=read,write,policy,test '
+        f'comment="ADER LINK : ticket fini = desactive, supprime apres {KEEP_DAYS} jours" source={q(END_SOURCE)}',
+        '/system script remove [find name="aderlink-logout"]',
+        '/system script add name="aderlink-logout" dont-require-permissions=yes policy=read,write,policy,test '
+        f'comment="ADER LINK : Go ou temps consommes = ticket fini" source={q(LOGOUT_SOURCE)}',
         "# 4. Liaison avec l application toutes les 5 minutes",
         '/system script remove [find name="aderlink-ping"]',
         '/system script add name="aderlink-ping" dont-require-permissions=yes policy=read,write,policy,test '
@@ -134,7 +183,7 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
         lines.append(f':if ([:len [/ip hotspot user profile find name="{prof}"]] = 0) do={{ '
                      f'/ip hotspot user profile add name="{prof}" }}')
         lines.append(f'/ip hotspot user profile set [find name="{prof}"] shared-users={int(p["shared"])} '
-                     f'rate-limit={q(p["rate"])} on-login={q(on_login(p["validity_s"]))}')
+                     f'rate-limit={q(p["rate"])} on-login={q(on_login(p["validity_s"]))} on-logout={q(ON_LOGOUT)}')
     lines += list(extra)
     lines += [
         ':if ([:len [/ip hotspot find]] = 0) do={ :put "ATTENTION : aucun serveur hotspot sur ce routeur. '
