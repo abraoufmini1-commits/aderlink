@@ -53,7 +53,9 @@
         "<div class='lot-head'><span class='lot-ico' aria-hidden='true'>" + window.AderShell.icon("ticket") + "</span>" +
         "<div class='lot-main'><strong>« " + esc(b.note || b.profile) + " »</strong>" + (b.roaming_id ? " <span class='ro-badge'>ADER Roaming</span>" : "") +
         "<span class='zone-meta'>Lot n° " + b.id + " · " + esc(b.roaming_id ? b.roaming_name : b.zone_name) + (b.pos_name ? " · " + esc(b.pos_name) : "") + " · " + date(b.created_at) + "</span>" +
-        "<span class='zone-meta'><b class='num'>" + nf.format(b.price) + " F</b> l'unité · " + dur(b.uptime_s) + " · " + data(b.data_mb) + "</span></div>" +
+        "<span class='zone-meta'><b class='num'>" + nf.format(b.price) + " F</b> l'unité · " + [data(b.data_mb),
+          +b.validity_s ? "valable " + dur(b.validity_s) : "sans date de fin",
+          +b.uptime_s ? dur(b.uptime_s) + " de connexion" : ""].filter(Boolean).join(" · ") + "</span></div>" +
         "<div class='lot-pct'><strong class='num'>" + soldPct + " %</strong><span class='zone-meta'>utilisés</span></div></div>" +
         "<div class='lstats lstats-sm lstats-3'>" + stat("ls-total", b.count, "Total") + stat("ls-left", left, "Restants") +
         stat("ls-live", b.used, "Utilisés") + "</div>" +
