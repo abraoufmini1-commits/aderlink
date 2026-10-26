@@ -1326,3 +1326,13 @@ button.rcard { border: 1px solid var(--border); }
 .st-online { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .st-online span { background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 6px 10px; font-size: 14px; }
 .st-warn { font-size: 13px; color: var(--critical); margin: 0 0 10px; }
+
+/* Bandeau « Installer ADER LINK » */
+.install-bar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 55; margin: 0 auto; max-width: 560px;
+  display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 16px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.22); font-size: 14px;
+}
+.install-bar img { border-radius: 10px; flex: none; }
+.install-bar span { flex: 1; min-width: 0; line-height: 1.35; }
+@media (max-width: 760px) { body.has-bottombar .install-bar { bottom: calc(100px + env(safe-area-inset-bottom)); } }

@@ -71,15 +71,19 @@ systemctl enable --now aderlink >/dev/null
 systemctl restart aderlink
 
 say "5/7 Adresse web (port 80, et HTTPS avec un nom de domaine)"
-DOMAIN="${ADERLINK_DOMAIN:-}"
-[ -z "$DOMAIN" ] && [ -f "$DEST/domain" ] && DOMAIN=$(cat "$DEST/domain")
-DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-')
-if [ -n "$DOMAIN" ]; then
-  echo "$DOMAIN" > "$DEST/domain"
-  # le nom de domaine en HTTPS (certificat automatique) ; l'adresse IP reste en http pour les routeurs
+# Plusieurs noms possibles : un nouveau nom s'AJOUTE aux anciens (les anciens liens continuent de marcher)
+NEW=$(printf '%s' "${ADERLINK_DOMAIN:-}" | tr 'A-Z,' 'a-z ' | tr -cd 'a-z0-9. -')
+OLD=""
+[ -f "$DEST/domain" ] && OLD=$(tr 'A-Z,' 'a-z ' < "$DEST/domain" | tr -cd 'a-z0-9. -')
+DOMAINS=$(printf '%s\n' $NEW $OLD | awk 'NF && !seen[$0]++' | tr '\n' ' ' | sed 's/ *$//')
+DOMAIN=$(printf '%s\n' $DOMAINS | head -n1)   # le plus récent : adresse principale
+if [ -n "$DOMAINS" ]; then
+  echo "$DOMAINS" > "$DEST/domain"
+  SITES=$(printf '%s' "$DOMAINS" | sed 's/ /, /g')
+  # les noms de domaine en HTTPS (certificats automatiques) ; l'adresse IP reste en http pour les routeurs
   cat > /etc/caddy/Caddyfile <<CADDY
 # ADER LINK
-$DOMAIN {
+$SITES {
 	encode gzip
 	reverse_proxy 127.0.0.1:8080
 }

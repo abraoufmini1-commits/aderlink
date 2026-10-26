@@ -185,6 +185,49 @@
 
   window.AderShell = { icon: icon, me: me };
 })();
+// Bandeau « Installer ADER LINK » : une vraie application sur le téléphone ou le PC (adresse https uniquement)
+(function () {
+  var KEY = "aderlink-install-hide";
+  var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (standalone || !window.isSecureContext || location.pathname === "/login" || location.pathname.indexOf("/print") === 0) return;
+  try { if (localStorage.getItem(KEY) === "1") return; } catch (e) { /* ignoré */ }
+  function banner(text, button, onClick) {
+    if (document.getElementById("installBar")) return;
+    var d = document.createElement("div");
+    d.id = "installBar"; d.className = "install-bar no-print"; d.setAttribute("role", "region"); d.setAttribute("aria-label", "Installer l'application");
+    d.innerHTML = "<img src='/static/icon-192.png' alt='' width='36' height='36'><span></span>" +
+      (button ? "<button type='button' class='btn btn-sm' data-i='go'></button>" : "") +
+      "<button type='button' class='icon-btn' data-i='no' aria-label='Fermer'>✕</button>";
+    d.querySelector("span").innerHTML = text;
+    if (button) d.querySelector("[data-i=go]").textContent = button;
+    d.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-i]");
+      if (!b) return;
+      if (b.dataset.i === "go") onClick();
+      else { try { localStorage.setItem(KEY, "1"); } catch (err) { /* ignoré */ } }
+      d.remove();
+    });
+    document.body.appendChild(d);
+  }
+  var prompt = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault(); prompt = e;
+    banner("<strong>Installer ADER LINK</strong> sur cet appareil : une icône comme une vraie application.", "Installer", function () {
+      prompt.prompt();
+      prompt.userChoice.then(function () { prompt = null; });
+    });
+  });
+  window.addEventListener("appinstalled", function () {
+    try { localStorage.setItem(KEY, "1"); } catch (e) { /* ignoré */ }
+    var b = document.getElementById("installBar"); if (b) b.remove();
+  });
+  // iPhone / iPad : pas de bouton automatique, on explique le geste
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    setTimeout(function () {
+      banner("<strong>Installer ADER LINK :</strong> touchez <strong>Partager</strong> ⬆️ puis <strong>Sur l'écran d'accueil</strong>.", "", null);
+    }, 1500);
+  }
+})();
 (function () {
   if ("serviceWorker" in navigator && window.isSecureContext) {
     try { navigator.serviceWorker.register("/sw.js").catch(function () {}); } catch (e) { /* ignoré */ }
