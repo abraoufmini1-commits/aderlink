@@ -4,15 +4,24 @@ $dir = Join-Path $env:LOCALAPPDATA 'ADERLINK'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $exe = Join-Path $dir 'winbox64.exe'
 if (-not (Test-Path $exe)) {
-  $places = @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents", "$env:USERPROFILE\OneDrive\Desktop")
-  $found = Get-ChildItem -Path $places -Filter 'winbox*.exe' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Sort-Object { $_.Name -notmatch '64' } | Select-Object -First 1
+  $places = @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents", "$env:USERPROFILE\OneDrive\Desktop",
+              "$env:USERPROFILE\OneDrive\Bureau", "$env:USERPROFILE\Bureau", "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:LOCALAPPDATA\Programs")
+  $found = Get-ChildItem -Path $places -Filter 'winbox*.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    Where-Object { $_.Length -gt 500KB } | Sort-Object { $_.Name -notmatch '64' } | Select-Object -First 1
   if ($found) {
     Write-Host "Winbox trouve : $($found.FullName)"
     Copy-Item $found.FullName $exe
   } else {
     Write-Host 'Telechargement de Winbox depuis mikrotik.com ...'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri 'https://mt.lv/winbox64' -OutFile $exe -UseBasicParsing
+    try {
+      Invoke-WebRequest -Uri 'https://mt.lv/winbox64' -OutFile $exe -UseBasicParsing
+    } catch {
+      Write-Host ''
+      Write-Host 'Impossible de telecharger Winbox. Telechargez winbox64.exe sur mikrotik.com (page Download),' -ForegroundColor Yellow
+      Write-Host 'mettez-le dans Telechargements, puis relancez ce fichier.' -ForegroundColor Yellow
+      exit 1
+    }
   }
 }
 $launcher = Join-Path $dir 'ouvrir-winbox.ps1'

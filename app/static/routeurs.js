@@ -245,9 +245,23 @@
     setTimeout(function () { t.remove(); }, 6000);
   }
   function winboxReady() { try { return localStorage.getItem("aderlink-winbox") === "1"; } catch (e) { return false; } }
+  // Si Winbox s'ouvre, le navigateur perd la main (fenêtre « Ouvrir ? » ou Winbox devant).
+  // Rien après 2,5 s : le bouton n'est pas activé sur ce PC -> on propose de l'activer.
   function launch(addr) {
+    var left = false;
+    var gone = function () { left = true; };
+    window.addEventListener("blur", gone);
+    document.addEventListener("visibilitychange", gone);
     location.href = "aderlink-winbox://" + encodeURIComponent(addr);
     toast("Ouverture de Winbox sur " + addr + "…", true);
+    setTimeout(function () {
+      window.removeEventListener("blur", gone);
+      document.removeEventListener("visibilitychange", gone);
+      if (left) return;
+      try { localStorage.removeItem("aderlink-winbox"); } catch (e) { /* ignoré */ }
+      copyText(addr);
+      setupWinbox(addr, true);
+    }, 2500);
   }
   // Accès à distance par le tunnel : Winbox et WebFig passent par le serveur en ligne
   function remote(r) {
@@ -275,7 +289,9 @@
       "<button class='btn' type='submit' id='dAdd'>+ Ajouter</button></form>" +
       "<div class='notice' id='bsMsg' role='status'></div>" +
       "<div class='info-box'>Dans Winbox, collez l'adresse <strong class='mono'>" + esc(x.winbox) + "</strong> dans <strong>Connect To</strong>, puis votre identifiant et mot de passe du MikroTik.<br>" +
-      "<small>Gardez un mot de passe solide sur vos MikroTik : cette adresse est joignable depuis Internet.</small></div>");
+      "<small>Gardez un mot de passe solide sur vos MikroTik : cette adresse est joignable depuis Internet.</small><br>" +
+      "<button type='button' class='link' id='raWbSetup'>Winbox ne s'ouvre pas ? Activer le bouton sur ce PC</button></div>");
+    $("raWbSetup").addEventListener("click", function () { setupWinbox(x.winbox); });
     $("bsBody").onclick = function (e) {
       var c = e.target.closest("[data-copy]");
       if (c) { copyText(c.dataset.copy); toast("Adresse copiée", true); }
@@ -349,8 +365,9 @@
       .then(function () { if (btn) btn.disabled = false; });
   }
   // Une seule fois par PC : on apprend à Windows à ouvrir Winbox depuis le navigateur
-  function setupWinbox(addr) {
+  function setupWinbox(addr, failed) {
     sheet("Ouvrir Winbox depuis ADER LINK", "winbox",
+      (failed ? "<div class='notice show notice-err'>Winbox ne s'est pas ouvert : le bouton n'est pas encore activé sur ce PC. Faites les étapes ci-dessous (une seule fois).</div>" : "") +
       "<p class='pane-sub'>À faire <strong>une seule fois sur ce PC</strong> (Windows). Ensuite, le bouton Winbox ouvre Winbox directement, même à travers le lien d'ADER LINK.</p>" +
       "<ol class='wb-steps'><li><a class='btn btn-big btn-block' href='/winbox/activer-winbox.bat' download>" + ic("download") + " Télécharger le fichier d'activation</a></li>" +
       "<li>Ouvrez le fichier <strong>activer-winbox-aderlink.bat</strong>. Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur <strong>Informations complémentaires</strong> puis <strong>Exécuter quand même</strong>.</li>" +
