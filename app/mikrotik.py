@@ -112,7 +112,10 @@ def tunnel_lines(wg, n, report_base, vpn_user, vpn_password):
            '/interface list member add list=LAN interface="{i}" comment="ADER LINK" }}; ')
     v7 = (
         ':if ([:len [/interface wireguard find name="wg-aderlink"]] = 0) do={ '
-        '/interface wireguard add name="wg-aderlink" listen-port=13231 comment="ADER LINK" }; '
+        f'/interface wireguard add name="wg-aderlink" listen-port={41000 + int(n)} comment="ADER LINK" }}; '
+        # 13231 (port par défaut) est souvent déjà pris par un autre WireGuard du routeur :
+        # chaque routeur a son propre port, et l'interface est réactivée si elle était bloquée
+        f'/interface wireguard set [find name="wg-aderlink"] listen-port={41000 + int(n)} disabled=no; '
         '/interface wireguard peers remove [find comment="ADER LINK"]; '
         f'/interface wireguard peers add interface="wg-aderlink" public-key="{pub}" endpoint-address={endpoint} '
         f'endpoint-port={int(wg.get("port", 51820))} allowed-address={server}/32 persistent-keepalive=25s comment="ADER LINK"; '
