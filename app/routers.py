@@ -19,6 +19,9 @@ PUBLIC = ("id", "name", "location", "ssid", "code_length", "created_at")
 MAX_LOGO = 400_000  # octets
 
 
+MAX_TUNNELS = 241  # adresses 10.66.0.10 à 10.66.0.250 (et 10.67.0.x pour RouterOS 6)
+
+
 class RouterError(Exception):
     pass
 
@@ -483,7 +486,10 @@ class Routers:
             net = (self.wg() or {}).get("net", "10.66.0")
             with self.lock:
                 used = {(x.get("router") or {}).get("tunnel_ip") for x in self.zones()}
-                n = next(i for i in range(10, 251) if f"{net}.{i}" not in used)
+                n = next((i for i in range(10, 251) if f"{net}.{i}" not in used), None)
+                if n is None:
+                    raise RouterError(f"Limite atteinte : {MAX_TUNNELS} routeurs reliés au serveur. "
+                                      "Supprimez un ancien routeur, ou demandez l'agrandissement du réseau des tunnels.")
                 r["tunnel_ip"] = f"{net}.{n}"
                 self._persist()
         return r["tunnel_ip"]

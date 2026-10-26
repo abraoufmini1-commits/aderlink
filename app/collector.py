@@ -137,7 +137,8 @@ class Collector:
         zones = self.config.get("zones", [])
         if not zones:
             return
-        with ThreadPoolExecutor(max_workers=min(16, len(zones))) as pool:
+        # beaucoup de routeurs : plus de relevés en parallèle, pour qu'un routeur éteint (8 s d'attente) ne ralentisse pas les autres
+        with ThreadPoolExecutor(max_workers=min(48, len(zones))) as pool:
             for zone, snap in zip(zones, pool.map(self._poll_zone, zones)):
                 self._record(zone, snap)
 
