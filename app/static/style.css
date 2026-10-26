@@ -1348,3 +1348,11 @@ button.rcard { border: 1px solid var(--border); }
 .ic-main span { font-size: 13px; color: var(--ink-2); }
 .ic-help { grid-column: 1 / -1; font-size: 14px; background: var(--blue-100); border-radius: 10px; padding: 10px 12px; }
 .ic-help[hidden] { display: none; }
+
+/* Nouveau point de vente dans « Créer des tickets » */
+button.add-row { width: 100%; font: inherit; cursor: pointer; background: transparent; }
+.pv-inline { margin-top: 12px; padding: 14px; border: 1px dashed var(--border); border-radius: 14px; display: grid; gap: 8px; }
+.pv-inline[hidden] { display: none; }
+.pv-inline label { font-weight: 650; font-size: 14px; }
+.pv-inline-row { display: flex; gap: 8px; }
+.pv-inline-row input { flex: 1; min-width: 0; }

@@ -156,8 +156,30 @@
         "<span class='avatar av-orange' aria-hidden='true'>" + window.AderShell.icon("store") + "</span>" +
         "<span class='pick-main'><span class='pick-title'>" + esc(p.name) + "</span><span class='pick-sub mono'>" + esc(p.code) + "</span></span>" +
         "<span class='radio' aria-hidden='true'></span></button>";
-    }).join("") : "<div class='empty-step'>Aucun point de vente : ajoutez-en un dans la page Routeurs.</div>";
+    }).join("") : "<div class='empty-step'>Aucun point de vente : créez-en un ci-dessous.</div>";
   }
+  // Nouveau point de vente, directement ici : on le crée puis on le choisit
+  $("pvNewBtn").addEventListener("click", function () {
+    $("pvNewForm").hidden = false; $("pvNewBtn").hidden = true;
+    $("pvNewName").value = ""; $("pvNewMsg").className = "notice";
+    $("pvNewName").focus();
+  });
+  $("pvNewForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = $("pvNewName").value.trim(), msg = $("pvNewMsg");
+    if (!name) { msg.className = "notice show notice-err"; msg.textContent = "Écrivez un nom."; $("pvNewName").focus(); return; }
+    $("pvNewSave").disabled = true;
+    api("/api/routers/" + encodeURIComponent(S.zone) + "/pv", { name: name }).then(function (p) {
+      var z = zoneObj();
+      z.points_vente = (z.points_vente || []).concat([p]);
+      S.pv = p;
+      $("pvNewForm").hidden = true; $("pvNewBtn").hidden = false;
+      renderPv();
+      go("forfait");
+    }).catch(function (err) { msg.className = "notice show notice-err"; msg.textContent = err.message; })
+      .then(function () { $("pvNewSave").disabled = false; });
+  });
+
   $("pvs").addEventListener("click", function (e) {
     var b = e.target.closest("[data-pv]");
     if (!b) return;
