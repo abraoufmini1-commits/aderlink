@@ -118,6 +118,13 @@
     if (batch) render();
   });
   $("printBtn").addEventListener("click", function () { window.print(); });
+  // Nouveau lot : on revient à la création, sur le même routeur, au choix du profil
+  $("newBtn").addEventListener("click", function (e) {
+    if (!batch) return;
+    e.preventDefault();
+    try { localStorage.setItem("aderlink-zone", batch.zone_id); } catch (err) { /* ignoré */ }
+    location.href = "/tickets#forfait";
+  });
 
   // Nouvelle version d'ADER LINK installée : la page se recharge toute seule
   var version = null;

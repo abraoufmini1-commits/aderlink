@@ -29,6 +29,11 @@ body {
   background: var(--orange); color: #fff; font: inherit; font-weight: 700;
 }
 .tb-btn:hover { background: #d97606; }
+a.tb-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.tb-btn-blue { background: var(--blue-600, #0d4fa8); }
+.tb-btn-blue:hover { background: var(--blue-700, #0a3f8a); }
+.tb-btn-ghost { background: #fff; color: var(--ink, #14213d); border: 1px solid #cfd8e5; }
+.tb-btn-ghost:hover { background: #f1f4f9; }
 .tb-hint { width: 100%; margin: 0; font-size: 13px; color: var(--ink-2); }
 
 /* --- Feuilles --- */
