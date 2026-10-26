@@ -1336,3 +1336,15 @@ button.rcard { border: 1px solid var(--border); }
 .install-bar img { border-radius: 10px; flex: none; }
 .install-bar span { flex: 1; min-width: 0; line-height: 1.35; }
 @media (max-width: 760px) { body.has-bottombar .install-bar { bottom: calc(100px + env(safe-area-inset-bottom)); } }
+
+/* Carte « Installer ADER LINK » (accueil) */
+.install-card {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin: -4px 0 16px;
+  padding: 12px 14px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface);
+}
+.install-card[hidden] { display: none; }
+.install-card img { border-radius: 12px; }
+.ic-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ic-main span { font-size: 13px; color: var(--ink-2); }
+.ic-help { grid-column: 1 / -1; font-size: 14px; background: var(--blue-100); border-radius: 10px; padding: 10px 12px; }
+.ic-help[hidden] { display: none; }

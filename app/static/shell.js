@@ -189,7 +189,9 @@
 (function () {
   var KEY = "aderlink-install-hide";
   var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); window.AderInstallPrompt = e; });
   if (standalone || !window.isSecureContext || location.pathname === "/login" || location.pathname.indexOf("/print") === 0) return;
+  if (location.pathname === "/") return;  // l'accueil a sa propre carte « Installer ADER LINK »
   try { if (localStorage.getItem(KEY) === "1") return; } catch (e) { /* ignoré */ }
   function banner(text, button, onClick) {
     if (document.getElementById("installBar")) return;
@@ -211,7 +213,7 @@
   }
   var prompt = null;
   window.addEventListener("beforeinstallprompt", function (e) {
-    e.preventDefault(); prompt = e;
+    e.preventDefault(); prompt = e; window.AderInstallPrompt = e;
     banner("<strong>Installer ADER LINK</strong> sur cet appareil : une icône comme une vraie application.", "Installer", function () {
       prompt.prompt();
       prompt.userChoice.then(function () { prompt = null; });

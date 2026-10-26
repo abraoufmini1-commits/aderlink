@@ -304,3 +304,36 @@
   load();
   setInterval(function () { if (!document.hidden) load(); }, REFRESH_MS);
 })();
+
+// Carte « Installer ADER LINK » de l'accueil
+(function () {
+  var card = document.getElementById("installCard");
+  if (!card) return;
+  var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (standalone) return;  // déjà ouvert comme application
+  card.hidden = false;
+  var help = document.getElementById("installHelp");
+  var ua = navigator.userAgent;
+  function say(html) { help.innerHTML = html; help.hidden = false; }
+  window.addEventListener("appinstalled", function () { card.hidden = true; });
+  document.getElementById("installBtn").addEventListener("click", function () {
+    var h = location.hostname;
+    if (!window.isSecureContext) {
+      // l'installation demande une adresse https : on passe sur le même serveur en https
+      var to = /^\d{1,3}(\.\d{1,3}){3}$/.test(h) ? "https://" + h + ".sslip.io" + location.pathname : "https://" + location.host + location.pathname;
+      say("L'installation demande l'adresse sécurisée. Ouverture de <strong>" + to.replace(/</g, "") + "</strong>… Connectez-vous puis touchez encore <strong>Installer</strong>.");
+      setTimeout(function () { location.href = to; }, 1800);
+      return;
+    }
+    var p = window.AderInstallPrompt;
+    if (p) {
+      p.prompt();
+      p.userChoice.then(function (c) { if (c && c.outcome === "accepted") card.hidden = true; });
+      window.AderInstallPrompt = null;
+      return;
+    }
+    if (/iphone|ipad|ipod/i.test(ua)) say("Sur iPhone, ouvrez cette page dans <strong>Safari</strong>, touchez <strong>Partager</strong> ⬆️ puis <strong>Sur l'écran d'accueil</strong>.");
+    else if (/android/i.test(ua)) say("Dans Chrome, touchez le menu <strong>⋮</strong> en haut à droite, puis <strong>Installer l'application</strong> (ou <strong>Ajouter à l'écran d'accueil</strong>).");
+    else say("Dans Chrome ou Edge, cliquez sur l'icône <strong>Installer</strong> à droite de la barre d'adresse, ou menu <strong>⋮</strong> → <strong>Installer ADER LINK</strong>. Si ADER LINK est déjà installé, il est dans le menu Démarrer.");
+  });
+})();
