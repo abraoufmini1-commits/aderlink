@@ -80,6 +80,11 @@ class Tickets:
                     store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
                     pass
+            # lots vidés avant cette version (tous supprimés, aucun vendu) : on les retire de la liste
+            empty = "SELECT b.id FROM batches b WHERE NOT EXISTS (SELECT 1 FROM tickets t WHERE t.batch_id = b.id " \
+                    "AND (t.removed = 0 OR t.first_used IS NOT NULL))"
+            store.db.execute(f"DELETE FROM tickets WHERE batch_id IN ({empty})")
+            store.db.execute(f"DELETE FROM batches WHERE id IN ({empty})")
             store.db.commit()
 
     # --- outils ---------------------------------------------------------------
@@ -490,8 +495,16 @@ class Tickets:
             self.store.db.executemany(
                 "UPDATE tickets SET removed = 1 WHERE zone_id = ? AND code = ?",
                 [(b["zone_id"], c) for c in removed])
+            # plus aucun ticket : ni vendu, ni à vendre -> le lot disparaît complètement de la liste
+            left = self.store.db.execute(
+                "SELECT COUNT(*) FROM tickets WHERE batch_id = ? AND (removed = 0 OR first_used IS NOT NULL)",
+                (batch_id,)).fetchone()[0]
+            gone = not left
+            if gone:
+                self.store.db.execute("DELETE FROM tickets WHERE batch_id = ?", (batch_id,))
+                self.store.db.execute("DELETE FROM batches WHERE id = ?", (batch_id,))
             self.store.db.commit()
-        return {"removed": len(removed)}
+        return {"removed": len(removed), "deleted": gone}
 
     # --- suivi pendant la collecte ----------------------------------------------------------
     def _mark_used(self, zone_id, code, ts=None):

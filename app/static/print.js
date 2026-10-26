@@ -122,7 +122,11 @@
   $("newBtn").addEventListener("click", function (e) {
     if (!batch) return;
     e.preventDefault();
-    try { localStorage.setItem("aderlink-zone", batch.zone_id); } catch (err) { /* ignoré */ }
+    try {
+      localStorage.setItem("aderlink-zone", batch.zone_id);
+      if (batch.roaming_id) localStorage.setItem("aderlink-roam", String(batch.roaming_id));  // lot Roaming -> nouveau lot Roaming
+      else localStorage.removeItem("aderlink-roam");
+    } catch (err) { /* ignoré */ }
     location.href = "/tickets#forfait";
   });
 

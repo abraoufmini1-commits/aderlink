@@ -132,6 +132,7 @@
       var home = members.find(function (z) { return (S.status[z.id] || {}).status === "online"; }) || members[0];
       if (S.roam !== gid || S.zone !== home.id) { S.forfait = null; S.pv = null; }
       S.roam = gid; S.zone = home.id;
+      try { localStorage.setItem("aderlink-zone", S.zone); localStorage.setItem("aderlink-roam", String(gid)); } catch (err) { /* ignoré */ }
       renderRouters();
       loadForfaits().then(function () { go("pv"); });
       return;
@@ -141,7 +142,7 @@
     if (S.zone !== b.dataset.zone || S.roam) { S.forfait = null; S.pv = null; }
     S.roam = null;
     S.zone = b.dataset.zone;
-    try { localStorage.setItem("aderlink-zone", S.zone); } catch (err) { /* ignoré */ }
+    try { localStorage.setItem("aderlink-zone", S.zone); localStorage.removeItem("aderlink-roam"); } catch (err) { /* ignoré */ }
     renderRouters();
     loadForfaits().then(function () { go("pv"); });
   });
@@ -382,13 +383,14 @@
     $("demoBanner").hidden = !r[0].demo;
     S.zones = r[0].zones;
     (r[1].zones || []).forEach(function (z) { S.status[z.id] = z; });
-    var saved = null;
-    try { saved = localStorage.getItem("aderlink-zone"); } catch (e) { /* ignoré */ }
+    var saved = null, savedRoam = null;
+    try { saved = localStorage.getItem("aderlink-zone"); savedRoam = +localStorage.getItem("aderlink-roam") || null; } catch (e) { /* ignoré */ }
     var start = location.hash.slice(1);
     var keep = S.zones.find(function (z) { return z.id === saved; });
     renderRouters();
     if (keep && start && start !== "routeur") {
       S.zone = keep.id;
+      S.roam = savedRoam && keep.roaming && keep.roaming.id === savedRoam ? savedRoam : null;  // on reste en ADER Roaming
       if ((keep.points_vente || []).length === 1) S.pv = keep.points_vente[0];
       renderRouters();
       loadForfaits().then(function () { show(start); });

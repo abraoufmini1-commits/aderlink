@@ -367,6 +367,13 @@ class TicketTests(unittest.TestCase):
                 api.query("/commande/inconnue")
             self.assertEqual(api.query("/system/identity/print")[0]["name"], "Zone Test")
 
+    def test_empty_batch_disappears(self):
+        res = self.t.create_batch({"zone_id": "z1", "count": 3, "price": 100})
+        out = self.t.remove_unused(res["id"])
+        self.assertEqual((out["removed"], out["deleted"]), (3, True))
+        self.assertIsNone(self.t.get_batch(res["id"]))
+        self.assertNotIn(res["id"], [b["id"] for b in self.t.list_batches()])
+
     def test_ticket_status(self):
         res = self.t.create_batch({"zone_id": "z1", "count": 2, "price": 200, "data_mb": 100, "uptime_s": 3600,
                                    "validity_s": 86400})

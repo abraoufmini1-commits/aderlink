@@ -384,7 +384,7 @@
 
   // --- forfaits : on ouvre l'assistant de création sur ce routeur ------------------------------
   function forfaits(r) {
-    try { localStorage.setItem("aderlink-zone", r.id); } catch (e) { /* ignoré */ }
+    try { localStorage.setItem("aderlink-zone", r.id); localStorage.removeItem("aderlink-roam"); } catch (e) { /* ignoré */ }
     location.href = "/tickets#forfait";
   }
 
