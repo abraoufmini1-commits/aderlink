@@ -913,8 +913,8 @@ class RoamingTests(unittest.TestCase):
         self.assertIn("=address=10.66.0.1", add)
         self.assertIn(f"=secret={self.secret.decode()}", add)
         self.assertTrue(any(c[0] == "/ip/hotspot/profile/set" and "=use-radius=yes" in c for c in calls))
-        # les modes déjà choisis sont gardés, « mac » est seulement ajouté
-        self.assertIn(("/ip/hotspot/profile/set", "=.id=*1", "=login-by=cookie,http-chap,https,http-pap,mac-cookie,mac"), calls)
+        # l'onglet Login n'est jamais modifié
+        self.assertFalse(any(c[0] == "/ip/hotspot/profile/set" and any(w.startswith("=login-by") for w in c) for c in calls))
         n = len(calls)
         self.r.ensure(z, Api())  # déjà fait : rien de plus
         self.assertEqual(len(calls), n)

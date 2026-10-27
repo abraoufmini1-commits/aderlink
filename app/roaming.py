@@ -178,14 +178,18 @@ class Roaming:
             for prof in api.query("/ip/hotspot/profile/print"):
                 api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
                           f"=radius-interim-update={INTERIM_S}s")
-                # connexion automatique par l'adresse MAC (roaming sans retaper le code) :
-                # on AJOUTE « mac » aux modes déjà choisis (HTTPS, MAC cookie… restent comme avant)
-                modes = [m for m in (prof.get("login-by") or "").split(",") if m]
-                if "mac" not in modes:
-                    try:
-                        api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=" + ",".join(modes + ["mac"]))
-                    except RouterOSError:
-                        pass
+                # On ne touche PAS à l'onglet Login (modes de connexion) : il reste comme vous l'avez réglé.
+                # Seule exception : réparer l'onglet Login si la version 6.32.0 d'ADER LINK l'avait remplacé
+                # (exactement « mac, http-chap, http-pap, cookie ») -> remis comme avant : tout coché sauf Trial.
+                modes = sorted(m for m in (prof.get("login-by") or "").split(",") if m)
+                if modes == ["cookie", "http-chap", "http-pap", "mac"]:
+                    for value in ("cookie,http-chap,https,http-pap,mac,mac-cookie", "cookie,http-chap,http-pap,mac,mac-cookie"):
+                        try:
+                            api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", f"=login-by={value}",
+                                      "=mac-auth-mode=mac-as-username")
+                            break
+                        except RouterOSError:
+                            continue
         except RouterOSError as e:
             return False, f"Le routeur a refusé : {e}"
         return True, f"Réglé (serveur {srv})"
