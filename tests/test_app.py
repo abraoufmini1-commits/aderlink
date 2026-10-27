@@ -921,6 +921,27 @@ class RoamingTests(unittest.TestCase):
         st = self.r.groups()[0]["zones"]
         self.assertTrue(next(x for x in st if x["id"] == "a")["setup_ok"])
 
+    def test_shared_with_other_radius(self):
+        """Un autre système de tickets sur le routeur : ADER passe en premier et se tait pour les codes inconnus."""
+        from app import radius as R
+        calls = []
+        class Api:
+            def query(self, cmd, *w):
+                calls.append((cmd,) + w)
+                if cmd == "/radius/print" and not w:
+                    return [{".id": "*5", "address": "148.251.44.3", "service": "hotspot"},
+                            {".id": "*9", "address": "10.66.0.1", "service": "hotspot", "comment": "ADER Roaming"}]
+                return []
+        self.r.wg_conf = lambda: {"server": "10.66.0.1"}
+        z = self.r._zone("a"); z["router"]["tunnel"] = "wg"
+        ok, msg = self.r.apply_zone(z, Api())
+        self.assertTrue(ok)
+        self.assertIn(("/radius/move", "=numbers=*9", "=destination=*5"), calls)
+        self.assertIsNone(self.auth("10.1.0.1", "99999999"))           # pas à nous : silence
+        self.assertEqual(self.auth("10.1.0.1", self.codes[0]).code, R.ACCESS_ACCEPT)  # nos codes marchent
+        self.r.shared["a"] = False
+        self.assertEqual(self.auth("10.1.0.1", "99999999").code, R.ACCESS_REJECT)    # routeur seul : refus clair
+
     def test_batch_not_on_router_and_flagged(self):
         self.assertEqual(self.batch["roaming_id"], self.g["id"])
         self.assertEqual(self.batch["roaming_name"], "Réseau ADER")

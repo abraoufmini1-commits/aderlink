@@ -37,6 +37,7 @@ class Roaming:
         self.seen = {}      # zone_id -> heure du dernier paquet RADIUS reçu de ce routeur
         self.ignored = {}   # adresse -> (heure, nom) : paquets d'un routeur non reconnu
         self.setup = {}     # zone_id -> {"ok": bool, "msg": str, "ts": int} : réglage automatique
+        self.shared = {}    # zone_id -> True si le routeur a aussi un autre système de tickets (autre RADIUS)
         with store.lock:
             store.db.executescript(
                 """
@@ -190,8 +191,23 @@ class Roaming:
                             break
                         except RouterOSError:
                             continue
+            # Un autre système de tickets (autre serveur RADIUS) sur ce routeur ? Les deux marchent ensemble :
+            # ADER Roaming passe EN PREMIER ; pour un code qu'il ne connaît pas, il ne répond pas,
+            # et le routeur demande alors à l'autre serveur (quelques secondes plus tard).
+            entries = api.query("/radius/print")
+            ours = [e for e in entries if e.get("comment") == "ADER Roaming"]
+            others = [e for e in entries if e.get("comment") != "ADER Roaming" and "hotspot" in (e.get("service") or "")
+                      and e.get("disabled") not in ("true", "yes")]
+            self.shared[zone["id"]] = bool(others)
+            if ours and others and entries[0].get(".id") != ours[0][".id"]:
+                try:
+                    api.query("/radius/move", f"=numbers={ours[0]['.id']}", f"=destination={entries[0]['.id']}")
+                except RouterOSError:
+                    pass
         except RouterOSError as e:
             return False, f"Le routeur a refusé : {e}"
+        if self.shared.get(zone["id"]):
+            return True, f"Réglé (serveur {srv}), avec l'autre système de tickets du routeur"
         return True, f"Réglé (serveur {srv})"
 
     def diagnose(self, gid):
@@ -454,10 +470,13 @@ class Roaming:
                 return None
             code = pkt.text(R.USER_NAME) or ""
             mac = pkt.text(R.CALLING_STATION_ID)
+            shared = self.shared.get(zone["id"])
             if MAC_RE.match(code):
                 # connexion automatique : ce téléphone a-t-il un ticket Roaming en cours sur ce réseau ?
                 mac = code.upper().replace("-", ":")
                 found = self.code_for_mac(g["id"], mac)
+                if not found and shared:
+                    return None  # pas à nous : le routeur demandera à l'autre système
                 if not found or not any(R.password_ok(pkt, secret, pw) for pw in (code, mac, "")):
                     return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, "Entrez votre code"))
                 code = found
@@ -466,6 +485,8 @@ class Roaming:
                 ok, msg, lim = False, "Code ou mot de passe incorrect", {}
             else:
                 ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=mac)
+            if not ok and shared and not self._ticket(g["id"], code):
+                return None  # code inconnu d'ADER LINK : on se tait, le routeur demande à l'autre système
             if not ok:
                 return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, msg))
             attrs = R.attr(R.ACCT_INTERIM_INTERVAL, INTERIM_S) + R.attr(R.CLASS, f"AL:{code}")

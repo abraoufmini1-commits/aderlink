@@ -181,8 +181,12 @@
             " · demandes " + esc(x.requests || "0") + ", acceptées " + esc(x.accepts || "0") + ", refusées " + esc(x.rejects || "0") +
             ", <b>sans réponse " + esc(x.timeouts || "0") + "</b></li>");
         });
+        var first = r.radius.filter(function (x) { return !x.disabled && /hotspot/.test(x.service); })[0];
+        var oursFirst = first && first.ours;
         others.forEach(function (x) {
-          lines.push("<li class='bad'>Autre serveur RADIUS pour le hotspot : " + esc(x.address) + " (sans réponse " + esc(x.timeouts || "0") + ") — il peut gêner ADER Roaming</li>");
+          lines.push(oursFirst ?
+            "<li class='ok'>Autre système de tickets : " + esc(x.address) + " — ADER Roaming passe en premier, les deux marchent ✓</li>" :
+            "<li class='bad'>Autre système de tickets : " + esc(x.address) + " passe avant ADER Roaming (correction automatique en cours)</li>");
         });
         r.profiles.forEach(function (p) {
           lines.push("<li class='" + (p.use_radius ? "ok" : "bad") + "'>Profil " + esc(p.name) + " : Use RADIUS " + (p.use_radius ? "coché ✓" : "décoché") + "</li>");
