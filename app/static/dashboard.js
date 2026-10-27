@@ -94,8 +94,10 @@
   // Espace personnel : un client, un gérant ou un revendeur voit à qui appartient ce tableau de bord
   function personal(d) {
     var u = d.me || {};
+    // Accueil : « Bienvenue, Prénom » pour tout le monde
+    var first = String(u.name || u.username || "").trim().split(/\s+/)[0];
+    $("dashTitle").textContent = first ? "Bienvenue, " + first : "Bienvenue";
     if (!u.role || u.role === "admin") return;
-    $("dashTitle").textContent = "Espace de " + u.name;
     $("dashSub").textContent = u.role === "client" ? "Vos routeurs, vos tickets et vos ventes" : "Vos tickets et vos ventes";
     var empty = u.role === "client" && !d.zones.length;
     $("welcome").hidden = !empty;
