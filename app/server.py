@@ -643,6 +643,11 @@ def make_handler(app):
                 self.need(fn, "Introuvable")
                 return fn()
             # ADER Roaming
+            if app.roaming and len(parts) == 5 and parts[2] == "roaming" and parts[4] == "check" and parts[3].isdigit():
+                self.need(who.can("routers_write"))
+                g = app.roaming.group(int(parts[3]))
+                self.need(g and (who.role == "admin" or g["owner"] == who.username), "Réseau introuvable")
+                return app.roaming.diagnose(g["id"])
             if app.roaming and (p == "/api/roaming" or (len(parts) >= 4 and parts[2] == "roaming" and parts[3].isdigit())):
                 self.need(who.can("routers_write"))
                 owner = None if who.role == "admin" else who.username

@@ -194,6 +194,38 @@ class Roaming:
             return False, f"Le routeur a refusé : {e}"
         return True, f"Réglé (serveur {srv})"
 
+    def diagnose(self, gid):
+        """Regarde chaque routeur du réseau par l'API : serveurs RADIUS, compteurs, profils hotspot."""
+        from .tickets import open_router
+        from .routeros import RouterOSError
+        g = self.group(gid)
+        out = []
+        for zid in self.member_zones(gid):
+            z = self._zone(zid)
+            if not z:
+                continue
+            d = {"id": zid, "name": z["name"], "expected": self.server_for(z), **self.zone_status(zid),
+                 "radius": [], "profiles": [], "error": None}
+            try:
+                with open_router(z) as api:
+                    for r in api.query("/radius/print"):
+                        e = {"address": r.get("address", ""), "service": r.get("service", ""),
+                             "ours": r.get("comment") == "ADER Roaming", "disabled": r.get("disabled") in ("true", "yes")}
+                        try:
+                            m = api.query("/radius/monitor", f"=numbers={r['.id']}", "=once=")
+                            m = m[0] if m else {}
+                            e.update({k: m.get(k, "") for k in ("requests", "accepts", "rejects", "resends", "timeouts", "bad-replies", "pending")})
+                        except RouterOSError:
+                            pass
+                        d["radius"].append(e)
+                    for pr in api.query("/ip/hotspot/profile/print"):
+                        d["profiles"].append({"name": pr.get("name", ""), "use_radius": pr.get("use-radius") in ("true", "yes")})
+                    d["servers"] = [{"name": h.get("name", ""), "profile": h.get("profile", "")} for h in api.query("/ip/hotspot/print")]
+            except (RouterOSError, OSError) as e:
+                d["error"] = str(e)
+            out.append(d)
+        return {"name": g["name"] if g else "", "routers": out}
+
     def ensure(self, zone, api):
         """Appelé à chaque relevé : règle le routeur une fois (puis toutes les heures s'il a échoué)."""
         g = self.group_of_zone(zone["id"])

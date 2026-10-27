@@ -68,6 +68,7 @@
         nf.format(g.connected) + " connecté" + (g.connected > 1 ? "s" : "") + " en Roaming</div></div></div>" +
         "<ul class='ro-status'>" + g.zones.map(zoneLine).join("") + "</ul>" +
         "<div class='lstats lstats-3'>" + stat("ls-total", g.tickets, "Tickets Roaming") + stat("ls-left", g.left, "Restants") + stat("ls-live", g.used, "Utilisés") + "</div>" +
+        "<button type='button' class='btn btn-outline btn-block ro-check' data-act='check' data-id='" + g.id + "'>Vérifier les routeurs</button>" +
         "<div class='act-grid act-grid-3'>" +
         "<button type='button' class='act' data-act='script' data-id='" + g.id + "'>" + ic("terminal") + "<span>Script</span></button>" +
         "<button type='button' class='act' data-act='edit' data-id='" + g.id + "'>" + ic("pencil") + "<span>Modifier</span></button>" +
@@ -78,7 +79,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var g = S.groups.find(function (x) { return x.id === +b.dataset.id; });
-    ({ script: script, edit: edit, del: remove })[b.dataset.act](g);
+    ({ script: script, edit: edit, del: remove, check: check })[b.dataset.act](g);
   });
   $("addBtn").addEventListener("click", function () { edit(null); });
 
@@ -161,6 +162,34 @@
         if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t.value).then(done, function () { t.select(); });
         else { t.select(); try { document.execCommand("copy"); done(); } catch (e) { /* ignoré */ } }
       });
+    }).catch(function (e) { $("bsBody").innerHTML = "<div class='notice show notice-err'>" + esc(e.message) + "</div>"; });
+  }
+
+  // --- vérifier : ce que chaque routeur a vraiment (serveurs RADIUS, compteurs, profils) ----------
+  function check(g) {
+    sheet("Vérification — " + g.name, "zones", "<p class='pane-sub'>Lecture des routeurs… (quelques secondes)</p>");
+    api("/api/roaming/" + g.id + "/check", {}).then(function (d) {
+      $("bsBody").innerHTML = d.routers.map(function (r) {
+        var lines = [];
+        if (r.error) lines.push("<li class='bad'>Routeur injoignable : " + esc(r.error) + "</li>");
+        var ours = r.radius.filter(function (x) { return x.ours; });
+        var others = r.radius.filter(function (x) { return !x.ours && !x.disabled && /hotspot/.test(x.service); });
+        if (!r.error && !ours.length) lines.push("<li class='bad'>Réglage ADER Roaming absent</li>");
+        ours.forEach(function (x) {
+          var good = x.address === r.expected;
+          lines.push("<li class='" + (good ? "ok" : "bad") + "'>Serveur ADER Roaming : " + esc(x.address) + (good ? " ✓" : " (attendu " + esc(r.expected || "?") + ")") +
+            " · demandes " + esc(x.requests || "0") + ", acceptées " + esc(x.accepts || "0") + ", refusées " + esc(x.rejects || "0") +
+            ", <b>sans réponse " + esc(x.timeouts || "0") + "</b></li>");
+        });
+        others.forEach(function (x) {
+          lines.push("<li class='bad'>Autre serveur RADIUS pour le hotspot : " + esc(x.address) + " (sans réponse " + esc(x.timeouts || "0") + ") — il peut gêner ADER Roaming</li>");
+        });
+        r.profiles.forEach(function (p) {
+          lines.push("<li class='" + (p.use_radius ? "ok" : "bad") + "'>Profil " + esc(p.name) + " : Use RADIUS " + (p.use_radius ? "coché ✓" : "décoché") + "</li>");
+        });
+        lines.push("<li class='" + (r.seen_ago != null ? "ok" : "wait") + "'>" + (r.seen_ago != null ? "Dernier contact avec le serveur : " + ago(r.seen_ago) : "Aucun contact avec le serveur depuis le démarrage") + "</li>");
+        return "<div class='ro-diag'><b>" + esc(r.name) + "</b><ul>" + lines.join("") + "</ul></div>";
+      }).join("") + "<p class='hint'>Envoyez une photo de cette page à votre support si un routeur a des lignes en rouge.</p>";
     }).catch(function (e) { $("bsBody").innerHTML = "<div class='notice show notice-err'>" + esc(e.message) + "</div>"; });
   }
 
