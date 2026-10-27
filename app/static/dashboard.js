@@ -97,7 +97,7 @@
     // Accueil : « Bienvenue, Prénom » pour tout le monde
     var first = String(u.name || u.username || "").trim().split(/\s+/)[0];
     // administrateur : le nom de l'entreprise ; les autres : leur prénom
-    $("dashTitle").textContent = u.role === "admin" ? "Bienvenue, ADER TECHNOLOGIE" : first ? "Bienvenue, " + first : "Bienvenue";
+    $("dashTitle").textContent = u.role === "admin" ? "Bienvenue ADER TECHNOLOGIE" : first ? "Bienvenue, " + first : "Bienvenue";
     if (!u.role || u.role === "admin") return;
     $("dashSub").textContent = u.role === "client" ? "Vos routeurs, vos tickets et vos ventes" : "Vos tickets et vos ventes";
     var empty = u.role === "client" && !d.zones.length;
