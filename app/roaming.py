@@ -147,9 +147,7 @@ class Roaming:
             '/radius remove [find comment="ADER Roaming"]',
             pick + add,
             f"/ip hotspot profile set [find] use-radius=yes radius-interim-update={INTERIM_S}s",
-            "# Roaming automatique : un telephone deja connecte sur un autre routeur du reseau entre sans retaper son code",
-            ':do { /ip hotspot profile set [find] login-by=mac,http-chap,http-pap,cookie mac-auth-mode=mac-as-username-and-password } '
-            'on-error={ :do { /ip hotspot profile set [find] login-by=mac,http-chap,http-pap,cookie } on-error={} }',
+            "# (le passage automatique d'un routeur a l'autre est regle par ADER LINK lui-meme, sans toucher a vos autres reglages)",
             f':put "ADER Roaming active : reseau {_ascii(group["name"])}"',
         ]
 
@@ -180,12 +178,12 @@ class Roaming:
             for prof in api.query("/ip/hotspot/profile/print"):
                 api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
                           f"=radius-interim-update={INTERIM_S}s")
-                try:  # connexion automatique par l'adresse MAC (roaming sans retaper le code)
-                    api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=mac,http-chap,http-pap,cookie",
-                              "=mac-auth-mode=mac-as-username-and-password")
-                except RouterOSError:
+                # connexion automatique par l'adresse MAC (roaming sans retaper le code) :
+                # on AJOUTE « mac » aux modes déjà choisis (HTTPS, MAC cookie… restent comme avant)
+                modes = [m for m in (prof.get("login-by") or "").split(",") if m]
+                if "mac" not in modes:
                     try:
-                        api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=mac,http-chap,http-pap,cookie")
+                        api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=" + ",".join(modes + ["mac"]))
                     except RouterOSError:
                         pass
         except RouterOSError as e:

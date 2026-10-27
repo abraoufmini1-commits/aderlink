@@ -900,7 +900,8 @@ class RoamingTests(unittest.TestCase):
         class Api:
             def query(self, cmd, *w):
                 calls.append((cmd,) + w)
-                return [{".id": "*1", "name": "hsprof1"}] if cmd == "/ip/hotspot/profile/print" else []
+                return ([{".id": "*1", "name": "hsprof1", "login-by": "cookie,http-chap,https,http-pap,mac-cookie"}]
+                        if cmd == "/ip/hotspot/profile/print" else [])
         z = self.r._zone("a")
         ok, msg = self.r.apply_zone(z, Api())
         self.assertFalse(ok)  # pas de tunnel dans ce test
@@ -912,6 +913,8 @@ class RoamingTests(unittest.TestCase):
         self.assertIn("=address=10.66.0.1", add)
         self.assertIn(f"=secret={self.secret.decode()}", add)
         self.assertTrue(any(c[0] == "/ip/hotspot/profile/set" and "=use-radius=yes" in c for c in calls))
+        # les modes déjà choisis sont gardés, « mac » est seulement ajouté
+        self.assertIn(("/ip/hotspot/profile/set", "=.id=*1", "=login-by=cookie,http-chap,https,http-pap,mac-cookie,mac"), calls)
         n = len(calls)
         self.r.ensure(z, Api())  # déjà fait : rien de plus
         self.assertEqual(len(calls), n)
