@@ -106,7 +106,7 @@
     .then(function (b) {
       if (b.error) { $("title").textContent = b.error; return; }
       batch = b;
-      document.title = "Lot " + b.id + " — impression — ADER LINK";
+      document.title = "ADER LINK · Impression lot " + b.id;
       $("title").textContent = "Lot n° " + b.id + " — " + (b.note || b.zone_name);
       render();
     });
