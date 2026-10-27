@@ -484,7 +484,7 @@ td.r, th.r { text-align: right; }
 }
 .hero::after { /* ondes Wi-Fi du logo, en filigrane */
   content: ""; position: absolute; right: -40px; top: -20px; width: 260px; height: 220px; opacity: 0.12; pointer-events: none;
-  background: url("/static/logo-white.svg") no-repeat center / contain;
+  background: url("/static/mark-white.svg") no-repeat center / contain;
 }
 .hero-label { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.85); }
 .hero-amount { font-size: 48px; font-weight: 800; line-height: 1.05; margin-top: 10px; letter-spacing: -0.02em; }
