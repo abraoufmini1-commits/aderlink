@@ -553,6 +553,11 @@ class Tickets:
                 self.store.add_event(now, zid, "offline", f"Ticket : mise à jour des scripts du routeur impossible : {e}")
         if api is not None:
             self._purge(zid, api, now)
+        if api is not None and not self.demo and self.roaming:
+            try:
+                self.roaming.ensure(zone, api)  # ADER Roaming réglé tout seul sur ce routeur
+            except Exception as e:  # ne doit jamais bloquer le relevé
+                self.store.add_event(now, zid, "offline", f"Ticket : réglage ADER Roaming impossible : {e}")
 
     @staticmethod
     def sync_router(api):

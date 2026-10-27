@@ -1356,3 +1356,13 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .pv-inline label { font-weight: 650; font-size: 14px; }
 .pv-inline-row { display: flex; gap: 8px; }
 .pv-inline-row input { flex: 1; min-width: 0; }
+
+/* ADER Roaming : état de chaque routeur */
+.ro-status { list-style: none; margin: 10px 0 12px; padding: 0; display: grid; gap: 6px; }
+.ro-status li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px; }
+.ro-status li svg { width: 16px; height: 16px; color: var(--ink-3); }
+.ro-status li b { font-size: 14px; margin-right: auto; }
+.ro-status .ok { color: var(--good); font-weight: 650; }
+.ro-status .bad { color: var(--critical); font-weight: 650; }
+.ro-status .wait { color: var(--ink-3); }

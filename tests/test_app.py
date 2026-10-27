@@ -894,6 +894,30 @@ class RoamingTests(unittest.TestCase):
         self.assertEqual(g["lines"][0]["price"], 100)
         self.assertEqual(sorted(r["zone"] for r in g["routers"]), ["Zone A", "Zone B"])
 
+    def test_auto_setup_on_router(self):
+        """Le routeur est réglé tout seul par l'API (RADIUS + profil hotspot), sans coller de script."""
+        calls = []
+        class Api:
+            def query(self, cmd, *w):
+                calls.append((cmd,) + w)
+                return [{".id": "*1", "name": "hsprof1"}] if cmd == "/ip/hotspot/profile/print" else []
+        z = self.r._zone("a")
+        ok, msg = self.r.apply_zone(z, Api())
+        self.assertFalse(ok)  # pas de tunnel dans ce test
+        self.r.wg_conf = lambda: {"server": "10.66.0.1", "ovpn_server": "10.67.0.1"}
+        z["router"]["tunnel"] = "wg"
+        self.r.ensure(z, Api())
+        self.assertTrue(self.r.setup["a"]["ok"])
+        add = next(c for c in calls if c[0] == "/radius/add")
+        self.assertIn("=address=10.66.0.1", add)
+        self.assertIn(f"=secret={self.secret.decode()}", add)
+        self.assertTrue(any(c[0] == "/ip/hotspot/profile/set" and "=use-radius=yes" in c for c in calls))
+        n = len(calls)
+        self.r.ensure(z, Api())  # déjà fait : rien de plus
+        self.assertEqual(len(calls), n)
+        st = self.r.groups()[0]["zones"]
+        self.assertTrue(next(x for x in st if x["id"] == "a")["setup_ok"])
+
     def test_batch_not_on_router_and_flagged(self):
         self.assertEqual(self.batch["roaming_id"], self.g["id"])
         self.assertEqual(self.batch["roaming_name"], "Réseau ADER")

@@ -33,12 +33,31 @@
         m.className = "notice show notice-err";
         m.textContent = "Le serveur ADER Roaming n'est pas en marche sur cette installation (ports UDP " + d.ports.join(" et ") +
           "). Il démarre avec ADER LINK sur le serveur en ligne (VPS).";
+      } else if (d.ignored && d.ignored.length) {
+        m.className = "notice show notice-err";
+        m.innerHTML = "Des routeurs non reconnus essaient d'utiliser ADER Roaming : " + d.ignored.map(function (x) {
+          return "<b>" + esc(x.ip) + "</b>" + (x.name ? " (" + esc(x.name) + ")" : "") + " " + ago(x.ago);
+        }).join(", ") + ". Vérifiez qu'ils sont bien cochés dans un réseau.";
       } else m.className = "notice";
       render();
     }).catch(function (e) { $("list").innerHTML = "<div class='card empty'>" + esc(e.message) + "</div>"; });
   }
   api("/api/me").then(function (me) { $("demoBanner").hidden = !me.demo; }).catch(function () {});
 
+  function ago(sec) {
+    if (sec < 90) return "à l'instant";
+    if (sec < 3600) return "il y a " + Math.round(sec / 60) + " min";
+    if (sec < 86400) return "il y a " + Math.round(sec / 3600) + " h";
+    return "il y a " + Math.round(sec / 86400) + " j";
+  }
+  // Chaque routeur du réseau : réglé ou non, et dernier contact avec le serveur Roaming
+  function zoneLine(z) {
+    var setup = z.setup_ok === true ? "<span class='ok'>✓ Réglé</span>" :
+      z.setup_ok === false ? "<span class='bad'>✗ " + esc(z.setup_msg) + "</span>" : "<span class='wait'>… " + esc(z.setup_msg) + "</span>";
+    var seen = z.seen_ago != null ? "<span class='ok'>Contact " + ago(z.seen_ago) + "</span>" :
+      "<span class='wait'>Aucun contact depuis le démarrage</span>";
+    return "<li>" + ic("router") + "<b>" + esc(z.name) + "</b>" + setup + seen + "</li>";
+  }
   function stat(cls, n, label) { return "<div class='lstat " + cls + "'><strong class='num'>" + nf.format(n) + "</strong><span>" + label + "</span></div>"; }
   function render() {
     $("list").innerHTML = S.groups.length ? S.groups.map(function (g) {
@@ -47,7 +66,7 @@
         "<div class='ro-main'><div class='ro-name'>" + esc(g.name) + "</div>" +
         "<div class='ro-sub'>" + nf.format(g.zones.length) + " routeur" + (g.zones.length > 1 ? "s" : "") + " · " +
         nf.format(g.connected) + " connecté" + (g.connected > 1 ? "s" : "") + " en Roaming</div></div></div>" +
-        "<div class='ro-chips'>" + g.zones.map(function (z) { return "<span class='ro-chip'>" + ic("router") + esc(z.name) + "</span>"; }).join("") + "</div>" +
+        "<ul class='ro-status'>" + g.zones.map(zoneLine).join("") + "</ul>" +
         "<div class='lstats lstats-3'>" + stat("ls-total", g.tickets, "Tickets Roaming") + stat("ls-left", g.left, "Restants") + stat("ls-live", g.used, "Utilisés") + "</div>" +
         "<div class='act-grid act-grid-3'>" +
         "<button type='button' class='act' data-act='script' data-id='" + g.id + "'>" + ic("terminal") + "<span>Script</span></button>" +
@@ -123,7 +142,8 @@
     sheet((fresh ? "Réseau créé — " : "Script — ") + g.name, "terminal", "<p class='pane-sub'>Préparation du script…</p>");
     api("/api/roaming/" + g.id + "/script").then(function (d) {
       $("bsBody").innerHTML =
-        "<div class='info-box'><strong>Collez ce script dans chaque routeur du réseau</strong> (" +
+        "<div class='info-box ok-box'><strong>ADER LINK règle maintenant les routeurs tout seul</strong> (en 1 à 2 minutes, s'ils sont en ligne). Ce script ne sert qu'en secours, si un routeur reste en rouge.</div>" +
+        "<div class='info-box'><strong>En secours : collez ce script dans le routeur</strong> (" +
         g.zones.map(function (z) { return esc(z.name); }).join(", ") + ").<br>Winbox → <strong>New Terminal</strong> → coller → <strong>Entrée</strong>.</div>" +
         "<label class='q-label' for='script'>Script ADER Roaming</label>" +
         "<textarea id='script' class='script' readonly rows='6'>" + esc(d.script) + "</textarea>" +

@@ -515,7 +515,10 @@ def make_handler(app):
                 groups = app.roaming.groups(who.can_zone, who.username, who.role == "admin")
                 for g in groups:
                     g.pop("secret", None)
-                return {"groups": groups, "listening": app.roaming.listening, "ports": app.roaming.ports(),
+                now = int(time.time())
+                ignored = [{"ip": ip, "ago": now - ts, "name": nm} for ip, (ts, nm) in app.roaming.ignored.items()
+                           if now - ts < 3600] if who.role == "admin" else []
+                return {"groups": groups, "listening": app.roaming.listening, "ports": app.roaming.ports(), "ignored": ignored,
                         "zones": [{"id": z["id"], "name": z["name"],
                                    "group": (app.roaming.group_of_zone(z["id"]) or {}).get("id")} for z in app.zones_for(who)]}
             if len(parts) == 5 and parts[2] == "roaming" and parts[4] == "script" and parts[3].isdigit() and app.roaming:
@@ -525,7 +528,9 @@ def make_handler(app):
                 z = next((app.routers.zone(zid["id"]) for zid in g["zones"]), None)
                 wg = app.routers.wg()
                 srv = wg.get("server", "10.66.0.1") if wg else (app.routers._base(z, self.headers.get("Host", ""))[1] if z else "")
-                return {"script": "\r\n".join(app.roaming.script_lines(g, srv)), "server": srv}
+                lines = (app.roaming.script_lines(g, srv, wg.get("ovpn_server", "10.67.0.1")) if wg
+                         else app.roaming.script_lines(g, srv))
+                return {"script": "\r\n".join(lines), "server": srv}
             if app.tickets and p == "/api/batches":
                 zid = q.get("zone", [None])[0]
                 lots = [b for b in app.tickets.list_batches(limit=300, zone_id=zid) if app.batch_visible(b, who)]

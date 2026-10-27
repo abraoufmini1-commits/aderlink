@@ -33,6 +33,10 @@ class Roaming:
         self.threads = []
         self.listening = {}
         self.kicker = None  # fonction (zone_id, code) qui coupe une session sur un routeur
+        self.wg_conf = lambda: None  # réglages du tunnel (branché au démarrage)
+        self.seen = {}      # zone_id -> heure du dernier paquet RADIUS reçu de ce routeur
+        self.ignored = {}   # adresse -> (heure, nom) : paquets d'un routeur non reconnu
+        self.setup = {}     # zone_id -> {"ok": bool, "msg": str, "ts": int} : réglage automatique
         with store.lock:
             store.db.executescript(
                 """
@@ -84,7 +88,7 @@ class Roaming:
         for (gid,) in rows:
             g = self.group(gid)
             if is_admin or g["owner"] == owner:
-                g["zones"] = [z for z in g["zones"] if visible(z["id"])]
+                g["zones"] = [dict(z, **self.zone_status(z["id"])) for z in g["zones"] if visible(z["id"])]
                 out.append(g)
         return out
 
@@ -113,6 +117,7 @@ class Roaming:
             self.store.db.executemany("INSERT OR REPLACE INTO roaming_members (zone_id, group_id) VALUES (?,?)",
                                       [(z, gid) for z in zone_ids])
             self.store.db.commit()
+        self.reset_setup(gid)
         return self.group(gid)
 
     def delete_group(self, gid):
@@ -147,6 +152,70 @@ class Roaming:
             'on-error={ :do { /ip hotspot profile set [find] login-by=mac,http-chap,http-pap,cookie } on-error={} }',
             f':put "ADER Roaming active : reseau {_ascii(group["name"])}"',
         ]
+
+    # --- réglage automatique des routeurs (sans coller de script) ------------------------------
+    def server_for(self, zone):
+        """Adresse du serveur RADIUS vue par ce routeur : par son tunnel (WireGuard ou OpenVPN)."""
+        wg = self.wg_conf() or {}
+        r = zone.get("router") or {}
+        if not wg or r.get("tunnel") not in ("wg", "ovpn"):
+            return None
+        return wg.get("ovpn_server", "10.67.0.1") if r["tunnel"] == "ovpn" else wg.get("server", "10.66.0.1")
+
+    def apply_zone(self, zone, api, g=None):
+        """Règle le RADIUS ADER Roaming sur un routeur, par l'API. Renvoie (ok, message)."""
+        from .routeros import RouterOSError
+        g = g or self.group_of_zone(zone["id"])
+        if not g:
+            return True, "Pas dans un réseau Roaming"
+        srv = self.server_for(zone)
+        if not srv:
+            return False, "Pas de tunnel vers le serveur : recollez la ligne d'installation du routeur"
+        auth, acct = self.ports()
+        try:
+            for r in api.query("/radius/print", "?comment=ADER Roaming"):
+                api.query("/radius/remove", f"=.id={r['.id']}")
+            api.query("/radius/add", "=service=hotspot", f"=address={srv}", f"=secret={g['secret']}",
+                      f"=authentication-port={auth}", f"=accounting-port={acct}", "=timeout=3s", "=comment=ADER Roaming")
+            for prof in api.query("/ip/hotspot/profile/print"):
+                api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
+                          f"=radius-interim-update={INTERIM_S}s")
+                try:  # connexion automatique par l'adresse MAC (roaming sans retaper le code)
+                    api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=mac,http-chap,http-pap,cookie",
+                              "=mac-auth-mode=mac-as-username-and-password")
+                except RouterOSError:
+                    try:
+                        api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=login-by=mac,http-chap,http-pap,cookie")
+                    except RouterOSError:
+                        pass
+        except RouterOSError as e:
+            return False, f"Le routeur a refusé : {e}"
+        return True, f"Réglé (serveur {srv})"
+
+    def ensure(self, zone, api):
+        """Appelé à chaque relevé : règle le routeur une fois (puis toutes les heures s'il a échoué)."""
+        g = self.group_of_zone(zone["id"])
+        if not g:
+            return
+        st = self.setup.get(zone["id"])
+        if st and st.get("gid") == g["id"] and (st["ok"] or time.time() - st["ts"] < 3600):
+            return
+        ok, msg = self.apply_zone(zone, api, g)
+        self.setup[zone["id"]] = {"ok": ok, "msg": msg, "ts": int(time.time()), "gid": g["id"]}
+        if not ok:
+            self.log(f"ADER Roaming : {zone['name']} : {msg}")
+
+    def reset_setup(self, gid):
+        """Après une modification du réseau : chaque routeur sera réglé à nouveau au prochain relevé."""
+        for zid in self.member_zones(gid):
+            self.setup.pop(zid, None)
+
+    def zone_status(self, zid):
+        now = int(time.time())
+        st = self.setup.get(zid) or {}
+        seen = self.seen.get(zid)
+        return {"setup_ok": st.get("ok"), "setup_msg": st.get("msg", "En attente du prochain relevé"),
+                "last_seen": seen, "seen_ago": now - seen if seen else None}
 
     # --- RADIUS -------------------------------------------------------------------------------
     def zone_for(self, ip, pkt):
@@ -338,8 +407,10 @@ class Roaming:
             return None
         zone = self.zone_for(ip, pkt)
         if not zone:
+            self.ignored[ip] = (int(time.time()), pkt.text(R.NAS_IDENTIFIER) or "")
             self.log(f"ADER Roaming : paquet ignoré de {ip} (routeur inconnu ou hors réseau)")
             return None
+        self.seen[zone["id"]] = int(time.time())
         g = self.group_of_zone(zone["id"])
         if not g:
             return None

@@ -196,6 +196,7 @@ def cmd_serve(args):
     from .roaming import Roaming
     roaming = Roaming(cfg, store, tickets, collector)
     tickets.roaming = roaming
+    roaming.wg_conf = routers.wg
 
     def kick(zid, code):  # coupe un ticket Roaming sur un routeur (et le désactive s'il y était en local)
         from .tickets import open_router
