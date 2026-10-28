@@ -450,14 +450,14 @@ def make_handler(app):
             if p == "/login":
                 if "e" not in q and app.users and app.users.is_expired(self.token_user()):
                     return self.redirect("/login?e=expire",
-                                         f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
+                                         f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
                 return self.static("login.html")
             if p == "/api/public":
                 return self.json({"demo": app.demo, "contact": app.config.get("contact") or {}})
             if p.startswith("/static/"):
                 return self.static(p[len("/static/"):])
             if p == "/logout":
-                return self.redirect("/login", f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
+                return self.redirect("/login", f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
             who = self.who()
             if p in PAGES:
                 page, right = PAGES[p]
@@ -782,7 +782,7 @@ def make_handler(app):
                                           and verify_password(password, admin["password_hash"])) else None
             if ok:
                 app.throttle.reset(ip)
-                cookie = (f"{COOKIE}={make_token(secret, ok)}; Path=/; HttpOnly; SameSite=Strict; "
+                cookie = (f"{COOKIE}={make_token(secret, ok)}; Path=/; HttpOnly; SameSite=Lax; "
                           f"Max-Age={SESSION_HOURS * 3600}" + ("; Secure" if secure or self.https() else ""))
                 return self.redirect("/", cookie)
             app.throttle.fail(ip)

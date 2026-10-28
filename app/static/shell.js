@@ -235,3 +235,16 @@
     try { navigator.serviceWorker.register("/sw.js").catch(function () {}); } catch (e) { /* ignoré */ }
   }
 })();
+// Dans l'application installée : les pages d'ADER LINK (impression…) s'ouvrent dans la même fenêtre,
+// pas dans le navigateur à côté (qui demanderait de se reconnecter)
+(function () {
+  var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (!standalone) return;
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[target=_blank]");
+    if (!a || !a.href) return;
+    try { if (new URL(a.href).origin !== location.origin) return; } catch (err) { return; }
+    e.preventDefault();
+    location.href = a.href;
+  });
+})();
