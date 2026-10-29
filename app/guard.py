@@ -28,8 +28,9 @@ class GuardError(Exception):
     pass
 
 
-def make_backup(config, store):
-    """Sauvegarde complète : config.json + copie cohérente de la base."""
+def make_backup(config, store, light=False):
+    """Sauvegarde complète : config.json + copie cohérente de la base.
+    light=True : sans l'historique des graphiques (relevés et journal) — pour Telegram, limité à 50 Mo."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(config, ensure_ascii=False, indent=2))
@@ -38,6 +39,14 @@ def make_backup(config, store):
             dst = sqlite3.connect(copy)
             with store.lock:
                 store.db.backup(dst)
+            if light:
+                for table in ("samples", "events"):
+                    try:
+                        dst.execute(f"DELETE FROM {table}")
+                    except sqlite3.Error:
+                        pass
+                dst.commit()
+                dst.execute("VACUUM")
             dst.close()
             zf.write(copy, "aderlink.db")
         zf.writestr("LISEZMOI.txt", "Sauvegarde ADER LINK. A restaurer dans Parametres > Restaurer une sauvegarde.\n")
@@ -174,10 +183,16 @@ class Guard:
             f.unlink()
         sent = False
         t = self.tg()
-        if send and t.get("token") and t.get("chat_id") and len(data) < 45_000_000:
+        if send and t.get("token") and t.get("chat_id"):
+            doc, caption = data, f"Sauvegarde ADER LINK du {self.today()}"
+            if len(doc) >= 45_000_000:  # Telegram refuse plus de 50 Mo : on envoie tout sauf l'historique des graphiques
+                doc = make_backup(self.config, self.store, light=True)
+                caption += " (sans l'historique des graphiques)"
             try:
-                self._api("sendDocument", {"chat_id": t["chat_id"], "caption": f"Sauvegarde ADER LINK du {self.today()}"},
-                          {"document": (name, data)}, timeout=120)
+                if len(doc) >= 45_000_000:
+                    raise GuardError("sauvegarde trop grosse pour Telegram")
+                self._api("sendDocument", {"chat_id": t["chat_id"], "caption": caption},
+                          {"document": (name, doc)}, timeout=180)
                 sent = True
             except GuardError as e:
                 self.log(f"Sauvegarde non envoyée sur Telegram : {e}")
