@@ -41,7 +41,7 @@
   function render() {
     $("list").innerHTML = S.plans.map(function (p) {
       var n = S.clients[p.id] || 0;
-      var items = ["<li><span class='y'>✓</span>" + nf.format(p.routers) + " routeurs</li>",
+      var items = ["<li><span class='y'>✓</span>De 1 à " + nf.format(p.routers) + " routeurs</li>",
         "<li><span class='y'>✓</span>Tickets, lots, rapports, alertes Telegram, sauvegarde</li>"].concat(FEATS.map(function (f) {
         if (f === "roaming") {
           var t = roamText(p);

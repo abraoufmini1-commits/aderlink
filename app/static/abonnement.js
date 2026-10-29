@@ -43,7 +43,7 @@
     var b = d.billing;
     $("plans").innerHTML = d.plans.map(function (p) {
       var current = plan && plan.id === p.id;
-      var items = ["<li><span class='y'>✓</span>" + nf.format(p.routers) + " routeurs</li>"].concat(FEATS.map(function (f) {
+      var items = ["<li><span class='y'>✓</span>De 1 à " + nf.format(p.routers) + " routeurs</li>"].concat(FEATS.map(function (f) {
         var on = p.features.indexOf(f) >= 0;
         var t = f === "roaming" && on ? (p.roaming_routers === -1 ? "ADER Roaming sans limite" : "ADER Roaming : " + p.roaming_routers + " routeurs") : labels[f];
         return "<li class='" + (on ? "" : "off") + "'><span class='" + (on ? "y" : "n") + "'>" + (on ? "✓" : "—") + "</span>" + esc(t) + "</li>";
