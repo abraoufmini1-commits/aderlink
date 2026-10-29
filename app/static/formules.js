@@ -25,6 +25,11 @@
         .then(function (d) { if (!r.ok) throw new Error(d.error || "Erreur " + r.status); return d; });
     });
   }
+  // seule la plus petite formule (Découverte) s'écrit « De 1 à 3 routeurs »
+  function routersText(p, all) {
+    var min = Math.min.apply(null, all.map(function (x) { return x.routers; }));
+    return (p.routers === min ? "De 1 à " : "") + nf.format(p.routers) + " routeurs";
+  }
   function roamText(p) {
     if (p.features.indexOf("roaming") < 0) return null;
     return p.roaming_routers === -1 ? "ADER Roaming sans limite" : "ADER Roaming : " + p.roaming_routers + " routeur" + (p.roaming_routers > 1 ? "s" : "");
@@ -39,9 +44,10 @@
   api("/api/me").then(function (me) { $("demoBanner").hidden = !me.demo; }).catch(function () {});
 
   function render() {
+    var plansList = S.plans;
     $("list").innerHTML = S.plans.map(function (p) {
       var n = S.clients[p.id] || 0;
-      var items = ["<li><span class='y'>✓</span>De 1 à " + nf.format(p.routers) + " routeurs</li>",
+      var items = ["<li><span class='y'>✓</span>" + routersText(p, plansList) + "</li>",
         "<li><span class='y'>✓</span>Tickets, lots, rapports, alertes Telegram, sauvegarde</li>"].concat(FEATS.map(function (f) {
         if (f === "roaming") {
           var t = roamText(p);

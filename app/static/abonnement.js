@@ -12,6 +12,11 @@
   }
   function money(n) { return nf.format(Math.round(n || 0)) + " F"; }
   function date(ts) { return new Date(ts * 1000).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }); }
+  // seule la plus petite formule (Découverte) s'écrit « De 1 à 3 routeurs »
+  function routersText(p, all) {
+    var min = Math.min.apply(null, all.map(function (x) { return x.routers; }));
+    return (p.routers === min ? "De 1 à " : "") + nf.format(p.routers) + " routeurs";
+  }
   function wa(contact, text) {
     var phone = String(contact.phone || "").replace(/[^0-9]/g, "");
     if (phone && phone.length <= 8) phone = "227" + phone;  // numéro du Niger sans indicatif
@@ -41,9 +46,10 @@
     })).join("");
 
     var b = d.billing;
+    var plansList = d.plans;
     $("plans").innerHTML = d.plans.map(function (p) {
       var current = plan && plan.id === p.id;
-      var items = ["<li><span class='y'>✓</span>De 1 à " + nf.format(p.routers) + " routeurs</li>"].concat(FEATS.map(function (f) {
+      var items = ["<li><span class='y'>✓</span>" + routersText(p, plansList) + "</li>"].concat(FEATS.map(function (f) {
         var on = p.features.indexOf(f) >= 0;
         var t = f === "roaming" && on ? (p.roaming_routers === -1 ? "ADER Roaming sans limite" : "ADER Roaming : " + p.roaming_routers + " routeurs") : labels[f];
         return "<li class='" + (on ? "" : "off") + "'><span class='" + (on ? "y" : "n") + "'>" + (on ? "✓" : "—") + "</span>" + esc(t) + "</li>";

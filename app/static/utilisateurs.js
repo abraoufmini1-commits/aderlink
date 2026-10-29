@@ -467,7 +467,7 @@
       "</strong><span>" + esc(x.text) + " · " + nf.format(u.routers_used) + " routeur" + (u.routers_used > 1 ? "s" : "") + " utilisé" + (u.routers_used > 1 ? "s" : "") + "</span></div></div>" +
       "<form id='pForm' class='form-grid form-grid-2' autocomplete='off' novalidate>" +
       "<div class='f span2'><label for='pPlan'>Formule</label><select id='pPlan'>" + plans.map(function (p) {
-        return "<option value='" + p.id + "'" + (p.id === u.plan_id || (!u.plan_id && p.highlight) ? " selected" : "") + ">" + esc(p.name) + " — " + money(p.price) + " / mois · 1 à " + p.routers + " routeurs</option>";
+        return "<option value='" + p.id + "'" + (p.id === u.plan_id || (!u.plan_id && p.highlight) ? " selected" : "") + ">" + esc(p.name) + " — " + money(p.price) + " / mois · " + p.routers + " routeurs</option>";
       }).join("") + "</select></div>" +
       "<div class='f'><label for='pExtra'>Routeurs en plus</label><input id='pExtra' type='number' min='0' step='1' inputmode='numeric' value='" + (u.extra_routers || 0) + "'>" +
       "<small class='hint'>" + money(b.extra_router_price) + " par routeur et par mois</small></div>" +
