@@ -3,7 +3,7 @@
 - Chaque nuit (3 h, heure locale) : une sauvegarde complète dans data/backups, 14 jours gardés,
   et une copie envoyée sur Telegram si c'est relié (copie hors du serveur).
 - Alertes Telegram : routeur hors ligne (après 3 min, pour ignorer les micro-coupures),
-  routeur de retour, et un résumé des ventes chaque soir à 21 h.
+  routeur de retour, et à minuit le résumé des ventes de la journée qui vient de finir.
 """
 import io
 import json
@@ -20,7 +20,7 @@ from pathlib import Path
 
 KEEP_DAYS = 14
 OFFLINE_DELAY = 180
-BACKUP_HOUR, SUMMARY_HOUR = 3, 21
+BACKUP_HOUR, SUMMARY_HOUR = 3, 0  # résumé à minuit : la journée entière
 NAME_RE = re.compile(r"aderlink-auto-\d{4}-\d{2}-\d{2}\.zip")
 
 
@@ -146,7 +146,7 @@ class Guard:
         self.tg()["who"] = " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x)
         self.save(self.config)
         self.send("✅ <b>ADER LINK est relié à ce Telegram.</b>\nVous recevrez ici les alertes de vos routeurs, "
-                  "le résumé des ventes à 21 h et la sauvegarde de chaque nuit.")
+                  "le résumé des ventes de la journée à minuit et la sauvegarde de chaque nuit.")
         return self.status()
 
     def unlink(self):
@@ -229,13 +229,20 @@ class Guard:
         return z["name"] if z else zid
 
     def summary(self, now=None):
+        """Résumé de la journée : envoyé à minuit, il porte sur la journée qui vient de finir (0 h → 24 h)."""
         now = now or int(time.time())
         midnight = (now + self.offset()) // 86400 * 86400 - self.offset()
-        sales = self.tickets.sales(midnight) if self.tickets else []
-        n = sum(s["tickets"] for s in sales)
-        amount = sum(s["amount"] for s in sales)
+        start, end = (midnight - 86400, midnight) if SUMMARY_HOUR == 0 else (midnight, now)
+        n = amount = 0
+        if self.tickets:
+            try:
+                tot = self.tickets.report(start, end, self.offset())["totals"]
+                n, amount = tot["tickets"], tot["amount"]
+            except Exception:  # base incomplète (tests) : on retombe sur le calcul simple
+                sales = [s for s in self.tickets.sales(start)]
+                n, amount = sum(x["tickets"] for x in sales), sum(x["amount"] for x in sales)
         nf = lambda x: f"{int(x):,}".replace(",", " ")
-        lines = [f"📊 <b>Ventes du {time.strftime('%d/%m', time.gmtime(now + self.offset()))}</b>",
+        lines = [f"📊 <b>Ventes du {time.strftime('%d/%m', time.gmtime(start + self.offset()))}</b>",
                  f"{nf(amount)} F CFA · {nf(n)} ticket{'s' if n > 1 else ''}"]
         if self.alerted:
             lines.append("Hors ligne : " + ", ".join(_esc(self._name(z)) for z in self.alerted))
