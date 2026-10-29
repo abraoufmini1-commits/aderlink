@@ -2,7 +2,7 @@
 
 - Chaque nuit (3 h, heure locale) : une sauvegarde complète dans data/backups, 14 jours gardés,
   et une copie envoyée sur Telegram si c'est relié (copie hors du serveur).
-- Alertes Telegram : routeur hors ligne (après 3 min, pour ignorer les micro-coupures),
+- Alertes Telegram : routeur hors ligne (après 1 heure, pour ignorer les petites coupures),
   routeur de retour, et à minuit le résumé des ventes de la journée qui vient de finir.
 """
 import io
@@ -19,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 KEEP_DAYS = 14
-OFFLINE_DELAY = 180
+OFFLINE_DELAY = 3600   # une alerte seulement si le routeur reste coupé 1 heure (pas de messages pour les petites coupures)
 BACKUP_HOUR, SUMMARY_HOUR = 3, 0  # résumé à minuit : la journée entière
 NAME_RE = re.compile(r"aderlink-auto-\d{4}-\d{2}-\d{2}\.zip")
 
@@ -65,6 +65,7 @@ class Guard:
         self.last_event = int(time.time())
         self.pending = {}   # zone_id -> heure de la coupure, en attente de confirmation
         self.alerted = set()
+        self._load_state()
         self.done = {}      # tâches du jour déjà faites : {"backup": "2026-10-23", ...}
 
     # --- outils ------------------------------------------------------------------------------------
@@ -202,6 +203,39 @@ class Guard:
         return {"name": name, "size": len(data), "telegram": sent}
 
     # --- alertes -----------------------------------------------------------------------------------
+    # Les coupures en cours sont gardées dans la base : une mise à jour (redémarrage) ne fait ni oublier
+    # une coupure, ni renvoyer une alerte déjà envoyée.
+    def _load_state(self):
+        try:
+            with self.store.lock:
+                self.store.db.execute("CREATE TABLE IF NOT EXISTS guard_state (zone_id TEXT PRIMARY KEY, since INTEGER, alerted INTEGER)")
+                self.store.db.commit()
+                rows = self.store.db.execute("SELECT zone_id, since, alerted FROM guard_state").fetchall()
+                last = self.store.db.execute("SELECT value FROM guard_meta WHERE key = 'last_event'").fetchone() \
+                    if self.store.db.execute("SELECT name FROM sqlite_master WHERE name = 'guard_meta'").fetchone() else None
+        except Exception:
+            return
+        for zid, since, alerted in rows:
+            if alerted:
+                self.alerted.add(zid)
+            else:
+                self.pending[zid] = since
+        if last:
+            self.last_event = max(int(last[0]), self.last_event - 6 * 3600)
+
+    def _save_state(self):
+        try:
+            with self.store.lock:
+                db = self.store.db
+                db.execute("CREATE TABLE IF NOT EXISTS guard_meta (key TEXT PRIMARY KEY, value TEXT)")
+                db.execute("DELETE FROM guard_state")
+                db.executemany("INSERT INTO guard_state VALUES (?,?,0)", list(self.pending.items()))
+                db.executemany("INSERT INTO guard_state VALUES (?,0,1)", [(z,) for z in self.alerted])
+                db.execute("INSERT OR REPLACE INTO guard_meta VALUES ('last_event', ?)", (str(self.last_event),))
+                db.commit()
+        except Exception:
+            pass
+
     def check_events(self, now=None):
         now = now or int(time.time())
         with self.store.lock:
@@ -216,13 +250,17 @@ class Guard:
                 if zid in self.alerted:
                     self.alerted.discard(zid)
                     self.send(f"🟢 <b>{_esc(self._name(zid))}</b> est de nouveau en ligne.")
+        changed = False
         for zid, since in list(self.pending.items()):
             if now - since >= OFFLINE_DELAY:
+                changed = True
                 self.pending.pop(zid)
                 self.alerted.add(zid)
                 self.send(f"🔴 <b>{_esc(self._name(zid))}</b> est hors ligne depuis "
                           f"{time.strftime('%H:%M', time.gmtime(since + self.offset()))}.\n"
                           "Vérifiez le courant et la connexion Internet du routeur.")
+        if rows or changed:
+            self._save_state()
 
     def _name(self, zid):
         z = next((z for z in self.config.get("zones", []) if z["id"] == zid), None)

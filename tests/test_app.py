@@ -1176,21 +1176,21 @@ class GuardTests(unittest.TestCase):
         g = Guard(cfg, store, tmp)
         sent = []
         g.send = lambda text: sent.append(text) or True
-        t0 = int(time.time()) - 1000
+        t0 = int(time.time()) - 5000
         g.last_event = t0 - 1
         store.add_event(t0, "z1", "offline", "Zone A hors ligne")
-        g.check_events(t0 + 60)
-        self.assertEqual(sent, [])                       # micro-coupure : on attend
-        g.check_events(t0 + 200)
+        g.check_events(t0 + 1800)
+        self.assertEqual(sent, [])                       # coupure de 30 min : pas encore d'alerte
+        g.check_events(t0 + 3600)
         self.assertIn("Zone A</b> est hors ligne", sent[-1])
-        store.add_event(t0 + 300, "z1", "online", "Zone A de nouveau en ligne")
-        g.check_events(t0 + 310)
+        store.add_event(t0 + 3700, "z1", "online", "Zone A de nouveau en ligne")
+        g.check_events(t0 + 3710)
         self.assertIn("de nouveau en ligne", sent[-1])
         # coupure de 1 min : aucune alerte
         n = len(sent)
-        store.add_event(t0 + 400, "z1", "offline", "x")
-        store.add_event(t0 + 450, "z1", "online", "x")
-        g.check_events(t0 + 700)
+        store.add_event(t0 + 3800, "z1", "offline", "x")
+        store.add_event(t0 + 3850, "z1", "online", "x")
+        g.check_events(t0 + 4000)
         self.assertEqual(len(sent), n)
         # sauvegardes : 14 gardées
         from pathlib import Path
