@@ -46,6 +46,14 @@ class Store:
     def __init__(self, path):
         self.lock = threading.Lock()
         self.db = sqlite3.connect(path, check_same_thread=False)
+        # WAL : les écritures du collecteur ne bloquent plus les lectures, et chaque enregistrement est bien plus rapide
+        try:
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=NORMAL")
+            self.db.execute("PRAGMA temp_store=MEMORY")
+            self.db.execute("PRAGMA cache_size=-32000")
+        except sqlite3.Error:
+            pass
         self.db.executescript(
             """
             CREATE TABLE IF NOT EXISTS samples (

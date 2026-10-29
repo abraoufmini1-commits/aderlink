@@ -282,6 +282,34 @@ class App:
         return not who.is_reseller or b.get("created_by") == who.username
 
 
+_STATIC_CACHE = {}
+
+
+def static_file(path):
+    """Contenu d'un fichier statique et son empreinte (relu seulement s'il a changé)."""
+    st = path.stat()
+    hit = _STATIC_CACHE.get(path)
+    if hit and hit[0] == (st.st_mtime_ns, st.st_size):
+        return hit[1], hit[2]
+    body = path.read_bytes()
+    tag = hashlib.sha1(body).hexdigest()[:12]
+    _STATIC_CACHE[path] = ((st.st_mtime_ns, st.st_size), body, tag)
+    return body, tag
+
+
+_ASSET = re.compile(rb'(["\'])/static/([A-Za-z0-9._-]+)\1')
+
+
+def versioned_html(body):
+    """Ajoute ?v=<empreinte> aux fichiers d'une page : le navigateur les garde, et une mise à jour change l'adresse."""
+    def sub(m):
+        f = STATIC / m.group(2).decode()
+        if not f.is_file():
+            return m.group(0)
+        return m.group(1) + b"/static/" + m.group(2) + b"?v=" + static_file(f)[1].encode() + m.group(1)
+    return _ASSET.sub(sub, body)
+
+
 PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/imprimer": ("print.html", None),
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
@@ -297,6 +325,8 @@ def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         server_version = "ADERLINK"
         sys_version = ""
+        protocol_version = "HTTP/1.1"  # connexion gardée ouverte avec Caddy : chaque clic va plus vite
+        timeout = 75
 
         def log_message(self, fmt, *args):  # journal discret
             if "/api/" not in self.path:
@@ -340,8 +370,12 @@ def make_handler(app):
             self.send_header("Content-Security-Policy",
                              "default-src 'self'; img-src 'self' data:; style-src 'self'; "
                              "script-src 'self'; frame-ancestors 'none'")
-            self.send_header("Cache-Control", "no-store")
-            for k, v in (headers or {}).items():
+            headers = dict(headers or {})
+            if self.command not in ("GET", "HEAD"):  # le corps n'est pas toujours lu en entier : on ne réutilise pas la connexion
+                self.close_connection = True
+                self.send_header("Connection", "close")
+            self.send_header("Cache-Control", headers.pop("Cache-Control", "no-store"))
+            for k, v in headers.items():
                 self.send_header(k, v)
             self.end_headers()
             if self.command != "HEAD":
@@ -360,14 +394,22 @@ def make_handler(app):
             """Vrai si le visiteur est en HTTPS (derrière Caddy, avec un nom de domaine)."""
             return bool(app.config.get("behind_proxy")) and self.headers.get("X-Forwarded-Proto", "") == "https"
 
-        def static(self, name):
+        def static(self, name, versioned=False):
             path = (STATIC / name).resolve()
             if STATIC.resolve() not in path.parents or not path.is_file():
                 return self.send(404, b"Introuvable")
             ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
                 ctype += "; charset=utf-8"
-            self.send(200, path.read_bytes(), ctype)
+            body, tag = static_file(path)
+            if path.suffix == ".html":  # pages : toujours fraîches, mais leurs fichiers sont gardés par le navigateur
+                body = versioned_html(body)
+                return self.send(200, body, ctype)
+            etag = f'"{tag}"'
+            cache = ("public, max-age=31536000, immutable" if versioned else "no-cache")
+            if self.headers.get("If-None-Match") == etag:
+                return self.send(304, b"", ctype, {"ETag": etag, "Cache-Control": cache})
+            return self.send(200, body, ctype, {"ETag": etag, "Cache-Control": cache})
 
         def call(self, fn, status=200):
             from .routers import RouterError
@@ -516,7 +558,7 @@ def make_handler(app):
             if p == "/api/public":
                 return self.json({"demo": app.demo, "contact": app.config.get("contact") or {}})
             if p.startswith("/static/"):
-                return self.static(p[len("/static/"):])
+                return self.static(p[len("/static/"):], versioned="v" in q)
             if p == "/logout":
                 return self.redirect("/login", f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
             who = self.who()
