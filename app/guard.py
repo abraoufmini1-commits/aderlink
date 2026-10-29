@@ -234,19 +234,41 @@ class Guard:
         midnight = (now + self.offset()) // 86400 * 86400 - self.offset()
         start, end = (midnight - 86400, midnight) if SUMMARY_HOUR == 0 else (midnight, now)
         n = amount = 0
+        by_zone = []
         if self.tickets:
             try:
-                tot = self.tickets.report(start, end, self.offset())["totals"]
-                n, amount = tot["tickets"], tot["amount"]
+                rep = self.tickets.report(start, end, self.offset())
+                n, amount = rep["totals"]["tickets"], rep["totals"]["amount"]
+                by_zone = [z for z in rep.get("by_zone", []) if z.get("tickets")]
             except Exception:  # base incomplète (tests) : on retombe sur le calcul simple
                 sales = [s for s in self.tickets.sales(start)]
                 n, amount = sum(x["tickets"] for x in sales), sum(x["amount"] for x in sales)
         nf = lambda x: f"{int(x):,}".replace(",", " ")
         lines = [f"📊 <b>Ventes du {time.strftime('%d/%m', time.gmtime(start + self.offset()))}</b>",
-                 f"{nf(amount)} F CFA · {nf(n)} ticket{'s' if n > 1 else ''}"]
+                 f"<b>Total : {nf(amount)} F CFA</b> · {nf(n)} ticket{'s' if n > 1 else ''}"]
+        if by_zone:
+            lines.append("")
+            lines.append("<b>Par routeur :</b>")
+            for z in sorted(by_zone, key=lambda z: -z["amount"]):
+                lines.append(f"• {_esc(z['label'])} : {nf(z['amount'])} F ({nf(z['tickets'])})")
+            silent = len(self.config.get("zones", [])) - len(by_zone)
+            if silent > 0:
+                lines.append(f"Sans vente : {silent} routeur{'s' if silent > 1 else ''}")
         if self.alerted:
-            lines.append("Hors ligne : " + ", ".join(_esc(self._name(z)) for z in self.alerted))
+            lines.append("")
+            lines.append("🔴 Hors ligne : " + ", ".join(_esc(self._name(z)) for z in self.alerted))
         return "\n".join(lines)
+
+    def send_long(self, text, limit=3800):
+        """Telegram limite un message à 4096 caractères : on coupe entre deux lignes."""
+        part = ""
+        for line in text.split("\n"):
+            if part and len(part) + len(line) + 1 > limit:
+                self.send(part)
+                part = ""
+            part += ("\n" if part else "") + line
+        if part:
+            self.send(part)
 
     def tick(self, now=None):
         now = now or int(time.time())
@@ -262,7 +284,7 @@ class Guard:
                 self.send(f"⚠️ La sauvegarde automatique a échoué : {_esc(e)}")
         if local_h == SUMMARY_HOUR and self.done.get("summary") != day:
             self.done["summary"] = day
-            self.send(self.summary(now))
+            self.send_long(self.summary(now))
 
     def start(self):
         def loop():
