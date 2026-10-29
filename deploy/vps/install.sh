@@ -257,13 +257,36 @@ ufw allow 1812:1813/udp >/dev/null
 ufw route allow proto tcp to 10.66.0.0/23 port 8291 >/dev/null   # Winbox à distance (par le tunnel)
 ufw route allow proto tcp to 10.66.0.0/23 port 80 >/dev/null     # WebFig à distance (par le tunnel)
 ufw route allow proto tcp to 10.66.0.0/23 port 53000:53999 >/dev/null  # appareils derrière les routeurs (antennes…)   # ADER Roaming (RADIUS : tickets valables sur plusieurs routeurs)
+# routeurs RouterOS 6 (tunnel OpenVPN 10.67.0.x) : mêmes accès à distance
+ufw route allow proto tcp to 10.67.0.0/24 port 8291 >/dev/null
+ufw route allow proto tcp to 10.67.0.0/24 port 80 >/dev/null
+ufw route allow proto tcp to 10.67.0.0/24 port 53000:53999 >/dev/null
 ufw --force enable >/dev/null
+
+# Protection contre ceux qui essaient de deviner le mot de passe root (SSH) :
+# 5 essais ratés en 10 minutes -> l'adresse est bloquée 1 heure (2 jours si elle recommence)
+apt-get install -y -qq fail2ban >/dev/null
+cat > /etc/fail2ban/jail.d/aderlink.local <<'F2B'
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+bantime.increment = true
+bantime.maxtime = 2d
+
+[sshd]
+enabled = true
+backend = systemd
+F2B
+systemctl enable --now fail2ban >/dev/null 2>&1
+systemctl restart fail2ban >/dev/null 2>&1 || true
 
 sleep 2
 if systemctl is-active --quiet aderlink; then STATE="EN MARCHE"; else STATE="PROBLEME (journalctl -u aderlink)"; fi
 echo
 echo "================================================================"
 echo "  ADER LINK est installé : $STATE"
+if systemctl is-active --quiet fail2ban; then echo "  Protection SSH (fail2ban) : active"; fi
 if [ -n "$DOMAIN" ]; then echo "  Ouvrez :  https://$DOMAIN   (installable comme une application)"; else echo "  Ouvrez :  http://$IP"; fi
 if [ "$FIRST" = 1 ]; then
   echo "  Identifiant : admin"
