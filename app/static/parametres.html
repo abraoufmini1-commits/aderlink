@@ -43,7 +43,8 @@
 
     <h3 class="sub-h">Sauvegarde automatique</h3>
     <p class="pane-sub" id="bkAutoText">Chaque nuit à 3 h, ADER LINK fait une sauvegarde complète et garde les 14 derniers jours.</p>
-    <div class="ra-list" id="bkList"></div>
+    <button class="btn btn-outline btn-block bk-toggle" type="button" id="bkToggle" aria-expanded="false" aria-controls="bkList">Voir les sauvegardes</button>
+    <div class="ra-list" id="bkList" hidden></div>
     <div class="bk-actions"><button class="btn btn-outline" type="button" id="bkNow">Sauvegarder maintenant</button></div>
     <div class="notice" id="secMsg" role="status"></div>
   </section>

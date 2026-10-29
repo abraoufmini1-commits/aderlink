@@ -147,6 +147,17 @@
       return "<div class='ra-row'><div class='ra-main'><div class='ra-label'>" + esc(when(b.ts)) + "</div><div class='ra-value mono'>" + esc(b.name) + " · " + size(b.size) + "</div></div>" +
         "<a class='btn btn-sm btn-outline' href='/api/backups/" + encodeURIComponent(b.name) + "' download>" + ic("download") + " Télécharger</a></div>";
     }).join("") : "<p class='pane-sub'>Aucune sauvegarde automatique pour l'instant : la première sera faite cette nuit, ou cliquez sur « Sauvegarder maintenant ».</p>";
+    // la liste reste fermée : un bouton l'ouvre (pas besoin de tout faire défiler)
+    var last = s.backups[0];
+    $("bkToggle").hidden = !s.backups.length;
+    $("bkToggle").textContent = ($("bkList").hidden ? "Voir les sauvegardes" : "Masquer les sauvegardes") +
+      " (" + s.backups.length + ")" + (last && $("bkList").hidden ? " · dernière : " + when(last.ts) : "");
+    $("bkToggle").onclick = function () {
+      $("bkList").hidden = !$("bkList").hidden;
+      this.setAttribute("aria-expanded", String(!$("bkList").hidden));
+      render(s);
+    };
+    if (!s.backups.length) $("bkList").hidden = false;  // message « aucune sauvegarde » visible
     $("bkNow").disabled = !s.available;
     if (!s.available) $("bkAutoText").textContent = "La sauvegarde automatique fonctionne sur le serveur en ligne (pas en démonstration).";
   }

@@ -1371,3 +1371,5 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .ro-diag { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
 .ro-diag ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
 .ro-diag .ok { color: var(--good); } .ro-diag .bad { color: var(--critical); } .ro-diag .wait { color: var(--ink-3); }
+
+.bk-toggle { margin: 8px 0 10px; }
