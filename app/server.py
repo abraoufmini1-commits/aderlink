@@ -91,6 +91,7 @@ class App:
         self.config = config
         self.collector = collector
         self.store = store
+        self._cache, self._cache_lock = {}, threading.Lock()
         self.demo = demo
         self.tickets = tickets
         self.routers = routers
@@ -130,9 +131,8 @@ class App:
         bucket = 300 if hours <= 24 else 3600
         state = self.collector.snapshot()
         since = int(time.time()) - hours * 3600
-        with self.store.lock:
-            peaks = dict(self.store.db.execute(
-                "SELECT zone_id, MAX(active) FROM samples WHERE ts >= ? AND online = 1 GROUP BY zone_id", (since,)).fetchall())
+        peaks = self._cached(("peaks", hours), lambda: dict(self._peaks(since)))
+        logos = self._cached(("logos",), lambda: self.routers.logo_ids() if self.routers else set(), ttl=60)
         zones = []
         for z in self.zones_for(who):
             s = state.get(z["id"], {})
@@ -140,7 +140,7 @@ class App:
             zones.append({
                 "id": z["id"], "name": z["name"], "location": z.get("location", ""),
                 "status": "pending" if pending else "unknown" if not s else ("online" if s.get("online") else "offline"),
-                "has_logo": bool(self.routers and self.routers.logo(z["id"]) is not None),
+                "has_logo": z["id"] in logos,
                 "error": s.get("error"), "checked_at": s.get("checked_at"),
                 "last_seen": s.get("last_seen"), "identity": s.get("identity"),
                 "board": s.get("board"), "version": s.get("version"),
@@ -155,16 +155,41 @@ class App:
         zone_ids, mine = self.sales_scope(who)
         sales = self.tickets.sales(midnight, zone_ids, mine) if self.tickets else []
         if who.zones is None:
-            history = self.store.history(since, bucket)
+            history = self._cached(("hist", hours), lambda: self.store.history(since, bucket))
         else:
-            merged = {}
-            for zid in who.zones:
-                for pt in self.store.history(since, bucket, zid):
-                    m = merged.setdefault(pt["ts"], {"ts": pt["ts"], "active": 0, "rx_bps": 0, "tx_bps": 0})
-                    for k in ("active", "rx_bps", "tx_bps"):
-                        m[k] += pt[k]
-            history = [merged[k] for k in sorted(merged)]
+            history = self._cached(("hist", hours, tuple(sorted(who.zones))), lambda: self._merged_history(who.zones, since, bucket))
         events = [e for e in self.store.events(40) if who.can_zone(e["zone_id"])][:15]
+        return self._overview_result(zones, online, sales, history, events, who)
+
+    # Les courbes et pics changent seulement à chaque passage du collecteur : on les garde 30 s
+    def _cached(self, key, fn, ttl=30):
+        now = time.time()
+        with self._cache_lock:
+            hit = self._cache.get(key)
+            if hit and now - hit[0] < ttl:
+                return hit[1]
+        val = fn()
+        with self._cache_lock:
+            if len(self._cache) > 200:
+                self._cache.clear()
+            self._cache[key] = (now, val)
+        return val
+
+    def _peaks(self, since):
+        with self.store.lock:
+            return self.store.db.execute(
+                "SELECT zone_id, MAX(active) FROM samples WHERE ts >= ? AND online = 1 GROUP BY zone_id", (since,)).fetchall()
+
+    def _merged_history(self, zone_ids, since, bucket):
+        merged = {}
+        for zid in zone_ids:
+            for pt in self.store.history(since, bucket, zid):
+                m = merged.setdefault(pt["ts"], {"ts": pt["ts"], "active": 0, "rx_bps": 0, "tx_bps": 0})
+                for k in ("active", "rx_bps", "tx_bps"):
+                    m[k] += pt[k]
+        return [merged[k] for k in sorted(merged)]
+
+    def _overview_result(self, zones, online, sales, history, events, who):
         return {
             "sales_today": {"tickets": sum(s["tickets"] for s in sales),
                             "amount": sum(s["amount"] for s in sales)},
@@ -759,7 +784,7 @@ def make_handler(app):
                 if action == "devices":
                     self.need_feature(who, "antennas")
                 acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
-                        "logo": lambda: R.set_logo(zid, body.get("image")),
+                        "logo": lambda: (app._cache.pop(("logos",), None), R.set_logo(zid, body.get("image")))[1],
                         "pv": lambda: R.create_pv(zid, body),
                         "winbox": lambda: R.open_winbox(zid, self.client_ip() in ("127.0.0.1", "::1")),
                         "devices": lambda: R.add_device(zid, body)}

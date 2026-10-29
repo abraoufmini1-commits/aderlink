@@ -437,6 +437,11 @@ class Routers:
         rows, _ = self._q("SELECT mime, data FROM zone_logos WHERE zone_id = ?", (zone_id,))
         return rows[0] if rows else None
 
+    def logo_ids(self):
+        """Les routeurs qui ont un logo (sans charger les images)."""
+        rows, _ = self._q("SELECT zone_id FROM zone_logos")
+        return {r[0] for r in rows}
+
     def set_logo(self, zone_id, data_url):
         import base64
         self.zone(zone_id)

@@ -54,6 +54,18 @@
   var ICON_UNK = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.5" fill="currentColor"/></svg>';
 
   // --- chargement --------------------------------------------------------------------
+  // Les derniers chiffres sont gardés sur l'appareil : à l'ouverture on les montre tout de suite,
+  // puis on les remplace dès que le serveur répond (vidé à la connexion, voir login.js).
+  var CACHE_KEY = "aderlink-dash";
+  function fromCache() {
+    try {
+      var c = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!c || c.range !== state.range || !c.data || !c.data.totals) return;
+      state.data = c.data;
+      render();
+      $("updated").textContent = "Actualisation…";
+    } catch (e) {}
+  }
   function load() {
     return fetch("/api/overview?range=" + state.range, { credentials: "same-origin" })
       .then(function (r) {
@@ -62,6 +74,7 @@
       })
       .then(function (d) {
         state.data = d;
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ range: state.range, data: d })); } catch (e) {}
         render();
         if (state.sheetZone) loadSessions(state.sheetZone, true);
       })
@@ -304,6 +317,7 @@
   });
   document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
 
+  fromCache();
   load();
   setInterval(function () { if (!document.hidden) load(); }, REFRESH_MS);
 })();

@@ -1,4 +1,5 @@
 (function () {
+  try { localStorage.removeItem("aderlink-dash"); } catch (err) {}  // un autre compte ne doit pas voir les chiffres précédents
   var qs = new URLSearchParams(location.search), e = qs.get("e");
   var who = qs.get("u");
   if (who && /^[a-z0-9._-]{1,32}$/.test(who)) {  // lien envoyé par WhatsApp : identifiant déjà rempli

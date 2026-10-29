@@ -52,6 +52,8 @@ class Store:
                 ts INTEGER, zone_id TEXT, online INTEGER,
                 active INTEGER, rx_bps INTEGER, tx_bps INTEGER);
             CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
+            CREATE INDEX IF NOT EXISTS idx_samples_cover ON samples(ts, zone_id, online, active, rx_bps, tx_bps);
+            CREATE INDEX IF NOT EXISTS idx_samples_zone ON samples(zone_id, ts);
             CREATE TABLE IF NOT EXISTS events (
                 ts INTEGER, zone_id TEXT, kind TEXT, message TEXT);
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
