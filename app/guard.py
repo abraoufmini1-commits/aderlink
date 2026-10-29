@@ -118,6 +118,9 @@ class Guard:
     # --- Telegram : réglage en 2 temps (jeton du bot, puis « /start » envoyé au bot) ----------------
     def set_token(self, token):
         token = (token or "").strip()
+        # on accepte aussi le message entier de BotFather collé tel quel : on y retrouve le jeton
+        found = re.search(r"\d{5,12}:[A-Za-z0-9_-]{30,50}", token)
+        token = found.group(0) if found else token
         if not re.fullmatch(r"\d{5,12}:[A-Za-z0-9_-]{30,50}", token):
             raise GuardError("Ce jeton ne ressemble pas à celui de BotFather (ex : 123456789:AAH…)")
         old = dict(self.tg())
