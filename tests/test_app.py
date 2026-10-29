@@ -584,6 +584,36 @@ class UsersAndRolesTests(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
+    def test_plans_and_limits(self):
+        """Formules : prix avec remise, limites de routeurs, options bloquées selon la formule."""
+        P = self.users.plans
+        names = [p["name"] for p in P.list()]
+        self.assertEqual(names, ["Découverte", "Starter", "Pro", "Business"])
+        pro = P.by_name("Pro")
+        self.assertEqual(P.quote(pro, 12)["total"], 122400)  # 12 000 × 12 − 15 %
+        self.assertEqual(P.quote(pro, 1, extra_routers=2)["total"], 13400)
+        admin = self.login("admin", "admin-secret-1")
+        code, c = self.post(admin, "/api/users", {"name": "Ibrahim", "username": "ibra", "role": "client",
+                                                  "password": "ibra-123456", "max_routers": 2})
+        self.assertEqual(code, 200, c)
+        dec = P.by_name("Découverte")
+        code, res = self.post(admin, f"/api/users/{c['id']}/plan", {"plan_id": dec["id"], "months": 3})
+        self.assertEqual(code, 200, res)
+        self.assertEqual(res["plan_name"], "Découverte")
+        self.assertEqual(res["max_routers"], 3)
+        self.assertEqual(res["history"][0]["amount"], 8550)  # 3 000 × 3 − 5 %
+        self.assertGreater(res["expires_at"], time.time() + 80 * 86400)
+        me = self.login("ibra", "ibra-123456")
+        info = self.get(me, "/api/me")
+        self.assertFalse(info["features"]["roaming"])
+        code, err = self.post(me, "/api/roaming", {"name": "Réseau", "zones": ["a", "b"]})
+        self.assertEqual(code, 403)
+        sub = self.get(me, "/api/subscription")
+        self.assertEqual(sub["plan"]["name"], "Découverte")
+        self.assertEqual(len(sub["plans"][0]["quotes"]), 4)
+        code, _ = self.post(me, "/api/plans", {"name": "Pirate", "price": 0, "routers": 999})  # un gérant ne crée pas de formule
+        self.assertEqual(code, 403)
+
     def test_roles(self):
         admin = self.login("admin", "admin-secret-1")
         code, rev = self.post(admin, "/api/users", {"name": "Moussa Issa", "username": "moussa", "role": "revendeur",

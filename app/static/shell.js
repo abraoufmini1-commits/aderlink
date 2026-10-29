@@ -33,6 +33,7 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6.5 15h4"/>',
     phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
   };
   function icon(name) {
@@ -48,6 +49,8 @@
     { id: "routeurs", href: "/routeurs", label: "Routeurs", icon: "router", need: "gerant" },
     { id: "roaming", href: "/roaming", label: "ADER Roaming", icon: "zones", roles: "admin client" },
     { id: "utilisateurs", href: "/utilisateurs", label: "Utilisateurs", icon: "users", roles: "admin client" },
+    { id: "formules", href: "/formules", label: "Formules", icon: "card", need: "admin" },
+    { id: "abonnement", href: "/abonnement", label: "Mon abonnement", icon: "card", roles: "client" },
     { id: "parametres", href: "/parametres", label: "Paramètres", icon: "gear", need: "admin" },
     { id: "profil", href: "/profil", label: "Mon profil", icon: "user" }
   ];

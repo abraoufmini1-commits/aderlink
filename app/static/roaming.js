@@ -42,7 +42,16 @@
       render();
     }).catch(function (e) { $("list").innerHTML = "<div class='card empty'>" + esc(e.message) + "</div>"; });
   }
-  api("/api/me").then(function (me) { $("demoBanner").hidden = !me.demo; }).catch(function () {});
+  api("/api/me").then(function (me) {
+    $("demoBanner").hidden = !me.demo;
+    if (me.features && !me.features.roaming) {  // pas compris dans la formule
+      var m = $("srvMsg");
+      m.className = "notice show notice-err";
+      m.innerHTML = "ADER Roaming n'est pas compris dans votre formule" + (me.plan ? " " + esc(me.plan.name) : "") +
+        ". <a class='link' href='/abonnement'>Voir les formules</a>";
+      $("addBtn").hidden = true;
+    }
+  }).catch(function () {});
 
   function ago(sec) {
     if (sec < 90) return "à l'instant";

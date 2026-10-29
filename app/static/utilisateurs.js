@@ -53,6 +53,7 @@
 
   // --- liste ---------------------------------------------------------------------------
   function load() {
+    if (!S.plans) api("/api/plans").then(function (d) { S.plans = d.plans; S.billing = d.billing; }).catch(function () { S.plans = []; });
     return api("/api/users").then(function (d) {
       S.users = d.users; S.zones = d.zones; S.role = d.role;
       var client = d.role === "client";
@@ -100,13 +101,15 @@
       return "<tr class='" + (u.active ? "" : "is-off") + "'>" +
         "<td data-label='Gérant'><div class='c-who'><span class='avatar av-blue'>" + esc(initials(u.name)) + "</span><div><strong>" + esc(u.name) + "</strong>" +
         (u.active ? "" : " <span class='pill pill-offline'>Désactivé</span>") +
-        "<div class='rp-sub'><span class='mono'>" + esc(u.username) + "</span>" + (u.phone ? " · " + esc(u.phone) : "") + "</div></div></div></td>" +
+        "<div class='rp-sub'><span class='mono'>" + esc(u.username) + "</span>" + (u.phone ? " · " + esc(u.phone) : "") + "</div>" +
+        "<div class='rp-sub'><span class='plan-pill" + (u.plan_name ? "" : " plan-none") + "'>" + esc(u.plan_name ? "Formule " + u.plan_name : "Sans formule") + "</span>" +
+        (u.extra_routers ? " + " + nf.format(u.extra_routers) + " routeur" + (u.extra_routers > 1 ? "s" : "") : "") + "</div></div></div></td>" +
         "<td data-label='Routeurs'><div class='c-quota" + (full ? " is-full" : "") + "'><strong class='num'>" + nf.format(u.routers_used) + " / " + nf.format(u.max_routers) + "</strong>" +
         "<div class='quota-meter'><span data-w='" + Math.min(100, u.max_routers ? u.routers_used / u.max_routers * 100 : 100) + "'></span></div>" +
         "<div class='rp-sub'>" + (full ? "limite atteinte" : nf.format(u.max_routers - u.routers_used) + " libre" + (u.max_routers - u.routers_used > 1 ? "s" : "")) + "</div></div></td>" +
         "<td data-label='Abonnement'><span class='c-sub " + x.cls + "'>" + esc(x.title) + "</span><div class='rp-sub'>" + esc(x.text) + "</div></td>" +
         "<td data-label='Ventes du mois' class='r'><strong class='num'>" + money(u.stats.amount) + "</strong><div class='rp-sub'>" + nf.format(u.stats.sold) + " tickets</div></td>" +
-        "<td data-label='Actions' class='r'><div class='c-acts'>" + btn("routers", "+ Routeurs", "") + btn("subscription", "+ Temps", "") +
+        "<td data-label='Actions' class='r'><div class='c-acts'>" + btn("plan", "Formule", "") + btn("subscription", "+ Temps", "") +
         btn("more", "•••", "btn-outline c-more") + "</div></td></tr>";
     }).join("") : "<tr><td colspan='5' class='pane-sub'>" + (all.length ? "Aucun gérant ne correspond." :
       "Aucun gérant pour l'instant. Cliquez sur <strong>+ Ajouter</strong> et choisissez <strong>Gérant</strong>.") + "</td></tr>";
@@ -116,7 +119,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var u = byId(+b.dataset.id);
-    ({ routers: routers, subscription: subscription, more: more })[b.dataset.act](u);
+    ({ routers: routers, subscription: subscription, more: more, plan: planSheet })[b.dataset.act](u);
   });
 
   function render() {
@@ -363,13 +366,14 @@
 
   function more(u) {
     var item = function (a, label, icon, cls) { return "<button type='button' class='menu-item" + (cls ? " " + cls : "") + "' data-m='" + a + "'>" + ic(icon) + "<span>" + label + "</span></button>"; };
-    sheet(u.name, "user", "<div class='menu-list'>" + item("send", "Envoyer l'accès par WhatsApp", "phone") + item("edit", "Modifier les informations", "pencil") + item("password", "Nouveau mot de passe", "key") +
+    sheet(u.name, "user", "<div class='menu-list'>" + item("send", "Envoyer l'accès par WhatsApp", "phone") + item("edit", "Modifier les informations", "pencil") +
+      (u.role === "client" && !u.plan_id ? item("routers", "Nombre de routeurs (compte sans formule)", "router") : "") + item("password", "Nouveau mot de passe", "key") +
       item("toggle", u.active ? "Désactiver le compte" : "Activer le compte", u.active ? "x" : "check") +
       item("delete", "Supprimer le compte", "trash", "is-danger") + "</div>");
     $("bsBody").onclick = function (e) {
       var b = e.target.closest("[data-m]");
       if (!b) return;
-      ({ send: function () { sendAccess(u); }, edit: function () { edit(u); }, password: function () { password(u); }, toggle: function () { close(); toggle(u); }, delete: function () { remove(u); } })[b.dataset.m]();
+      ({ send: function () { sendAccess(u); }, edit: function () { edit(u); }, routers: function () { routers(u); }, password: function () { password(u); }, toggle: function () { close(); toggle(u); }, delete: function () { remove(u); } })[b.dataset.m]();
     };
   }
 
@@ -452,6 +456,57 @@
       send({ action: "stop" }, b);
     });
     loadHistory(u);
+  }
+
+  // --- formule d'un gérant : formule, routeurs en plus, durée payée, montant ----------------------
+  function planSheet(u) {
+    var plans = S.plans || [], b = S.billing || { discounts: {}, extra_router_price: 0 };
+    if (!plans.length) { sheet("Formule de " + u.name, "layers", "<p class='pane-sub'>Créez d'abord vos formules dans <a class='link' href='/formules'>Formules</a>.</p>"); return; }
+    var x = sub(u);
+    var body = "<div class='sub-state " + x.cls + "'>" + ic("clock") + "<div><strong>" + esc(u.plan_name ? "Formule " + u.plan_name : "Sans formule") + " · " + esc(x.title) +
+      "</strong><span>" + esc(x.text) + " · " + nf.format(u.routers_used) + " routeur" + (u.routers_used > 1 ? "s" : "") + " utilisé" + (u.routers_used > 1 ? "s" : "") + "</span></div></div>" +
+      "<form id='pForm' class='form-grid form-grid-2' autocomplete='off' novalidate>" +
+      "<div class='f span2'><label for='pPlan'>Formule</label><select id='pPlan'>" + plans.map(function (p) {
+        return "<option value='" + p.id + "'" + (p.id === u.plan_id || (!u.plan_id && p.highlight) ? " selected" : "") + ">" + esc(p.name) + " — " + money(p.price) + " / mois · " + p.routers + " routeurs</option>";
+      }).join("") + "</select></div>" +
+      "<div class='f'><label for='pExtra'>Routeurs en plus</label><input id='pExtra' type='number' min='0' step='1' inputmode='numeric' value='" + (u.extra_routers || 0) + "'>" +
+      "<small class='hint'>" + money(b.extra_router_price) + " par routeur et par mois</small></div>" +
+      "<div class='f'><label for='pMonths'>Durée payée</label><select id='pMonths'><option value='0'>Ne pas prolonger (changer de formule)</option>" +
+      [1, 3, 6, 12].map(function (m) { return "<option value='" + m + "'" + (m === 1 ? " selected" : "") + ">" + m + " mois" + (b.discounts[m] ? " (−" + b.discounts[m] + " %)" : "") + "</option>"; }).join("") +
+      "</select></div>" +
+      "<div class='f'><label for='pAmount'>Montant reçu (F CFA)</label><input id='pAmount' type='number' min='0' step='100' inputmode='numeric'></div>" +
+      "<div class='f'><label for='pNote'>Note (facultatif)</label><input id='pNote' maxlength='80' placeholder='ex : payé par NITA, réf 12345'></div>" +
+      "<div class='sub-preview span2' id='pPrev'></div></form><div class='notice' id='bsMsg' role='status'></div>";
+    sheet("Formule de " + u.name, "layers", body,
+      "<button class='btn-prev' type='button' data-close>Annuler</button><button class='btn btn-big' type='button' id='pSave'>" + ic("check") + " Enregistrer</button>");
+    function plan() { return plans.find(function (p) { return p.id === +$("pPlan").value; }); }
+    function quote() {
+      var p = plan(), m = +$("pMonths").value, extra = Math.max(0, +$("pExtra").value || 0);
+      var monthly = p.price + extra * b.extra_router_price, disc = +(b.discounts[m] || 0);
+      return { p: p, m: m, extra: extra, total: Math.round(monthly * m * (100 - disc) / 100) };
+    }
+    var touched = false;
+    function update() {
+      var q = quote(), now = Math.floor(Date.now() / 1000);
+      if (!touched) $("pAmount").value = q.m ? q.total : "";
+      $("pAmount").disabled = !q.m;
+      var start = u.expires_at && u.expires_at > now ? u.expires_at : now;
+      var end = new Date(start * 1000); end.setMonth(end.getMonth() + q.m);
+      var tooSmall = u.routers_used > q.p.routers + q.extra;
+      $("pPrev").innerHTML = (tooSmall ? "<span class='bad'>Ce gérant a déjà " + u.routers_used + " routeurs : ajoutez des routeurs en plus ou prenez une formule plus grande.</span><br>" : "") +
+        "<strong>" + esc(q.p.name) + "</strong> : " + (q.p.routers + q.extra) + " routeurs" +
+        (q.m ? " · à payer <strong>" + money(q.total) + "</strong> · nouvelle fin le <strong>" + esc(fullWhen(Math.floor(end / 1000))) + "</strong>" : " · la date de fin ne change pas");
+      $("pSave").disabled = tooSmall;
+    }
+    ["pPlan", "pExtra", "pMonths"].forEach(function (id) { $(id).addEventListener("input", update); $(id).addEventListener("change", update); });
+    $("pAmount").addEventListener("input", function () { touched = true; });
+    update();
+    $("pSave").addEventListener("click", function () {
+      var q = quote(), btn = this; btn.disabled = true;
+      api("/api/users/" + u.id + "/plan", { plan_id: q.p.id, extra_routers: q.extra, months: q.m, amount: $("pAmount").value, note: $("pNote").value })
+        .then(function () { return load(); }).then(function () { planSheet(byId(u.id)); msg("ok", "Formule enregistrée."); })
+        .catch(function (e) { msg("err", esc(e.message)); btn.disabled = false; });
+    });
   }
 
   // --- envoyer l'accès : le mot de passe n'est jamais gardé en clair, on en crée un nouveau -----

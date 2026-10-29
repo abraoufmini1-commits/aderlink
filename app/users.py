@@ -49,6 +49,11 @@ class Principal:
         self.expires_at = expires_at  # None = sans limite
         self.max_routers = max_routers  # clients : nombre de routeurs autorisés
         self.parent = None  # équipe d'un client : identifiant de ce client
+        self.limits = None  # formule du client (ou de son client pour une équipe) ; None = sans formule, tout permis
+
+    def has(self, feature):
+        """Option comprise dans la formule ? (administrateur et comptes sans formule : oui)"""
+        return self.is_admin or not self.limits or bool(self.limits["features"].get(feature))
 
     @property
     def is_admin(self):
@@ -73,7 +78,8 @@ class Principal:
         return {"username": self.username, "name": self.name, "role": self.role,
                 "role_label": ROLE_LABEL[self.role], "zones": self.zones, "commission": self.commission,
                 "expires_at": self.expires_at, "now": int(time.time()), "max_routers": self.max_routers,
-                "parent": self.parent}
+                "parent": self.parent, "plan": (self.limits or {}).get("plan"),
+                "features": (self.limits or {}).get("features") if self.limits else None}
 
 
 class Users:
@@ -108,7 +114,15 @@ class Users:
                     store.db.execute(sql)
                 except Exception:
                     pass
+            for sql in ("ALTER TABLE subscription_log ADD COLUMN amount INTEGER",
+                        "ALTER TABLE subscription_log ADD COLUMN plan TEXT"):
+                try:
+                    store.db.execute(sql)
+                except Exception:
+                    pass
             store.db.commit()
+        from .plans import Plans
+        self.plans = Plans(config, store)  # formules d'abonnement (ajoute plan_id / extra_routers aux comptes)
 
     def _q(self, sql, params=(), commit=False):
         with self.store.lock:
@@ -119,7 +133,7 @@ class Users:
             return rows, cur.lastrowid
 
     COLS = ("id", "username", "name", "phone", "role", "password_hash", "zones", "commission",
-            "active", "created_at", "last_login", "expires_at", "max_routers", "parent")
+            "active", "created_at", "last_login", "expires_at", "max_routers", "parent", "plan_id", "extra_routers")
 
     def _row(self, row):
         u = dict(zip(self.COLS, row))
@@ -181,9 +195,12 @@ class Users:
         expires = u["expires_at"]
         if u["parent"]:  # l'équipe suit l'abonnement du client
             expires = (self._get(u["parent"]) or {}).get("expires_at")
+        owner = (self._get(u["parent"]) or u) if u["parent"] else u  # l'équipe suit la formule de son client
+        lim = self.plans.limits(owner.get("plan_id"), owner.get("extra_routers"), owner.get("max_routers") or 0)
         p = Principal(u["username"], u["name"], u["role"], zones,
-                      u["id"], u["commission"] or 0, expires, u["max_routers"] or 0)
+                      u["id"], u["commission"] or 0, expires, lim["max_routers"] if u["role"] == "client" else (u["max_routers"] or 0))
         p.parent = u["parent"]
+        p.limits = lim if owner.get("plan_id") else None
         return p
 
     # --- gestion -----------------------------------------------------------------------
@@ -370,10 +387,53 @@ class Users:
                                            str(data.get("note") or "")[:80] or None), commit=True)
         return dict(self.public(self.get(user_id)), history=self.history(user_id))
 
+    def set_plan(self, user_id, data):
+        """Donne une formule à un client, et (si months > 0) prolonge son abonnement d'autant de mois.
+
+        data : plan_id, extra_routers, months (0 = changer de formule sans prolonger), amount (payé), note
+        """
+        user = self.get(user_id)
+        if not user or user["role"] != "client" or user["parent"]:
+            raise UserError("Seuls les comptes Gérant ont une formule")
+        plan = self.plans.get(int(data.get("plan_id") or 0))
+        if not plan or plan["archived"]:
+            raise UserError("Choisissez une formule")
+        try:
+            extra = max(0, min(500, int(str(data.get("extra_routers") or 0))))
+            months = int(str(data.get("months") or 0))
+        except ValueError:
+            raise UserError("Nombres invalides")
+        if months not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 24):
+            raise UserError("Durée : de 1 à 12 mois")
+        used = len(self.routers.owned(user["username"])) if self.routers else 0
+        if used > plan["routers"] + extra:
+            raise UserError(f"Ce client a déjà {used} routeurs : la formule {plan['name']} n'en permet que "
+                            f"{plan['routers'] + extra}. Ajoutez des routeurs en plus ou choisissez une formule plus grande")
+        now = int(time.time())
+        old = user["expires_at"]
+        quote = self.plans.quote(plan, months, extra) if months else None
+        try:
+            amount = int(str(data.get("amount") if data.get("amount") not in (None, "") else (quote or {}).get("total", 0)).replace(" ", ""))
+        except ValueError:
+            raise UserError("Montant invalide")
+        new = old
+        if months:
+            start = old if old and old > now else now
+            new = add_months(start, months, self.offset())
+        self._q("UPDATE users SET plan_id = ?, extra_routers = ?, expires_at = ? WHERE id = ?",
+                (plan["id"], extra, new, user_id), commit=True)
+        label = f"Formule {plan['name']}" + (f" + {extra} routeur{'s' if extra > 1 else ''}" if extra else "") + \
+                (f" · {months} mois" if months else " (changement)")
+        self._q("INSERT INTO subscription_log (user_id, at, action, label, old_expires, new_expires, note, amount, plan) "
+                "VALUES (?,?,?,?,?,?,?,?,?)", (user_id, now, "plan", label, old, new,
+                                               str(data.get("note") or "")[:80] or None, amount if months else None,
+                                               plan["name"]), commit=True)
+        return dict(self.public(self.get(user_id)), history=self.history(user_id))
+
     def history(self, user_id, limit=30):
-        rows, _ = self._q("SELECT at, action, label, old_expires, new_expires, note FROM subscription_log "
+        rows, _ = self._q("SELECT at, action, label, old_expires, new_expires, note, amount, plan FROM subscription_log "
                           "WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
-        return [dict(zip(("at", "action", "label", "old_expires", "new_expires", "note"), r)) for r in rows]
+        return [dict(zip(("at", "action", "label", "old_expires", "new_expires", "note", "amount", "plan"), r)) for r in rows]
 
     def reset_password(self, user_id, data):
         user = self.get(user_id)
@@ -435,7 +495,9 @@ class Users:
                 "zone_names": [zones[z] for z in u["zones"] if z in zones], "commission": u["commission"] or 0,
                 "active": bool(u["active"]), "created_at": u["created_at"], "last_login": u["last_login"],
                 "expires_at": u["expires_at"], "expired": self.expired(u), "now": int(time.time()),
-                "max_routers": u["max_routers"] or 0,
+                "max_routers": self.plans.limits(u.get("plan_id"), u.get("extra_routers"), u["max_routers"] or 0)["max_routers"],
+                "plan_id": u.get("plan_id"), "plan_name": (self.plans.get(u.get("plan_id")) or {}).get("name"),
+                "extra_routers": u.get("extra_routers") or 0,
                 "routers_used": len(self.routers.owned(u["username"])) if self.routers else 0,
                 "parent": u["parent"]}
 

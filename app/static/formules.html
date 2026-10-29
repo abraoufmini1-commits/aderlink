@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a3f8a">
+<title>ADER LINK · Formules</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ADER LINK">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="formules">
+<div class="demo-banner" id="demoBanner" hidden>Démonstration — données fictives</div>
+<main>
+  <div class="page-head">
+    <div>
+      <h1>Formules</h1>
+      <p class="subtitle">Les offres que vous vendez à vos gérants : prix, nombre de routeurs et options.</p>
+    </div>
+    <button class="btn" type="button" id="addBtn">+ Nouvelle formule</button>
+  </div>
+  <div id="list" class="pl-grid"></div>
+  <section class="card" aria-labelledby="bTitle">
+    <h2 id="bTitle">Réglages communs</h2>
+    <p class="pane-sub">Remises quand le gérant paie à l'avance, essai gratuit, routeur en plus et jours de grâce.</p>
+    <form id="bForm" class="form-grid form-grid-2" autocomplete="off" novalidate>
+      <div class="f"><label for="d3">Remise 3 mois (%)</label><input id="d3" type="number" min="0" max="90" step="0.5" inputmode="decimal"></div>
+      <div class="f"><label for="d6">Remise 6 mois (%)</label><input id="d6" type="number" min="0" max="90" step="0.5" inputmode="decimal"></div>
+      <div class="f"><label for="d12">Remise 12 mois (%)</label><input id="d12" type="number" min="0" max="90" step="0.5" inputmode="decimal"></div>
+      <div class="f"><label for="xr">Prix d'un routeur en plus (F / mois)</label><input id="xr" type="number" min="0" step="50" inputmode="numeric"></div>
+      <div class="f"><label for="td">Essai gratuit (jours)</label><input id="td" type="number" min="0" max="60" step="1" inputmode="numeric"></div>
+      <div class="f"><label for="tp">Formule de l'essai</label><select id="tp"></select></div>
+      <div class="f"><label for="gd">Jours de grâce après la fin</label><input id="gd" type="number" min="0" max="30" step="1" inputmode="numeric"></div>
+    </form>
+    <div class="notice" id="bMsg" role="status"></div>
+    <div class="bk-actions"><button class="btn" type="button" id="bSave">Enregistrer les réglages</button></div>
+  </section>
+</main>
+
+<div class="bs-shade" id="bsShade"></div>
+<section class="bs" id="bs" role="dialog" aria-modal="true" aria-labelledby="bsTitle" hidden>
+  <div class="bs-head">
+    <span class="bs-ico" id="bsIco" aria-hidden="true"></span>
+    <h2 id="bsTitle"></h2>
+    <button class="icon-btn icon-btn-plain" type="button" id="bsClose" aria-label="Fermer"></button>
+  </div>
+  <div class="bs-body" id="bsBody"></div>
+  <div class="bs-foot" id="bsFoot"></div>
+</section>
+
+<script src="/static/shell.js"></script>
+<script src="/static/formules.js"></script>
+</body>
+</html>

@@ -52,6 +52,11 @@ def read_token(secret, token):
     return username
 
 
+def FEATURE_LABEL():
+    from .plans import FEATURE_LABEL as L
+    return L
+
+
 class LoginThrottle:
     """5 échecs en 15 minutes depuis une même adresse -> blocage temporaire."""
 
@@ -222,6 +227,30 @@ class App:
             rep["commission"] = round(rep["totals"]["amount"] * (who.commission or 0) / 100)
         return rep
 
+    def subscription_info(self, who):
+        """Page « Mon abonnement » : formule, date de fin, ce qui est utilisé, et toutes les formules avec leurs prix."""
+        U = self.users
+        owner = U._get(who.parent) if who.parent else U._get(who.username)
+        if not owner:
+            return {"none": True, "contact": self.config.get("contact") or {}}
+        P = U.plans
+        plan = P.get(owner.get("plan_id"))
+        lim = P.limits(owner.get("plan_id"), owner.get("extra_routers"), owner.get("max_routers") or 0)
+        owned = [z["id"] for z in self.routers.owned(owner["username"])] if self.routers else []
+        in_roaming = 0
+        if self.roaming:
+            rows, _ = self.roaming._q("SELECT zone_id FROM roaming_members")
+            in_roaming = len([r for (r,) in rows if r in owned])
+        now = int(time.time())
+        months = (1, 3, 6, 12)
+        return {"name": owner["name"], "plan": plan, "extra_routers": owner.get("extra_routers") or 0,
+                "limits": lim, "expires_at": owner["expires_at"], "now": now,
+                "days_left": None if not owner["expires_at"] else max(0, (owner["expires_at"] - now) // 86400),
+                "used": {"routers": len(owned), "roaming": in_roaming},
+                "plans": [dict(p, quotes=[P.quote(p, m) for m in months]) for p in P.list()],
+                "billing": P.billing(), "labels": FEATURE_LABEL(), "contact": self.config.get("contact") or {},
+                "history": U.history(owner["id"], 12) if not who.parent else []}
+
     def batch_visible(self, b, who):
         if not b or not who.can_zone(b["zone_id"]):
             return False
@@ -232,7 +261,8 @@ PAGES = {"/": ("dashboard.html", None), "/tickets": ("tickets.html", None), "/im
          "/lots": ("lots.html", None), "/controle": ("controle.html", None),
          "/routeurs": ("routeurs.html", "routers_read"), "/parametres": ("parametres.html", "settings"),
          "/utilisateurs": ("utilisateurs.html", "team"), "/rapports": ("rapports.html", None), "/analytique": ("analytique.html", None), "/profil": ("profil.html", None),
-         "/roaming": ("roaming.html", "routers_write")}
+         "/roaming": ("roaming.html", "routers_write"), "/formules": ("formules.html", "settings"),
+         "/abonnement": ("abonnement.html", "routers_write")}
 
 
 def make_handler(app):
@@ -248,6 +278,12 @@ def make_handler(app):
                 super().log_message(fmt, *args)
 
         # --- outils ---
+        def need_feature(self, who, feature):
+            if not who.has(feature):
+                plan = (who.limits or {}).get("plan") or {}
+                raise Forbidden(f"« {FEATURE_LABEL().get(feature, feature)} » n'est pas compris dans votre formule "
+                                f"{plan.get('name', '')}. Passez à la formule supérieure dans « Mon abonnement ».")
+
         def client_ip(self):
             if app.config.get("behind_proxy"):
                 fwd = self.headers.get("X-Forwarded-For")
@@ -472,6 +508,15 @@ def make_handler(app):
             parts = p.split("/")
             if p == "/api/me":
                 return dict(who.public(), demo=app.demo)
+            if app.users and p == "/api/plans":
+                P = app.users.plans
+                out = {"plans": P.list(), "billing": P.billing(), "labels": FEATURE_LABEL(),
+                       "contact": app.config.get("contact") or {}}
+                if who.is_admin:
+                    out["clients"] = P.clients_count()
+                return out
+            if app.users and p == "/api/subscription":
+                return app.subscription_info(who)
             if p == "/api/zones":
                 return {"zones": app.zones_list(who), "demo": app.demo}
             if p == "/api/overview":
@@ -490,7 +535,11 @@ def make_handler(app):
             if app.routers and p == "/api/routers":
                 self.need(who.can("routers_read"))
                 out = {"routers": [r for r in app.routers.list() if who.can_zone(r["id"])], "demo": app.demo,
-                       "can_write": who.can("routers_write"), "role": who.role}
+                       "can_write": who.can("routers_write"), "role": who.role,
+                       "features": {f: who.has(f) for f in ("remote", "antennas")}}
+                if not who.has("remote"):  # accès à distance : selon la formule
+                    for r in out["routers"]:
+                        r["remote"] = None
                 if who.role == "client":
                     out["quota"] = {"max": who.max_routers, "used": len(app.routers.owned(who.username))}
                 elif who.is_admin and app.users:
@@ -506,6 +555,7 @@ def make_handler(app):
                 return self.send(200, bytes(logo[1]), logo[0], {"Cache-Control": "private, max-age=86400"})
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "scan":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
+                self.need_feature(who, "antennas")
                 return app.routers.lan_scan(parts[3])
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "install":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
@@ -650,6 +700,12 @@ def make_handler(app):
                 return app.roaming.diagnose(g["id"])
             if app.roaming and (p == "/api/roaming" or (len(parts) >= 4 and parts[2] == "roaming" and parts[3].isdigit())):
                 self.need(who.can("routers_write"))
+                if not (len(parts) == 5 and parts[4] == "delete"):
+                    self.need_feature(who, "roaming")
+                    lim = (who.limits or {}).get("roaming_routers", -1)
+                    if who.limits and lim != -1 and len(body.get("zones") or []) > lim:
+                        raise Forbidden(f"Votre formule permet {lim} routeur{'s' if lim > 1 else ''} en Roaming. "
+                                        "Passez à la formule supérieure dans « Mon abonnement ».")
                 owner = None if who.role == "admin" else who.username
                 if p == "/api/roaming":
                     g = app.roaming.save_group(body, owner, who.can_zone)
@@ -698,6 +754,10 @@ def make_handler(app):
                     self.need(who.can("routers_read"))
                     return R.test(zid)
                 self.need(who.can("routers_write"))
+                if action == "winbox":
+                    self.need_feature(who, "remote")
+                if action == "devices":
+                    self.need_feature(who, "antennas")
                 acts = {"update": lambda: R.update(zid, body), "delete": lambda: R.delete(zid),
                         "logo": lambda: R.set_logo(zid, body.get("image")),
                         "pv": lambda: R.create_pv(zid, body),
@@ -718,14 +778,29 @@ def make_handler(app):
             if U and p == "/api/users":
                 self.need(who.can("team"))
                 return U.create(body, parent=None if who.is_admin else who.username)
+            if U and p == "/api/plans":
+                self.need(who.can("settings"))
+                return U.plans.create(body)
+            if U and p == "/api/billing":
+                self.need(who.can("settings"))
+                b = U.plans.set_billing(body)
+                app.save_config(app.config)
+                return {"billing": b}
+            if U and len(parts) == 4 and parts[2] == "plans" and parts[3].isdigit():
+                self.need(who.can("settings"))
+                return U.plans.update(int(parts[3]), body)
+            if U and len(parts) == 5 and parts[2] == "plans" and parts[3].isdigit() and parts[4] == "archive":
+                self.need(who.can("settings"))
+                return U.plans.archive(int(parts[3]))
             if U and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit():
                 uid, action = int(parts[3]), parts[4]
                 # le client ne gère que son équipe, et pas l'abonnement ni les routeurs autorisés
-                self.need(who.can("users") or (self.my_team(who, uid) and action not in ("subscription", "routers")))
+                self.need(who.can("users") or (self.my_team(who, uid) and action not in ("subscription", "routers", "plan")))
                 acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),
                         "enable": lambda: U.set_active(uid, True), "disable": lambda: U.set_active(uid, False),
                         "subscription": lambda: U.subscription(uid, body),
                         "routers": lambda: U.set_max_routers(uid, body),
+                        "plan": lambda: U.set_plan(uid, body),
                         "delete": lambda: U.delete(uid)}
                 if action in acts:
                     return acts[action]()

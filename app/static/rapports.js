@@ -228,6 +228,13 @@
 
   // --- export et impression -----------------------------------------------------------------
   $("printBtn").addEventListener("click", function () { window.print(); });
+  // export Excel : selon la formule du gérant
+  fetch("/api/me", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (me) {
+    if (me.features && !me.features.excel) {
+      $("csvBtn").disabled = true;
+      $("csvBtn").title = "Export Excel : pas compris dans votre formule (voir Mon abonnement)";
+    }
+  }).catch(function () {});
   $("csvBtn").addEventListener("click", function () {
     if (!R) return;
     var lines = [["Rapport des ventes ADER LINK", R.from + " au " + R.to, R.zone ? R.zones[0] : "Tous les routeurs"], [],
