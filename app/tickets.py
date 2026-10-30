@@ -95,6 +95,8 @@ class Tickets:
         return z
 
     def _q(self, sql, params=(), commit=False):
+        if not commit and sql.lstrip()[:6].upper() == "SELECT":  # lecture : sans attendre le collecteur
+            return self.store.read(sql, params), None
         with self.store.lock:
             cur = self.store.db.execute(sql, params)
             rows = cur.fetchall()
@@ -334,26 +336,31 @@ class Tickets:
                 "roaming": bool(group)}
 
     # --- lecture ------------------------------------------------------------------
-    def _batch_dict(self, row):
+    def _batch_dict(self, row, stats=None, names=None):
         (bid, zone_id, created, count, profile, price, uptime_s, data_mb, validity_s, note, removed) = row[:11]
         zone = next((z for z in self.config.get("zones", []) if z["id"] == zone_id), {})
-        stats, _ = self._q(
-            "SELECT SUM(first_used IS NOT NULL), SUM(expired_at IS NOT NULL), SUM(removed) "
-            "FROM tickets WHERE batch_id = ?", (bid,))
-        used, expired, rem = stats[0]
+        if stats is None:
+            stats = {bid: self._q(
+                "SELECT SUM(first_used IS NOT NULL), SUM(expired_at IS NOT NULL), SUM(removed) "
+                "FROM tickets WHERE batch_id = ?", (bid,))[0][0]}
+        used, expired, rem = stats.get(bid) or (0, 0, 0)
+        n = names or {}
+        pos = row[12] if len(row) > 12 else None
+        fid = row[11] if len(row) > 11 else None
+        rid = row[14] if len(row) > 14 else None
         return {
             "id": bid, "zone_id": zone_id, "zone_name": zone.get("name", zone_id),
             "ssid": zone.get("ssid") or zone.get("name", ""), "currency": zone.get("currency") or "FCFA",
             "created_at": created, "count": count, "profile": profile, "price": price,
             "uptime_s": uptime_s, "data_mb": data_mb, "validity_s": validity_s, "note": note,
             "used": used or 0, "expired": expired or 0, "removed": rem or 0,
-            "forfait_id": row[11] if len(row) > 11 else None,
-            "pos_id": row[12] if len(row) > 12 else None,
-            "pos_name": self._pos_name(row[12]) if len(row) > 12 and row[12] else None,
-            "color": self._forfait_color(row[11]) if len(row) > 11 and row[11] else "bleu",
+            "forfait_id": fid,
+            "pos_id": pos,
+            "pos_name": (n["pos"].get(pos) if "pos" in n else self._pos_name(pos)) if pos else None,
+            "color": ((n["color"].get(fid) if "color" in n else self._forfait_color(fid)) or "bleu") if fid else "bleu",
             "created_by": row[13] if len(row) > 13 else None,
-            "roaming_id": row[14] if len(row) > 14 else None,
-            "roaming_name": self._roaming_name(row[14]) if len(row) > 14 and row[14] else None,
+            "roaming_id": rid,
+            "roaming_name": ((n["roam"].get(rid) if "roam" in n else self._roaming_name(rid)) or "ADER Roaming") if rid else None,
         }
 
     def _roaming_name(self, gid):
@@ -372,11 +379,26 @@ class Tickets:
             return None
 
     def list_batches(self, limit=100, zone_id=None):
+        """Liste des lots en quelques requêtes seulement (avant : 4 requêtes par lot, très lent avec 300 lots)."""
+        R = self.store.read
         if zone_id:
-            rows, _ = self._q("SELECT * FROM batches WHERE zone_id = ? ORDER BY id DESC LIMIT ?", (zone_id, limit))
+            rows = R("SELECT * FROM batches WHERE zone_id = ? ORDER BY id DESC LIMIT ?", (zone_id, limit))
         else:
-            rows, _ = self._q("SELECT * FROM batches ORDER BY id DESC LIMIT ?", (limit,))
-        return [self._batch_dict(r) for r in rows]
+            rows = R("SELECT * FROM batches ORDER BY id DESC LIMIT ?", (limit,))
+        if not rows:
+            return []
+        lo = min(r[0] for r in rows)
+        stats = {b: (u, e, rm) for b, u, e, rm in R(
+            "SELECT batch_id, SUM(first_used IS NOT NULL), SUM(expired_at IS NOT NULL), SUM(removed) "
+            "FROM tickets WHERE batch_id >= ? GROUP BY batch_id", (lo,))}
+        def table(sql):
+            try:
+                return dict(R(sql))
+            except Exception:
+                return {}
+        names = {"color": table("SELECT id, color FROM forfaits"), "pos": table("SELECT id, name FROM points_vente"),
+                 "roam": table("SELECT id, name FROM roaming_groups")}
+        return [self._batch_dict(r, stats, names) for r in rows]
 
     def get_batch(self, batch_id):
         rows, _ = self._q("SELECT * FROM batches WHERE id = ?", (batch_id,))

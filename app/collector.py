@@ -45,6 +45,8 @@ class Store:
 
     def __init__(self, path):
         self.lock = threading.Lock()
+        self.path = path
+        self._local = threading.local()
         self.db = sqlite3.connect(path, check_same_thread=False)
         # WAL : les écritures du collecteur ne bloquent plus les lectures, et chaque enregistrement est bien plus rapide
         try:
@@ -67,6 +69,23 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
             """
         )
+
+    def read(self, sql, params=()):
+        """Lecture sans attendre le collecteur : chaque fil a sa propre connexion en lecture (base WAL).
+        Base en mémoire (démo, tests) : on passe par la connexion principale."""
+        if self.path == ":memory:" or self.db.in_transaction:  # écriture pas encore enregistrée : on la voit par ici
+            with self.lock:
+                return self.db.execute(sql, params).fetchall()
+        con = getattr(self._local, "con", None)
+        if con is None:
+            con = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False, timeout=10)
+            con.execute("PRAGMA cache_size=-8000")
+            self._local.con = con
+        try:
+            return con.execute(sql, params).fetchall()
+        except sqlite3.OperationalError:  # table créée après l'ouverture, etc. : on réessaie par la voie normale
+            with self.lock:
+                return self.db.execute(sql, params).fetchall()
 
     def add_sample(self, ts, zone_id, online, active, rx, tx):
         with self.lock:
@@ -95,8 +114,7 @@ class Store:
             sql += " AND zone_id = ?"
             params.append(zone_id)
         sql += " GROUP BY b, zone_id ORDER BY b"
-        with self.lock:
-            rows = self.db.execute(sql, params).fetchall()
+        rows = self.read(sql, params)
         merged = {}
         for b, _zone, active, rx, tx in rows:
             point = merged.setdefault(b, {"ts": b, "active": 0, "rx_bps": 0, "tx_bps": 0})
@@ -106,10 +124,7 @@ class Store:
         return list(merged.values())
 
     def events(self, limit=20):
-        with self.lock:
-            rows = self.db.execute(
-                "SELECT ts, zone_id, kind, message FROM events ORDER BY ts DESC LIMIT ?",
-                (limit,)).fetchall()
+        rows = self.read("SELECT ts, zone_id, kind, message FROM events ORDER BY ts DESC LIMIT ?", (limit,))
         return [dict(ts=r[0], zone_id=r[1], kind=r[2], message=r[3]) for r in rows]
 
 

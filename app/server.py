@@ -176,9 +176,8 @@ class App:
         return val
 
     def _peaks(self, since):
-        with self.store.lock:
-            return self.store.db.execute(
-                "SELECT zone_id, MAX(active) FROM samples WHERE ts >= ? AND online = 1 GROUP BY zone_id", (since,)).fetchall()
+        return self.store.read(
+            "SELECT zone_id, MAX(active) FROM samples WHERE ts >= ? AND online = 1 GROUP BY zone_id", (since,))
 
     def _merged_history(self, zone_ids, since, bucket):
         merged = {}

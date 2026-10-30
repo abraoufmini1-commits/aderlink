@@ -77,6 +77,8 @@ class Routers:
         return z
 
     def _q(self, sql, params=(), commit=False):
+        if not commit and sql.lstrip()[:6].upper() == "SELECT":  # lecture : sans attendre le collecteur
+            return self.store.read(sql, params), None
         with self.store.lock:
             cur = self.store.db.execute(sql, params)
             rows = cur.fetchall()
