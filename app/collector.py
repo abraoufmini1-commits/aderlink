@@ -40,6 +40,21 @@ def _int(v, default=0):
         return default
 
 
+MASS_HOLD = 4  # relevés (environ 2 min) pendant lesquels une coupure générale est ignorée
+
+
+def internet_ok():
+    """Le serveur a-t-il Internet ? (deux serveurs DNS publics, 3 s chacun)"""
+    import socket
+    for host in ("1.1.1.1", "8.8.8.8"):
+        try:
+            socket.create_connection((host, 53), timeout=3).close()
+            return True
+        except OSError:
+            pass
+    return False
+
+
 class Store:
     """Historique et journal dans une petite base SQLite."""
 
@@ -138,6 +153,7 @@ class Collector:
         self.lock = threading.Lock()
         self.poll_seconds = max(10, int(config.get("poll_seconds", 30)))
         self._stop = threading.Event()
+        self._mass = 0           # relevés de suite où presque tout est injoignable (coupure côté serveur)
         self.ticket_hook = None  # fonction (zone, api, sessions) branchée par le module Tickets
         if demo:
             self._demo_backfill()
@@ -162,10 +178,46 @@ class Collector:
         zones = self.config.get("zones", [])
         if not zones:
             return
+        t0 = time.time()
         # beaucoup de routeurs : plus de relevés en parallèle, pour qu'un routeur éteint (8 s d'attente) ne ralentisse pas les autres
         with ThreadPoolExecutor(max_workers=min(48, len(zones))) as pool:
-            for zone, snap in zip(zones, pool.map(self._poll_zone, zones)):
-                self._record(zone, snap)
+            snaps = dict(zip((z["id"] for z in zones), pool.map(self._poll_zone, zones)))
+            # Un routeur qui était en ligne et ne répond pas : on réessaie une fois, quelques secondes après,
+            # avant de le dire hors ligne (une petite perte de paquets ne doit pas donner une fausse coupure).
+            retry = [z for z in zones if self._failed(z, snaps[z["id"]])]
+            if retry and not self._stop.wait(3):
+                for z, snap in zip(retry, pool.map(self._poll_zone, retry)):
+                    snaps[z["id"]] = snap
+        failed = [z for z in zones if self._failed(z, snaps[z["id"]])]
+        watched = [z for z in zones if (z.get("router") or {}).get("host")]
+        # Beaucoup de routeurs coupés à la même seconde : la coupure vient du serveur ou d'Internet, pas des routeurs.
+        if len(failed) >= 5 and len(failed) >= 0.6 * len(watched):
+            net = internet_ok()
+            self._mass += 1
+            sample = "; ".join(f"{z['name']}: {snaps[z['id']].get('error')}" for z in failed[:3])
+            print(f"[collecte] {len(failed)}/{len(watched)} routeurs injoignables en même temps "
+                  f"(Internet du serveur : {'OK' if net else 'COUPÉ'}, relevé {time.time() - t0:.0f} s) — {sample}", flush=True)
+            if self._mass == 1:
+                self.store.add_event(int(time.time()), "", "server",
+                                     f"Coupure côté serveur : {len(failed)} routeurs injoignables en même temps "
+                                     f"(Internet du serveur {'OK' if net else 'coupé'})")
+            if self._mass <= MASS_HOLD:  # on garde le dernier état connu quelques relevés, sans fausses alertes
+                for z in zones:
+                    if z in failed:
+                        continue
+                    self._record(z, snaps[z["id"]])
+                return
+        else:
+            self._mass = 0
+        for zone in zones:
+            self._record(zone, snaps[zone["id"]])
+        took = time.time() - t0
+        if took > self.poll_seconds:
+            print(f"[collecte] relevé lent : {took:.0f} s pour {len(zones)} routeurs", flush=True)
+
+    def _failed(self, zone, snap):
+        prev = self.state.get(zone["id"])
+        return bool(prev and prev.get("online") and not snap.get("online") and not snap.get("pending"))
 
     def add_tickets(self, zone_id, n):
         """Lot créé : on ajoute tout de suite les tickets au compteur du routeur (le relevé suivant confirme)."""
