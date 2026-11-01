@@ -28,7 +28,10 @@ class GuardError(Exception):
     pass
 
 
-def make_backup(config, store, light=False):
+KEY_FILES = ("vps.key", "vps.pub", "ca.crt", "ca.key", "server.crt", "server.key", "dh.pem")
+
+
+def make_backup(config, store, light=False, keys_dir=None):
     """Sauvegarde complète : config.json + copie cohérente de la base.
     light=True : sans l'historique des graphiques (relevés et journal) — pour Telegram, limité à 50 Mo."""
     buf = io.BytesIO()
@@ -49,6 +52,12 @@ def make_backup(config, store, light=False):
                 dst.execute("VACUUM")
             dst.close()
             zf.write(copy, "aderlink.db")
+        # clés des tunnels du serveur (WireGuard / OpenVPN) : un nouveau serveur garde les mêmes, les routeurs se reconnectent seuls
+        if keys_dir and Path(keys_dir).is_dir():
+            for name in KEY_FILES:
+                f = Path(keys_dir) / name
+                if f.is_file():
+                    zf.write(f, f"server-keys/{name}")
         zf.writestr("LISEZMOI.txt", "Sauvegarde ADER LINK. A restaurer dans Parametres > Restaurer une sauvegarde.\n")
     return buf.getvalue()
 
@@ -58,6 +67,7 @@ class Guard:
         self.config = config
         self.store = store
         self.dir = Path(data_dir) / "backups" if data_dir else None
+        self.keys_dir = Path(data_dir) / "server-keys" if data_dir else None
         self.save = save or (lambda c: None)
         self.tickets = tickets
         self.demo = demo
@@ -180,7 +190,7 @@ class Guard:
         if self.demo or not self.dir:
             raise GuardError("Indisponible en mode démonstration")
         self.dir.mkdir(parents=True, exist_ok=True)
-        data = make_backup(self.config, self.store)
+        data = make_backup(self.config, self.store, keys_dir=self.keys_dir)
         name = f"aderlink-auto-{self.today()}.zip"
         (self.dir / name).write_bytes(data)
         for f in sorted(self.dir.glob("aderlink-auto-*.zip"), reverse=True)[KEEP_DAYS:]:
@@ -190,7 +200,7 @@ class Guard:
         if send and t.get("token") and t.get("chat_id"):
             doc, caption = data, f"Sauvegarde ADER LINK du {self.today()}"
             if len(doc) >= 45_000_000:  # Telegram refuse plus de 50 Mo : on envoie tout sauf l'historique des graphiques
-                doc = make_backup(self.config, self.store, light=True)
+                doc = make_backup(self.config, self.store, light=True, keys_dir=self.keys_dir)
                 caption += " (sans l'historique des graphiques)"
             try:
                 if len(doc) >= 45_000_000:

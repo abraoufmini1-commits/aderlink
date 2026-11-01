@@ -107,10 +107,20 @@ systemctl reload caddy || systemctl restart caddy
 say "6/7 Tunnel des routeurs (WireGuard pour RouterOS 7, OpenVPN pour RouterOS 6)"
 umask 077
 mkdir -p /etc/wireguard
-[ -f /etc/wireguard/vps.key ] || wg genkey | tee /etc/wireguard/vps.key | wg pubkey > /etc/wireguard/vps.pub
-umask 022
 OV=/etc/openvpn/aderlink
 mkdir -p "$OV/ccd"
+# Clés des tunnels : copiées dans data/server-keys pour partir dans la sauvegarde de chaque nuit (Telegram).
+# Nouveau serveur + sauvegarde restaurée : on reprend les MÊMES clés, les routeurs n'ont rien à refaire.
+KEYS="$DEST/data/server-keys"
+if [ -s "$KEYS/vps.key" ] && ! cmp -s "$KEYS/vps.key" /etc/wireguard/vps.key 2>/dev/null; then
+  echo "  Clés des tunnels reprises de la sauvegarde restaurée"
+  cp "$KEYS/vps.key" /etc/wireguard/vps.key
+  wg pubkey < /etc/wireguard/vps.key > /etc/wireguard/vps.pub
+  for f in ca.crt ca.key server.crt server.key dh.pem; do if [ -s "$KEYS/$f" ]; then cp "$KEYS/$f" "$OV/$f"; fi; done
+  chmod 600 "$OV/ca.key" "$OV/server.key" 2>/dev/null || true
+fi
+[ -f /etc/wireguard/vps.key ] || wg genkey | tee /etc/wireguard/vps.key | wg pubkey > /etc/wireguard/vps.pub
+umask 022
 if [ ! -f "$OV/server.crt" ]; then  # certificats créés une seule fois (les routeurs ne les vérifient pas)
   openssl req -x509 -newkey rsa:2048 -nodes -days 7300 -subj "/CN=ADER LINK CA" -keyout "$OV/ca.key" -out "$OV/ca.crt" 2>/dev/null
   openssl req -newkey rsa:2048 -nodes -subj "/CN=aderlink-server" -keyout "$OV/server.key" -out "$OV/server.csr" 2>/dev/null
@@ -119,6 +129,10 @@ if [ ! -f "$OV/server.crt" ]; then  # certificats créés une seule fois (les ro
   chmod 600 "$OV/ca.key" "$OV/server.key"
 fi
 [ -f "$OV/dh.pem" ] || openssl dhparam -out "$OV/dh.pem" 2048 2>/dev/null
+mkdir -p "$KEYS"
+cp /etc/wireguard/vps.key /etc/wireguard/vps.pub "$KEYS/"
+for f in ca.crt ca.key server.crt server.key dh.pem; do if [ -f "$OV/$f" ]; then cp "$OV/$f" "$KEYS/"; fi; done
+chown -R aderlink:aderlink "$KEYS"; chmod 700 "$KEYS"; chmod 600 "$KEYS"/*
 touch "$OV/users"; chgrp nogroup "$OV/users"; chmod 640 "$OV/users"
 cat > /usr/local/sbin/aderlink-ovpn-auth <<'AUTH'
 #!/bin/sh
@@ -287,6 +301,7 @@ echo
 echo "================================================================"
 echo "  ADER LINK est installé : $STATE"
 if systemctl is-active --quiet fail2ban; then echo "  Protection SSH (fail2ban) : active"; fi
+if [ -s "$KEYS/vps.key" ]; then echo "  Clés des tunnels : dans la sauvegarde de chaque nuit"; fi
 if [ -n "$DOMAIN" ]; then echo "  Ouvrez :  https://$DOMAIN   (installable comme une application)"; else echo "  Ouvrez :  http://$IP"; fi
 if [ "$FIRST" = 1 ]; then
   echo "  Identifiant : admin"

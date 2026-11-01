@@ -430,7 +430,8 @@ def make_handler(app):
             """Sauvegarde complète : config.json + base de données (copie cohérente)."""
             from .guard import make_backup
             name = time.strftime("aderlink-sauvegarde-%Y-%m-%d-%H%M.zip", time.localtime())
-            return self.send(200, make_backup(app.config, app.store), "application/zip",
+            keys = Path(app.paths["db"]).parent / "server-keys" if app.paths.get("db") else None
+            return self.send(200, make_backup(app.config, app.store, keys_dir=keys), "application/zip",
                              {"Content-Disposition": f'attachment; filename="{name}"'})
 
         def restore_backup(self, who):
@@ -463,6 +464,16 @@ def make_handler(app):
                 else:
                     cfg.pop(k, None)
             dbp = Path(app.paths["db"])
+            # clés des tunnels de l'ancien serveur : gardées ici, l'installation (install.sh) les reprend
+            from .guard import KEY_FILES
+            keys = [n for n in zf.namelist() if n.startswith("server-keys/") and n.split("/", 1)[1] in KEY_FILES]
+            if keys:
+                kd = dbp.parent / "server-keys"
+                kd.mkdir(mode=0o700, exist_ok=True)
+                for n in keys:
+                    f = kd / n.split("/", 1)[1]
+                    f.write_bytes(zf.read(n))
+                    f.chmod(0o600)
             tmp = dbp.with_suffix(".restore")
             tmp.write_bytes(db)
             app.config.clear()
