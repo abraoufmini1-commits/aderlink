@@ -2,7 +2,7 @@
 
 - Chaque nuit (3 h, heure locale) : une sauvegarde complète dans data/backups, 14 jours gardés,
   et une copie envoyée sur Telegram si c'est relié (copie hors du serveur).
-- Alertes Telegram : routeur hors ligne (après 1 heure, pour ignorer les petites coupures),
+- Alertes Telegram : routeur hors ligne (après 12 heures, pour ignorer les petites coupures),
   routeur de retour, et à minuit le résumé des ventes de la journée qui vient de finir.
 """
 import io
@@ -19,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 KEEP_DAYS = 14
-OFFLINE_DELAY = 3600   # une alerte seulement si le routeur reste coupé 1 heure (pas de messages pour les petites coupures)
+OFFLINE_DELAY = 12 * 3600   # une alerte seulement si le routeur reste coupé 12 heures (pas de messages pour les petites coupures)
 BACKUP_HOUR, SUMMARY_HOUR = 3, 0  # résumé à minuit : la journée entière
 NAME_RE = re.compile(r"aderlink-auto-\d{4}-\d{2}-\d{2}\.zip")
 
