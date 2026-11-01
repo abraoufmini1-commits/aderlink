@@ -176,8 +176,8 @@ class Roaming:
         try:
             for r in api.query("/radius/print", "?comment=ADER Roaming"):
                 api.query("/radius/remove", f"=.id={r['.id']}")
-            api.query("/radius/add", "=service=hotspot", f"=address={srv}", f"=secret={g['secret']}",
-                      f"=authentication-port={auth}", f"=accounting-port={acct}", "=timeout=3s", "=comment=ADER Roaming")
+            ours_fields = self._our_fields(srv, g)
+            api.query("/radius/add", *ours_fields)
             for prof in api.query("/ip/hotspot/profile/print"):
                 api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
                           f"=radius-interim-update={INTERIM_S}s")
@@ -196,21 +196,89 @@ class Roaming:
             # Un autre système de tickets (autre serveur RADIUS) sur ce routeur ? Les deux marchent ensemble :
             # ADER Roaming passe EN PREMIER ; pour un code qu'il ne connaît pas, il ne répond pas,
             # et le routeur demande alors à l'autre serveur (quelques secondes plus tard).
-            entries = api.query("/radius/print")
-            ours = [e for e in entries if e.get("comment") == "ADER Roaming"]
-            others = [e for e in entries if e.get("comment") != "ADER Roaming" and "hotspot" in (e.get("service") or "")
-                      and e.get("disabled") not in ("true", "yes")]
-            self.shared[zone["id"]] = bool(others)
-            if ours and others and entries[0].get(".id") != ours[0][".id"]:
-                try:
-                    api.query("/radius/move", f"=numbers={ours[0]['.id']}", f"=destination={entries[0]['.id']}")
-                except RouterOSError:
-                    pass
+            first_ok, first_msg = self.put_first(zone, api, ours_fields)
         except RouterOSError as e:
             return False, f"Le routeur a refusé : {e}"
+        if not first_ok:
+            return False, first_msg
         if self.shared.get(zone["id"]):
             return True, f"Réglé (serveur {srv}), avec l'autre système de tickets du routeur"
         return True, f"Réglé (serveur {srv})"
+
+    def _our_fields(self, srv, g):
+        auth, acct = self.ports()
+        return ["=service=hotspot", f"=address={srv}", f"=secret={g['secret']}",
+                f"=authentication-port={auth}", f"=accounting-port={acct}", "=timeout=3s", "=comment=ADER Roaming"]
+
+    # champs d'une entrée RADIUS qu'on peut recopier tels quels
+    RADIUS_FIELDS = ("service", "called-id", "domain", "address", "secret", "authentication-port", "accounting-port",
+                     "timeout", "accounting-backup", "realm", "src-address", "protocol", "certificate",
+                     "require-message-auth", "comment", "disabled")
+
+    def put_first(self, zone, api, ours_fields):
+        """Met ADER Roaming avant les autres serveurs RADIUS hotspot. Renvoie (ok, message).
+        On ne change jamais les réglages de l'autre système de tickets :
+        1) commande « move » ; 2) on recrée NOTRE entrée juste avant la sienne (place-before) ;
+        3) seulement si le routeur montre le mot de passe de l'autre entrée : on la recopie à l'identique
+           après la nôtre, puis on enlève l'ancienne."""
+        from .routeros import RouterOSError
+
+        def hs(e):
+            return "hotspot" in (e.get("service") or "") and e.get("disabled") not in ("true", "yes")
+
+        def state():
+            entries = api.query("/radius/print")
+            ours = [e for e in entries if e.get("comment") == "ADER Roaming"]
+            before = []
+            for e in entries:
+                if e.get("comment") == "ADER Roaming":
+                    break
+                if hs(e):
+                    before.append(e)
+            self.shared[zone["id"]] = any(e.get("comment") != "ADER Roaming" and hs(e) for e in entries)
+            return entries, ours, before
+
+        entries, ours, before = state()
+        if not ours or not before:
+            return True, "ok"
+        errs = []
+        # 1) déplacer
+        try:
+            api.query("/radius/move", f"=numbers={ours[0]['.id']}", f"=destination={before[0]['.id']}")
+        except RouterOSError as e:
+            errs.append(f"move : {e}")
+        entries, ours, before = state()
+        # 2) recréer la nôtre juste avant l'autre
+        if before and ours:
+            try:
+                api.query("/radius/add", *ours_fields, f"=place-before={before[0]['.id']}")
+                for e in ours:
+                    api.query("/radius/remove", f"=.id={e['.id']}")
+            except RouterOSError as e:
+                errs.append(f"place-before : {e}")
+            entries, ours, before = state()
+            if not ours:  # par sécurité : la nôtre doit toujours exister
+                api.query("/radius/add", *ours_fields)
+                entries, ours, before = state()
+        # 3) recopier l'autre à l'identique (seulement si son mot de passe est lisible)
+        for e in before:
+            if not e.get("secret"):
+                errs.append(f"mot de passe de {e.get('address')} non lisible")
+                continue
+            fields = [f"={k}={e[k]}" for k in self.RADIUS_FIELDS if e.get(k) not in (None, "")]
+            try:
+                api.query("/radius/add", *fields)
+            except RouterOSError as e2:
+                errs.append(f"copie : {e2}")
+                continue
+            api.query("/radius/remove", f"=.id={e['.id']}")  # la copie est en place : on enlève l'ancienne
+        if before:
+            entries, ours, before = state()
+        if before:
+            err = " ; ".join(errs) or "raison inconnue"
+            self.log(f"ADER Roaming : {zone['name']} : impossible de passer avant {before[0].get('address')} ({err})")
+            return False, f"Le routeur refuse de mettre ADER Roaming en premier ({err})"
+        return True, "ok"
 
     def diagnose(self, gid):
         """Regarde chaque routeur du réseau par l'API : serveurs RADIUS, compteurs, profils hotspot."""
@@ -226,6 +294,13 @@ class Roaming:
                  "radius": [], "profiles": [], "error": None}
             try:
                 with open_router(z) as api:
+                    # on corrige l'ordre tout de suite (ADER Roaming avant l'autre système de tickets)
+                    if g and self.server_for(z):
+                        try:
+                            ok, msg = self.put_first(z, api, self._our_fields(self.server_for(z), g))
+                            d["order_error"] = None if ok else msg
+                        except RouterOSError as e:
+                            d["order_error"] = f"Le routeur a refusé : {e}"
                     for r in api.query("/radius/print"):
                         e = {"address": r.get("address", ""), "service": r.get("service", ""),
                              "ours": r.get("comment") == "ADER Roaming", "disabled": r.get("disabled") in ("true", "yes")}
@@ -251,6 +326,16 @@ class Roaming:
             return
         st = self.setup.get(zone["id"])
         if st and st.get("gid") == g["id"] and (st["ok"] or time.time() - st["ts"] < 3600):
+            # déjà réglé : toutes les heures on vérifie seulement que l'autre système n'est pas repassé devant
+            if st["ok"] and time.time() - st.get("checked", st["ts"]) >= 3600 and self.server_for(zone):
+                st["checked"] = time.time()
+                from .routeros import RouterOSError
+                try:
+                    ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g))
+                except RouterOSError as e:
+                    ok, msg = False, f"Le routeur a refusé : {e}"
+                if not ok:
+                    st.update(ok=False, msg=msg, ts=int(time.time()))
             return
         ok, msg = self.apply_zone(zone, api, g)
         self.setup[zone["id"]] = {"ok": ok, "msg": msg, "ts": int(time.time()), "gid": g["id"]}

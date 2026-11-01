@@ -195,7 +195,8 @@
         others.forEach(function (x) {
           lines.push(oursFirst ?
             "<li class='ok'>Autre système de tickets : " + esc(x.address) + " — ADER Roaming passe en premier, les deux marchent ✓</li>" :
-            "<li class='bad'>Autre système de tickets : " + esc(x.address) + " passe avant ADER Roaming (correction automatique en cours)</li>");
+            "<li class='bad'>Autre système de tickets : " + esc(x.address) + " passe avant ADER Roaming" +
+              (r.order_error ? " — " + esc(r.order_error) : " (correction automatique en cours)") + "</li>");
         });
         r.profiles.forEach(function (p) {
           lines.push("<li class='" + (p.use_radius ? "ok" : "bad") + "'>Profil " + esc(p.name) + " : Use RADIUS " + (p.use_radius ? "coché ✓" : "décoché") + "</li>");

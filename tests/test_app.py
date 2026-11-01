@@ -954,19 +954,68 @@ class RoamingTests(unittest.TestCase):
     def test_shared_with_other_radius(self):
         """Un autre système de tickets sur le routeur : ADER passe en premier et se tait pour les codes inconnus."""
         from app import radius as R
+        from app.routeros import RouterOSError
         calls = []
+
         class Api:
+            """Faux routeur qui garde l'ordre des entrées RADIUS."""
+            def __init__(self, move=True, place=True, show_secret=False):
+                self.move, self.place = move, place
+                self.n = 10
+                self.radius = [{".id": "*5", "address": "148.251.44.3", "service": "hotspot", "secret": "s3" if show_secret else ""}]
+
             def query(self, cmd, *w):
                 calls.append((cmd,) + w)
-                if cmd == "/radius/print" and not w:
-                    return [{".id": "*5", "address": "148.251.44.3", "service": "hotspot"},
-                            {".id": "*9", "address": "10.66.0.1", "service": "hotspot", "comment": "ADER Roaming"}]
+                kv = dict(x[1:].split("=", 1) for x in w if x.startswith("="))
+                if cmd == "/radius/print":
+                    flt = dict(x[1:].split("=", 1) for x in w if x.startswith("?"))
+                    return [dict(e) for e in self.radius if all(e.get(k) == v for k, v in flt.items())]
+                if cmd == "/radius/add":
+                    if "place-before" in kv and not self.place:
+                        raise RouterOSError("unknown parameter place-before")
+                    self.n += 1
+                    e = {k: v for k, v in kv.items() if k != "place-before"}
+                    e[".id"] = f"*{self.n}"
+                    i = next((i for i, x in enumerate(self.radius) if x[".id"] == kv.get("place-before")), len(self.radius))
+                    self.radius.insert(i, e)
+                if cmd == "/radius/remove":
+                    self.radius = [e for e in self.radius if e[".id"] != kv[".id"]]
+                if cmd == "/radius/move":
+                    if not self.move:
+                        raise RouterOSError("no such command")
+                    e = next(x for x in self.radius if x[".id"] == kv["numbers"])
+                    self.radius.remove(e)
+                    i = next(i for i, x in enumerate(self.radius) if x[".id"] == kv["destination"])
+                    self.radius.insert(i, e)
                 return []
+
+            def order(self):
+                return [e.get("comment") or e["address"] for e in self.radius]
+
         self.r.wg_conf = lambda: {"server": "10.66.0.1"}
         z = self.r._zone("a"); z["router"]["tunnel"] = "wg"
-        ok, msg = self.r.apply_zone(z, Api())
-        self.assertTrue(ok)
-        self.assertIn(("/radius/move", "=numbers=*9", "=destination=*5"), calls)
+        api = Api()
+        ok, msg = self.r.apply_zone(z, api)
+        self.assertTrue(ok, msg)
+        self.assertEqual(api.order(), ["ADER Roaming", "148.251.44.3"])
+        # « move » refusé : notre entrée est recréée juste avant l'autre, l'autre ne bouge pas
+        api = Api(move=False)
+        ok, msg = self.r.apply_zone(z, api)
+        self.assertTrue(ok, msg)
+        self.assertEqual(api.order(), ["ADER Roaming", "148.251.44.3"])
+        self.assertEqual(api.radius[1][".id"], "*5")
+        # ni move ni place-before, mot de passe de l'autre caché : on ne touche pas à l'autre, on le signale
+        api = Api(move=False, place=False)
+        ok, msg = self.r.apply_zone(z, api)
+        self.assertFalse(ok)
+        self.assertEqual(api.order(), ["148.251.44.3", "ADER Roaming"])
+        # ... mot de passe lisible : copie identique de l'autre après la nôtre
+        api = Api(move=False, place=False, show_secret=True)
+        ok, msg = self.r.apply_zone(z, api)
+        self.assertTrue(ok, msg)
+        self.assertEqual(api.order(), ["ADER Roaming", "148.251.44.3"])
+        self.assertEqual(api.radius[1]["secret"], "s3")
+        self.r.shared["a"] = True
         self.assertIsNone(self.auth("10.1.0.1", "99999999"))           # pas à nous : silence
         self.assertEqual(self.auth("10.1.0.1", self.codes[0]).code, R.ACCESS_ACCEPT)  # nos codes marchent
         self.r.shared["a"] = False
