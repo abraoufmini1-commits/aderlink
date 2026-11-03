@@ -207,11 +207,24 @@ class Guard:
                 if len(doc) >= 45_000_000:
                     raise GuardError("sauvegarde trop grosse pour Telegram")
                 self._api("sendDocument", {"chat_id": t["chat_id"], "caption": caption},
-                          {"document": (name, doc)}, timeout=180)
+                          {"document": (name, doc)}, timeout=300)
                 sent = True
             except GuardError as e:
                 self.log(f"Sauvegarde non envoyée sur Telegram : {e}")
         return {"name": name, "size": len(data), "telegram": sent}
+
+    def resend_backup(self, day):
+        """Renvoie sur Telegram la sauvegarde du jour déjà faite sur le serveur."""
+        f = self.dir / f"aderlink-auto-{day}.zip" if self.dir else None
+        t = self.tg()
+        if not (f and f.is_file() and t.get("chat_id")):
+            return False
+        doc, caption = f.read_bytes(), f"Sauvegarde ADER LINK du {day}"
+        if len(doc) >= 45_000_000:
+            doc = make_backup(self.config, self.store, light=True, keys_dir=self.keys_dir)
+            caption += " (sans l'historique des graphiques)"
+        self._api("sendDocument", {"chat_id": t["chat_id"], "caption": caption}, {"document": (f.name, doc)}, timeout=300)
+        return True
 
     # --- alertes -----------------------------------------------------------------------------------
     # Les coupures en cours sont gardées dans la base : une mise à jour (redémarrage) ne fait ni oublier
@@ -399,10 +412,28 @@ class Guard:
         if local_h == BACKUP_HOUR and self.done.get("backup") != day:
             self.done["backup"] = day
             try:
-                self.backup_now()
+                res = self.backup_now()
+                if self.tg().get("chat_id") and not res.get("telegram"):
+                    self.done["backup_retry"] = (day, now + 3600, 1)  # Telegram n'a pas pris le fichier : on réessaie
             except Exception as e:
                 self.log(f"Sauvegarde automatique : {e}")
                 self.send(f"⚠️ La sauvegarde automatique a échoué : {_esc(e)}")
+        # nouvel essai d'envoi sur Telegram, toutes les heures, 5 fois au plus
+        retry = self.done.get("backup_retry")
+        if retry and retry[0] == day and now >= retry[1]:
+            try:
+                ok = self.resend_backup(day)
+            except Exception as e:
+                ok = False
+                self.log(f"Sauvegarde : nouvel essai Telegram : {e}")
+            if ok:
+                self.done.pop("backup_retry", None)
+            elif retry[2] >= 5:
+                self.done.pop("backup_retry", None)
+                self.send("⚠️ La sauvegarde de cette nuit est faite sur le serveur, mais Telegram n'a pas pu la recevoir. "
+                          "Elle sera renvoyée la nuit prochaine ; vous pouvez aussi la télécharger dans Paramètres.")
+            else:
+                self.done["backup_retry"] = (day, now + 3600, retry[2] + 1)
         if local_h == SUMMARY_HOUR and self.done.get("summary") != day:
             self.done["summary"] = day
             self.send_long(self.summary(now))
