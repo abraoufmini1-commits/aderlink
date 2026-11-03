@@ -92,6 +92,9 @@ class App:
         self.collector = collector
         self.store = store
         self._cache, self._cache_lock = {}, threading.Lock()
+        import collections
+        self.slow = collections.deque(maxlen=15)  # pages lentes (heure, adresse, secondes)
+        self.started = int(time.time())
         self.demo = demo
         self.tickets = tickets
         self.routers = routers
@@ -125,6 +128,39 @@ class App:
     def sales_scope(self, who):
         zone_ids = None if who.zones is None else list(who.zones)
         return zone_ids, (who.username if who.is_reseller else None)
+
+    def diag(self):
+        """État du serveur, pour comprendre une lenteur (Paramètres, administrateur)."""
+        import os
+        from .collector import open_files
+        try:
+            load = [round(x, 2) for x in os.getloadavg()]
+            cpus = os.cpu_count()
+        except OSError:
+            load, cpus = None, None
+        mem = None
+        try:
+            info = dict(l.split(":", 1) for l in open("/proc/meminfo").read().splitlines() if ":" in l)
+            tot, avail = int(info["MemTotal"].split()[0]), int(info["MemAvailable"].split()[0])
+            mem = {"total_mb": tot // 1024, "used_pct": round(100 * (tot - avail) / tot)}
+        except (OSError, KeyError, ValueError):
+            pass
+        db = self.paths.get("db") if self.paths else None
+        db_mb = None
+        try:
+            from pathlib import Path as _P
+            db_mb = round(sum(f.stat().st_size for f in _P(db).parent.glob(_P(db).name + "*")) / 1048576, 1) if db else None
+        except OSError:
+            pass
+        t0 = time.time()
+        with self.store.lock:
+            lock_wait = round(time.time() - t0, 3)
+        cyc = self.collector.last_cycle
+        return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus,
+                "memory": mem, "db_mb": db_mb, "lock_wait_s": lock_wait,
+                "cycle": {"at": cyc[0], "seconds": cyc[1]} if cyc else None, "poll_seconds": self.collector.poll_seconds,
+                "routers": len(self.config.get("zones", [])), "started": self.started,
+                "slow": [{"at": a, "path": b, "seconds": c} for a, b, c in reversed(self.slow)]}
 
     def overview(self, range_key, who):
         hours = {"6h": 6, "24h": 24, "7j": 168}.get(range_key, 24)
@@ -327,6 +363,18 @@ def make_handler(app):
         protocol_version = "HTTP/1.1"  # connexion gardée ouverte avec Caddy : chaque clic va plus vite
         timeout = 75
 
+        def _timed(self, fn):
+            """Mesure le temps de réponse (après réception de la demande) : les pages lentes sont notées."""
+            t0 = time.time()
+            try:
+                return fn()
+            finally:
+                took = time.time() - t0
+                path = (self.path or "").split("?")[0][:60]
+                if took > 1.5 and not path.startswith("/api/restore"):
+                    app.slow.append((int(t0), path, round(took, 1)))
+                    print(f"[lent] {path} : {took:.1f} s", flush=True)
+
         def log_message(self, fmt, *args):  # journal discret
             if "/api/" not in self.path:
                 super().log_message(fmt, *args)
@@ -504,6 +552,9 @@ def make_handler(app):
             self.do_GET()
 
         def do_GET(self):
+            return self._timed(self._do_get)
+
+        def _do_get(self):
             url = urlparse(self.path)
             p = url.path
             q = parse_qs(url.query)
@@ -596,6 +647,9 @@ def make_handler(app):
                 return app.subscription_info(who)
             if p == "/api/zones":
                 return {"zones": app.zones_list(who), "demo": app.demo}
+            if p == "/api/diag":
+                self.need(who.can("settings"))
+                return app.diag()
             if p == "/api/overview":
                 return app.overview(q.get("range", ["24h"])[0], who)
             if len(parts) == 5 and parts[2] == "zones":
@@ -909,6 +963,9 @@ def make_handler(app):
             raise Forbidden("Introuvable")
 
         def do_POST(self):
+            return self._timed(self._do_post)
+
+        def _do_post(self):
             p = urlparse(self.path).path
             if p == "/api/restore":
                 return self.restore_backup(self.who())

@@ -78,7 +78,14 @@
     </div>
   </section>
 
-  <section class="card wizard settings-more" aria-labelledby="phoneTitle">
+  <section class="card wizard" aria-labelledby="dgTitle" data-need="admin">
+    <h2 id="dgTitle">État du serveur</h2>
+    <p class="pane-sub">Si l'application est lente, prenez une photo de cette partie et envoyez-la.</p>
+    <div class="info-box" id="dgBox">–</div>
+    <div class="pane-foot"><button class="btn-prev" type="button" id="dgBtn">Actualiser l'état</button></div>
+  </section>
+
+  <section class="card wizard settings-more" aria-labelledby="phoneTitle" id="phoneCard">
     <h2 id="phoneTitle">Ouvrir sur un téléphone</h2>
     <p class="pane-sub">Sur le même Wi-Fi que ce PC, tapez cette adresse dans le navigateur du téléphone :</p>
     <div class="script mono" id="phoneUrl">–</div>

@@ -193,6 +193,7 @@ class Collector:
         self.lock = threading.Lock()
         self.poll_seconds = max(10, int(config.get("poll_seconds", 30)))
         self._stop = threading.Event()
+        self.last_cycle = None   # (heure, durée en s) du dernier relevé complet
         self._mass = 0           # relevés de suite où presque tout est injoignable (coupure côté serveur)
         self.ticket_hook = None  # fonction (zone, api, sessions) branchée par le module Tickets
         if demo:
@@ -256,6 +257,7 @@ class Collector:
         for zone in zones:
             self._record(zone, snaps[zone["id"]])
         took = time.time() - t0
+        self.last_cycle = (int(time.time()), round(took, 1))
         if took > self.poll_seconds:
             print(f"[collecte] relevé lent : {took:.0f} s pour {len(zones)} routeurs", flush=True)
 

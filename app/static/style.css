@@ -1423,3 +1423,9 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .tg-add > summary { list-style: none; cursor: pointer; display: inline-flex; width: auto; }
 .tg-add > summary::-webkit-details-marker { display: none; }
 .tg-add[open] > summary { margin-bottom: 8px; }
+/* État du serveur */
+.dg-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.dg-row:last-of-type { border-bottom: 0; }
+.dg-row span { color: var(--muted, inherit); }
+.dg-bad b { color: #c0392b; }
+.dg-slow { margin-top: 10px; font-size: .92em; display: grid; gap: 2px; }

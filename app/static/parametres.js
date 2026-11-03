@@ -35,6 +35,32 @@
     $("demoBanner").hidden = !demo;
   }
   function note(kind, text) { var n = $("upMsg"); n.className = "notice show notice-" + kind; n.textContent = text; }
+  // --- état du serveur ---------------------------------------------------------------
+  function diag() {
+    var box = $("dgBox");
+    if (!box) return;
+    var t0 = Date.now();
+    api("/api/diag").then(function (d) {
+      var ms = Date.now() - t0;
+      var row = function (k, v, bad) { return "<div class='dg-row" + (bad ? " dg-bad" : "") + "'><span>" + k + "</span><b>" + v + "</b></div>"; };
+      var c = d.cycle, mem = d.memory || {};
+      var load = d.load ? d.load[0] + " (" + d.cpus + " cœurs)" : "–";
+      box.innerHTML =
+        row("Réponse du serveur", ms + " ms", ms > 1500) +
+        row("Relevé des " + d.routers + " routeurs", c ? c.seconds + " s (toutes les " + d.poll_seconds + " s)" : "en cours…", c && c.seconds > d.poll_seconds) +
+        row("Charge du processeur", load, d.load && d.cpus && d.load[0] > d.cpus) +
+        row("Mémoire utilisée", mem.used_pct != null ? mem.used_pct + " % de " + Math.round(mem.total_mb / 1024) + " Go" : "–", mem.used_pct > 90) +
+        row("Fichiers ouverts", d.open_files == null ? "–" : d.open_files, d.open_files > 3000) +
+        row("Attente base de données", Math.round(d.lock_wait_s * 1000) + " ms", d.lock_wait_s > 0.5) +
+        row("Base de données", d.db_mb == null ? "–" : d.db_mb + " Mo") +
+        row("En marche depuis", new Date(d.started * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) +
+        (d.slow.length ? "<div class='dg-slow'><b>Pages lentes récentes :</b>" + d.slow.map(function (x) {
+          return "<div>" + new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + " · " + esc(x.path) + " · " + x.seconds + " s</div>";
+        }).join("") + "</div>" : "<div class='dg-slow'>Aucune page lente récemment ✓</div>");
+    }).catch(function (e) { box.textContent = e.message; });
+  }
+  if ($("dgBtn")) { $("dgBtn").addEventListener("click", diag); diag(); }
+
   function load() {
     return api("/api/settings").then(function (d) {
       show(d.update, d.demo);
@@ -44,6 +70,8 @@
       }
       var host = location.hostname === "127.0.0.1" || location.hostname === "localhost" ? null : "http://" + location.host;
       $("phoneUrl").textContent = host || d.phone_url || "Adresse introuvable : tapez ipconfig sur le PC.";
+      // sur le serveur en ligne (https), cette carte ne sert à rien : l'adresse est déjà celle du site
+      if (location.protocol === "https:") $("phoneCard").hidden = true;
     });
   }
   $("ctSave").addEventListener("click", function () {

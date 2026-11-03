@@ -31,8 +31,20 @@
   }
 
   // --- ventes -------------------------------------------------------------------------
+  // derniers chiffres gardés sur l'appareil : affichés tout de suite à l'ouverture (vidés à la connexion)
+  var SALES_KEY = "aderlink-sales";
   function loadSales() {
+    try {
+      var c = JSON.parse(localStorage.getItem(SALES_KEY) || "null");
+      if (c && c.days === days && c.data && c.data.all_time && $("kSold").textContent.trim() === "–") showSales(c.data);
+    } catch (e) {}
     get("/api/sales?days=" + days).then(function (d) {
+      try { localStorage.setItem(SALES_KEY, JSON.stringify({ days: days, data: d })); } catch (e) {}
+      showSales(d);
+    });
+  }
+  function showSales(d) {
+    {
       var all = d.all_time;
       $("kCa").innerHTML = nf.format(all.amount) + " <small>F CFA</small>";
       $("kSold").textContent = nf.format(all.tickets);
@@ -44,7 +56,7 @@
       $("salesSub").innerHTML = nf.format(d.period.tickets) + " tickets vendus en " + days + " jours · <strong>Aujourd'hui</strong> : " +
         nf.format(today.amount) + " F, " + nf.format(today.tickets) + " ticket" + (today.tickets > 1 ? "s" : "");
       draw(d.series);
-    });
+    }
   }
   function draw(series) {
     var svg = $("salesSvg");
