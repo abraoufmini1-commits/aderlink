@@ -276,32 +276,45 @@ class Guard:
         z = next((z for z in self.config.get("zones", []) if z["id"] == zid), None)
         return z["name"] if z else zid
 
+    MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
+              "octobre", "novembre", "décembre")
+
     def summary(self, now=None):
-        """Résumé de la journée : envoyé à minuit, il porte sur la journée qui vient de finir (0 h → 24 h)."""
+        """Résumé de la journée, envoyé à minuit, sur la journée qui vient de finir (0 h → 24 h) :
+        pour chaque point de vente, les tickets par forfait, le total du jour et le total du mois."""
         now = now or int(time.time())
-        midnight = (now + self.offset()) // 86400 * 86400 - self.offset()
+        off = self.offset()
+        midnight = (now + off) // 86400 * 86400 - off
         start, end = (midnight - 86400, midnight) if SUMMARY_HOUR == 0 else (midnight, now)
-        n = amount = 0
-        by_zone = []
+        day = time.gmtime(start + off)
+        month_start = int(time.mktime((day.tm_year, day.tm_mon, 1, 0, 0, 0, 0, 0, 0)) - time.timezone) - off
+        nf = lambda x: f"{int(x):,}".replace(",", " ")
+        tk = lambda n: f"{nf(n)} ticket{'s' if n > 1 else ''}"
+        pos = []
         if self.tickets:
             try:
-                rep = self.tickets.report(start, end, self.offset())
-                n, amount = rep["totals"]["tickets"], rep["totals"]["amount"]
-                by_zone = [z for z in rep.get("by_zone", []) if z.get("tickets")]
-            except Exception:  # base incomplète (tests) : on retombe sur le calcul simple
-                sales = [s for s in self.tickets.sales(start)]
-                n, amount = sum(x["tickets"] for x in sales), sum(x["amount"] for x in sales)
-        nf = lambda x: f"{int(x):,}".replace(",", " ")
-        lines = [f"📊 <b>Ventes du {time.strftime('%d/%m', time.gmtime(start + self.offset()))}</b>",
-                 f"<b>Total : {nf(amount)} F CFA</b> · {nf(n)} ticket{'s' if n > 1 else ''}"]
-        if by_zone:
+                pos = self.tickets.sales_by_pos(start, end, month_start)
+            except Exception as e:  # base incomplète (tests) : résumé sans détail
+                self.log(f"Résumé : détail indisponible ({e})")
+        day_n, day_a = sum(p["day"][0] for p in pos), sum(p["day"][1] for p in pos)
+        mon_n, mon_a = sum(p["month"][0] for p in pos), sum(p["month"][1] for p in pos)
+        month = self.MONTHS[day.tm_mon - 1]
+        lines = [f"📊 <b>Ventes du {time.strftime('%d/%m/%Y', day)}</b>",
+                 f"Jour : <b>{nf(day_a)} F</b> · {tk(day_n)}",
+                 f"Mois de {month} : <b>{nf(mon_a)} F</b> · {tk(mon_n)}"]
+        sold = [p for p in pos if p["day"][0]]
+        for p in sold:
             lines.append("")
-            lines.append("<b>Par routeur :</b>")
-            for z in sorted(by_zone, key=lambda z: -z["amount"]):
-                lines.append(f"• {_esc(z['label'])} : {nf(z['amount'])} F ({nf(z['tickets'])})")
-            silent = len(self.config.get("zones", [])) - len(by_zone)
-            if silent > 0:
-                lines.append(f"Sans vente : {silent} routeur{'s' if silent > 1 else ''}")
+            lines.append(f"📍 <b>{_esc(p['name'])}</b>")
+            for l in p["lines"]:
+                lines.append(f"   {_esc(l['label'])} ({nf(l['price'])} F) : {tk(l['tickets'])} = {nf(l['amount'])} F")
+            lines.append(f"   <b>Jour : {nf(p['day'][1])} F</b> ({nf(p['day'][0])}) · Mois : {nf(p['month'][1])} F ({nf(p['month'][0])})")
+        quiet = [p for p in pos if not p["day"][0]]
+        if quiet:
+            lines.append("")
+            lines.append(f"Sans vente aujourd'hui ({len(quiet)}) :")
+            for p in quiet:
+                lines.append(f"   {_esc(p['name'])} · mois : {nf(p['month'][1])} F")
         if self.alerted:
             lines.append("")
             lines.append("🔴 Hors ligne : " + ", ".join(_esc(self._name(z)) for z in self.alerted))

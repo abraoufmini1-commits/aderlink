@@ -717,6 +717,41 @@ class Tickets:
             "by_roaming": self._roaming_sales(base, params, zones),
         }
 
+    def sales_by_pos(self, start, end, month_start):
+        """Résumé de minuit : pour chaque point de vente, les tickets vendus par forfait dans la journée,
+        le total du jour et le total du mois (du 1er du mois jusqu'à la fin de la journée)."""
+        zones = {z["id"]: z["name"] for z in self.config.get("zones", [])}
+        rows, _ = self._q(
+            "SELECT b.zone_id, b.pos_id, pv.name, b.roaming_id, COALESCE(f.name, b.profile), b.price, "
+            "SUM(t.first_used >= ?), COALESCE(SUM(CASE WHEN t.first_used >= ? THEN b.price END), 0), "
+            "COUNT(*), COALESCE(SUM(b.price), 0) "
+            "FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "LEFT JOIN forfaits f ON f.id = b.forfait_id LEFT JOIN points_vente pv ON pv.id = b.pos_id "
+            "WHERE t.first_used >= ? AND t.first_used < ? "
+            "GROUP BY b.zone_id, b.pos_id, b.roaming_id, COALESCE(f.name, b.profile), b.price",
+            (start, start, month_start, end))
+        try:
+            roams = dict(self._q("SELECT id, name FROM roaming_groups")[0])
+        except Exception:
+            roams = {}
+        out = {}
+        for zid, pos, pv, rid, label, price, n_day, a_day, n_month, a_month in rows:
+            router = zones.get(zid, zid)
+            # « Profil principal » (point de vente créé tout seul) : on montre le nom du routeur
+            name = router if not pv or pv == "Profil principal" else f"{pv} · {router}"
+            if rid:
+                name += f" · Roaming {roams.get(rid, '')}".rstrip()
+            p = out.setdefault((zid, pos, rid), {"name": name, "lines": [], "day": [0, 0], "month": [0, 0]})
+            if n_day:
+                p["lines"].append({"label": label or "–", "price": price or 0, "tickets": n_day, "amount": a_day})
+            p["day"][0] += n_day or 0
+            p["day"][1] += a_day or 0
+            p["month"][0] += n_month or 0
+            p["month"][1] += a_month or 0
+        for p in out.values():
+            p["lines"].sort(key=lambda l: (l["price"], l["label"]))
+        return sorted(out.values(), key=lambda p: (-p["day"][1], -p["month"][1], p["name"]))
+
     def _zone_price(self, base, params, zones):
         """Pour chaque routeur : combien de tickets de 100 F, 200 F, 500 F… vendus, et le montant."""
         rows, _ = self._q(f"SELECT b.zone_id, b.price, COALESCE(f.name, b.profile), COUNT(*), COALESCE(SUM(b.price), 0) {base} "
