@@ -259,12 +259,14 @@ class Routers:
         api.query("/ip/firewall/nat/add", "=chain=srcnat", f"=src-address={src}", f"=dst-address={d['ip']}",
                   "=protocol=tcp", f"=dst-port={d['port']}", "=action=masquerade", f"=comment={tag}")
         # sur un réseau hotspot, l'appareil doit passer sans ticket (sinon ses réponses sont bloquées)
+        # (par son adresse IP, et aussi par sa MAC si on la connaît : si l'une des deux est fausse, l'autre suffit)
         if api.query("/ip/hotspot/print"):
-            target = f"=mac-address={d['mac']}" if d.get("mac") else f"=address={d['ip']}"
-            try:
-                api.query("/ip/hotspot/ip-binding/add", target, "=type=bypassed", f"=comment={tag}")
-            except RouterOSError:
-                pass  # déjà en bypass
+            targets = [f"=address={d['ip']}"] + ([f"=mac-address={d['mac']}"] if d.get("mac") else [])
+            for target in targets:
+                try:
+                    api.query("/ip/hotspot/ip-binding/add", target, "=type=bypassed", f"=comment={tag}")
+                except RouterOSError:
+                    pass  # déjà en bypass
 
     def _remove_rules(self, api, did):
         for n in api.query("/ip/firewall/nat/print", f"?comment=ADER LINK appareil {did}"):
