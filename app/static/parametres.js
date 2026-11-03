@@ -120,7 +120,34 @@
       box.innerHTML = "<div class='sub-state sub-ok'>" + ic("check") + "<div><strong>Relié à Telegram" + (t.who ? " (" + esc(t.who) + ")" : "") + "</strong>" +
         "<span>Vous recevez : routeur hors ligne depuis 12 heures et de retour, " + (s.summary_hour === 0 ? "ventes de la journée à minuit" : "ventes du jour à " + s.summary_hour + " h") + ", sauvegarde de la nuit.</span></div></div>" +
         "<div class='bk-actions'><button class='btn btn-outline' type='button' id='tgTest'>Envoyer un message de test</button>" +
-        "<button class='btn-prev' type='button' id='tgOff'>Délier</button></div>";
+        "<button class='btn-prev' type='button' id='tgOff'>Délier</button></div>" +
+        "<div class='tg-people'><strong>Autres personnes</strong>" +
+        "<span class='pane-sub'>Elles reçoivent le rapport des ventes de minuit, et les alertes des routeurs si c'est coché. " +
+        "Jamais la sauvegarde : elle contient les mots de passe de vos routeurs.</span>" +
+        "<ul class='tg-list'>" + (t.people || []).map(function (p) {
+          return "<li><span class='tg-who'>" + esc(p.who) + "</span>" +
+            "<label class='check-opt'><input type='checkbox' data-alerts='" + esc(p.id) + "'" + (p.alerts ? " checked" : "") + "><span>Alertes routeurs</span></label>" +
+            "<button class='btn-prev' type='button' data-remove='" + esc(p.id) + "'>Retirer</button></li>";
+        }).join("") + "</ul>" +
+        "<details class='tg-add'><summary class='btn btn-outline'>+ Ajouter une personne</summary>" +
+        "<ol class='wb-steps'><li>La personne ouvre le bot <strong>@" + esc(t.bot) + "</strong> sur son téléphone : " +
+        "<a class='link' href='https://t.me/" + encodeURIComponent(t.bot) + "' target='_blank' rel='noopener'>t.me/" + esc(t.bot) + "</a></li>" +
+        "<li>Elle appuie sur <strong>DÉMARRER</strong> (ou écrit <strong>/start</strong>).</li><li>Vous cliquez :</li></ol>" +
+        "<button class='btn' type='button' id='tgAdd'>Ajouter la personne</button></details></div>";
+      $("tgAdd").onclick = function () {
+        var b = this; b.disabled = true;
+        api("/api/security/person-add", {}).then(function (d) { render(d); msg("ok", "Personne ajoutée : elle a reçu un message de bienvenue."); })
+          .catch(function (e) { msg("err", e.message); b.disabled = false; });
+      };
+      box.querySelectorAll("[data-alerts]").forEach(function (el) {
+        el.onchange = function () { api("/api/security/person", { id: el.dataset.alerts, alerts: el.checked }).catch(function (e) { msg("err", e.message); }); };
+      });
+      box.querySelectorAll("[data-remove]").forEach(function (el) {
+        el.onclick = function () {
+          if (el.dataset.confirm !== "1") { el.dataset.confirm = "1"; el.textContent = "Confirmer ?"; return; }
+          api("/api/security/person", { id: el.dataset.remove, remove: true }).then(render).catch(function (e) { msg("err", e.message); });
+        };
+      });
       $("tgTest").onclick = function () { api("/api/security/test", {}).then(function () { msg("ok", "Message envoyé : regardez Telegram."); }).catch(function (e) { msg("err", e.message); }); };
       $("tgOff").onclick = function () { api("/api/security/unlink", {}).then(render); };
     } else if (t.token) {

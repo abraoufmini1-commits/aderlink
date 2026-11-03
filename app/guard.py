@@ -149,7 +149,8 @@ class Guard:
         """Trouve la conversation où vous avez écrit au bot, et la retient."""
         updates = self._api("getUpdates", {"timeout": 0})
         chats = [u.get("message", {}).get("chat") for u in updates if u.get("message")]
-        chats = [c for c in chats if c and c.get("type") == "private"]
+        others = {p["chat_id"] for p in self.tg().get("extra", [])}
+        chats = [c for c in chats if c and c.get("type") == "private" and c.get("id") not in others]
         if not chats:
             raise GuardError("Ouvrez votre bot dans Telegram, appuyez sur DÉMARRER (ou écrivez /start), puis réessayez.")
         c = chats[-1]
@@ -259,16 +260,16 @@ class Guard:
                 self.pending.pop(zid, None)
                 if zid in self.alerted:
                     self.alerted.discard(zid)
-                    self.send(f"🟢 <b>{_esc(self._name(zid))}</b> est de nouveau en ligne.")
+                    self.notify(f"🟢 <b>{_esc(self._name(zid))}</b> est de nouveau en ligne.", "alert")
         changed = False
         for zid, since in list(self.pending.items()):
             if now - since >= OFFLINE_DELAY:
                 changed = True
                 self.pending.pop(zid)
                 self.alerted.add(zid)
-                self.send(f"🔴 <b>{_esc(self._name(zid))}</b> est hors ligne depuis "
+                self.notify(f"🔴 <b>{_esc(self._name(zid))}</b> est hors ligne depuis "
                           f"{time.strftime('%H:%M', time.gmtime(since + self.offset()))}.\n"
-                          "Vérifiez le courant et la connexion Internet du routeur.")
+                          "Vérifiez le courant et la connexion Internet du routeur.", "alert")
         if rows or changed:
             self._save_state()
 
@@ -320,16 +321,75 @@ class Guard:
             lines.append("🔴 Hors ligne : " + ", ".join(_esc(self._name(z)) for z in self.alerted))
         return "\n".join(lines)
 
-    def send_long(self, text, limit=3800):
+    def send_long(self, text, limit=3800, kind="report"):
         """Telegram limite un message à 4096 caractères : on coupe entre deux lignes."""
         part = ""
         for line in text.split("\n"):
             if part and len(part) + len(line) + 1 > limit:
-                self.send(part)
+                self.notify(part, kind)
                 part = ""
             part += ("\n" if part else "") + line
         if part:
-            self.send(part)
+            self.notify(part, kind)
+
+    # --- autres personnes qui reçoivent les messages ---------------------------------------------
+    # Elles reçoivent le rapport des ventes, et les alertes des routeurs si c'est coché.
+    # Jamais la sauvegarde (elle contient les mots de passe des routeurs) : elle va seulement à l'administrateur.
+    MAX_EXTRA = 10
+
+    def extras(self):
+        return self.tg().setdefault("extra", [])
+
+    def notify(self, text, kind="alert"):
+        ok = self.send(text)
+        t = self.tg()
+        if self.demo or not t.get("token"):
+            return ok
+        for p in list(self.extras()):
+            if kind == "report" or p.get("alerts"):
+                try:
+                    self._api("sendMessage", {"chat_id": p["chat_id"], "text": text, "parse_mode": "HTML",
+                                              "disable_web_page_preview": "true"})
+                except GuardError as e:
+                    self.log(f"Message Telegram non envoyé à {p.get('who')} : {e}")
+        return ok
+
+    def add_person(self):
+        """La personne a appuyé sur DÉMARRER dans le bot : on la retrouve et on l'ajoute."""
+        if not self.tg().get("chat_id"):
+            raise GuardError("Reliez d'abord votre propre Telegram")
+        known = {self.tg().get("chat_id")} | {p["chat_id"] for p in self.extras()}
+        updates = self._api("getUpdates", {"timeout": 0})
+        chats = [u.get("message", {}).get("chat") for u in updates if u.get("message")]
+        new = [c for c in chats if c and c.get("type") == "private" and c.get("id") not in known]
+        if not new:
+            raise GuardError("Personne de nouveau : la personne doit ouvrir le bot dans Telegram, appuyer sur DÉMARRER "
+                             "(ou écrire /start), puis vous réessayez.")
+        if len(self.extras()) >= self.MAX_EXTRA:
+            raise GuardError(f"{self.MAX_EXTRA} personnes au plus")
+        c = new[-1]
+        who = " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x) or (c.get("username") or "Sans nom")
+        self.extras().append({"chat_id": c["id"], "who": who, "alerts": True})
+        self.save(self.config)
+        try:
+            self._api("sendMessage", {"chat_id": c["id"], "parse_mode": "HTML",
+                                      "text": "✅ <b>Vous recevrez ici les messages d'ADER LINK</b> : le rapport des ventes chaque nuit "
+                                              "à minuit, et les alertes des routeurs."})
+        except GuardError:
+            pass
+        return self.status()
+
+    def set_person(self, chat_id, alerts=None, remove=False):
+        people = self.extras()
+        p = next((x for x in people if str(x["chat_id"]) == str(chat_id)), None)
+        if not p:
+            raise GuardError("Personne introuvable")
+        if remove:
+            people.remove(p)
+        elif alerts is not None:
+            p["alerts"] = bool(alerts)
+        self.save(self.config)
+        return self.status()
 
     def tick(self, now=None):
         now = now or int(time.time())
@@ -361,7 +421,9 @@ class Guard:
         t = self.tg()
         b = self.backups()
         return {"telegram": {"token": bool(t.get("token")), "bot": t.get("bot", ""), "linked": bool(t.get("chat_id")),
-                             "who": t.get("who", "")},
+                             "who": t.get("who", ""),
+                             "people": [{"id": str(p["chat_id"]), "who": p.get("who", ""), "alerts": bool(p.get("alerts"))}
+                                        for p in t.get("extra", [])]},
                 "backups": b, "keep_days": KEEP_DAYS, "backup_hour": BACKUP_HOUR, "summary_hour": SUMMARY_HOUR,
                 "available": bool(self.dir) and not self.demo}
 

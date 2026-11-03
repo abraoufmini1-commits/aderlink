@@ -1415,3 +1415,11 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
   .refresh-page { padding: 10px; flex: none; }
   .refresh-page span { display: none; }
 }
+/* Telegram : autres personnes */
+.tg-people { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.tg-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tg-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.tg-who { font-weight: 600; flex: 1 1 140px; }
+.tg-add > summary { list-style: none; cursor: pointer; display: inline-flex; width: auto; }
+.tg-add > summary::-webkit-details-marker { display: none; }
+.tg-add[open] > summary { margin-bottom: 8px; }
