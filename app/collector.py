@@ -5,6 +5,7 @@ Un fil d'exécution interroge tous les routeurs en parallèle toutes les
 historique (SQLite) pour les courbes et le journal d'activité.
 """
 import math
+import queue
 import random
 import re
 import sqlite3
@@ -43,6 +44,15 @@ def _int(v, default=0):
 MASS_HOLD = 4  # relevés (environ 2 min) pendant lesquels une coupure générale est ignorée
 
 
+def open_files():
+    """Combien de fichiers et connexions le programme a ouverts (Linux), pour surveiller les fuites."""
+    import os
+    try:
+        return len(os.listdir("/proc/self/fd"))
+    except OSError:
+        return None
+
+
 def internet_ok():
     """Le serveur a-t-il Internet ? (deux serveurs DNS publics, 3 s chacun)"""
     import socket
@@ -61,7 +71,9 @@ class Store:
     def __init__(self, path):
         self.lock = threading.Lock()
         self.path = path
-        self._local = threading.local()
+        self._readers = queue.LifoQueue()  # quelques connexions en lecture, partagées (pas une par fil)
+        self._reader_count = 0
+        self._reader_lock = threading.Lock()
         self.db = sqlite3.connect(path, check_same_thread=False)
         # WAL : les écritures du collecteur ne bloquent plus les lectures, et chaque enregistrement est bien plus rapide
         try:
@@ -91,16 +103,44 @@ class Store:
         if self.path == ":memory:" or self.db.in_transaction:  # écriture pas encore enregistrée : on la voit par ici
             with self.lock:
                 return self.db.execute(sql, params).fetchall()
-        con = getattr(self._local, "con", None)
-        if con is None:
-            con = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False, timeout=10)
-            con.execute("PRAGMA cache_size=-8000")
-            self._local.con = con
+        con = self._take_reader()
+        if con is None:  # toutes occupées : on passe par la voie normale
+            with self.lock:
+                return self.db.execute(sql, params).fetchall()
         try:
             return con.execute(sql, params).fetchall()
         except sqlite3.OperationalError:  # table créée après l'ouverture, etc. : on réessaie par la voie normale
             with self.lock:
                 return self.db.execute(sql, params).fetchall()
+        finally:
+            self._readers.put(con)
+
+    MAX_READERS = 6
+
+    def _take_reader(self):
+        try:
+            return self._readers.get_nowait()
+        except queue.Empty:
+            pass
+        with self._reader_lock:
+            if self._reader_count >= self.MAX_READERS:
+                con = None
+            else:
+                self._reader_count += 1
+                con = True
+        if con is None:
+            try:
+                return self._readers.get(timeout=2)
+            except queue.Empty:
+                return None
+        try:
+            c = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False, timeout=10)
+            c.execute("PRAGMA cache_size=-8000")
+            return c
+        except sqlite3.Error:
+            with self._reader_lock:
+                self._reader_count -= 1
+            return None
 
     def add_sample(self, ts, zone_id, online, active, rx, tx):
         with self.lock:
@@ -172,6 +212,10 @@ class Collector:
             cycles += 1
             if cycles % 120 == 0:
                 self.store.prune()
+            if cycles % 20 == 0:
+                n = open_files()
+                if n is not None and n > 400:
+                    print(f"[collecte] fichiers ouverts : {n}", flush=True)
             self._stop.wait(self.poll_seconds)
 
     def poll_all(self):

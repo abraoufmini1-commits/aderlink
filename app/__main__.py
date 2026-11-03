@@ -43,6 +43,19 @@ DEMO_CONFIG = {
 }
 
 
+def raise_file_limit():
+    """Plus de 100 routeurs relevés en parallèle : la limite de 1024 fichiers ouverts est trop basse."""
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = hard if hard != resource.RLIM_INFINITY else 65536
+        want = min(want, 65536)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except (ImportError, ValueError, OSError):
+        pass
+
+
 def load_config():
     if not CONFIG.exists():
         sys.exit(f"Fichier de configuration introuvable : {CONFIG}\n"
@@ -170,6 +183,7 @@ def cmd_set_ssid(args):
 
 
 def cmd_serve(args):
+    raise_file_limit()
     DATA.mkdir(parents=True, exist_ok=True)
     if args.demo:
         cfg = json.loads(json.dumps(DEMO_CONFIG))

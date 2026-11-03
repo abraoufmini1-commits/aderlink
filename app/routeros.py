@@ -48,15 +48,25 @@ class RouterOS:
             raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as e:
             raise RouterOSError(f"Routeur injoignable ({self.host}:{self.port}) : {e}") from e
-        if self.use_ssl:
-            ctx = ssl.create_default_context()
-            # Les routeurs MikroTik utilisent presque toujours un certificat auto-signé.
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            raw = ctx.wrap_socket(raw, server_hostname=self.host)
-        raw.settimeout(self.timeout)
-        self.sock = raw
-        self._login()
+        try:
+            if self.use_ssl:
+                ctx = ssl.create_default_context()
+                # Les routeurs MikroTik utilisent presque toujours un certificat auto-signé.
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                raw = ctx.wrap_socket(raw, server_hostname=self.host)
+            raw.settimeout(self.timeout)
+            self.sock = raw
+            self._login()
+        except BaseException:
+            # échec (mot de passe, délai…) : on ferme tout de suite, sinon la connexion reste ouverte
+            # et le serveur finit par manquer de connexions (« Too many open files »)
+            self.sock = None
+            try:
+                raw.close()
+            except OSError:
+                pass
+            raise
 
     def close(self):
         if self.sock:

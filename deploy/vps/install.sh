@@ -56,6 +56,7 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 -m app serve --host 127.0.0.1 --port 8080
 # code 3 = mise à jour installée : on redémarre aussitôt
 Restart=always
+LimitNOFILE=65536
 RestartSec=2
 NoNewPrivileges=true
 PrivateTmp=true
