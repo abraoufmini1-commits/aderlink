@@ -785,32 +785,35 @@ class Tickets:
 
     def _roaming_sales(self, base, params, zones):
         """Ventes ADER Roaming : pour chaque réseau, les tickets vendus par prix,
-        et le routeur où chaque ticket s'est connecté la 1re fois."""
+        et le même détail pour chaque point de vente (qui a vendu quoi)."""
         try:
-            first = ("(SELECT rs.nas_zone FROM roaming_sessions rs WHERE rs.home_zone = t.zone_id AND rs.code = t.code "
-                     "ORDER BY rs.started LIMIT 1)")
-            rows, _ = self._q(f"SELECT b.roaming_id, {first} AS fz, b.price, COALESCE(f.name, b.profile), COUNT(*), "
-                              f"COALESCE(SUM(b.price), 0) {base} AND b.roaming_id IS NOT NULL "
-                              "GROUP BY b.roaming_id, fz, b.price, COALESCE(f.name, b.profile)", params)
+            rows, _ = self._q(f"SELECT b.roaming_id, b.zone_id, b.pos_id, pv.name, b.price, COALESCE(f.name, b.profile), "
+                              f"COUNT(*), COALESCE(SUM(b.price), 0) {base} AND b.roaming_id IS NOT NULL "
+                              "GROUP BY b.roaming_id, b.zone_id, b.pos_id, b.price, COALESCE(f.name, b.profile)", params)
             names = dict(self._q("SELECT id, name FROM roaming_groups")[0])
         except Exception:  # ADER Roaming pas encore utilisé sur cette installation
             return []
         out = {}
-        for gid, fz, price, label, n, amount in rows:
+        for gid, zid, pos, pv, price, label, n, amount in rows:
             g = out.setdefault(gid, {"id": gid, "name": names.get(gid, "Réseau supprimé"), "tickets": 0, "amount": 0,
-                                     "lines": {}, "routers": {}})
+                                     "lines": {}, "pos": {}})
             g["tickets"] += n
             g["amount"] += amount
             ln = g["lines"].setdefault((price, label or "–"), {"price": price, "label": label or "–", "tickets": 0, "amount": 0})
             ln["tickets"] += n
             ln["amount"] += amount
-            r = g["routers"].setdefault(fz, {"zone": zones.get(fz, fz) if fz else "Inconnu", "tickets": 0, "amount": 0})
-            r["tickets"] += n
-            r["amount"] += amount
+            router = zones.get(zid, zid)
+            pname = router if not pv or pv == "Profil principal" else pv
+            p = g["pos"].setdefault((zid, pos), {"name": pname, "tickets": 0, "amount": 0, "lines": []})
+            p["lines"].append({"price": price, "label": label or "–", "tickets": n, "amount": amount})
+            p["tickets"] += n
+            p["amount"] += amount
         res = []
         for g in out.values():
             g["lines"] = sorted(g["lines"].values(), key=lambda x: (x["price"], x["label"]))
-            g["routers"] = sorted(g["routers"].values(), key=lambda x: -x["amount"])
+            g["pos"] = sorted(g["pos"].values(), key=lambda x: -x["amount"])
+            for p in g["pos"]:
+                p["lines"].sort(key=lambda x: (x["price"], x["label"]))
             res.append(g)
         return sorted(res, key=lambda g: -g["amount"])
 

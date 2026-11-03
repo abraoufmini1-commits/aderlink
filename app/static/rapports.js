@@ -141,11 +141,6 @@
     load($("dFrom").value, $("dTo").value).then(function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
   });
   // Par routeur et par prix : une carte par routeur, une ligne par prix (100 F, 200 F…)
-  // un seul point de vente créé tout seul (« Profil principal ») : pas de détail, on sait déjà qui a vendu
-  function posDetail(z) {
-    var pos = z.pos || [];
-    return pos.length > 1 || (pos.length === 1 && pos[0].name !== "Profil principal" && pos[0].name !== "Sans point de vente");
-  }
   function priceRow(l) {
     return "<tr><td><span class='zp-price num'>" + nf.format(l.price) + " F</span> <span class='zp-name'>" + esc(l.label) + "</span></td>" +
       "<td class='r num'>" + nf.format(l.tickets) + "</td><td class='r num'>" + money(l.amount) + "</td></tr>";
@@ -153,13 +148,10 @@
   function zonePrice(list) {
     $("byZonePrice").innerHTML = list.length ? list.map(function (z) {
       var zid = (R.zone_list.find(function (x) { return x.name === z.zone; }) || {}).id || "";
-      var body = posDetail(z) ? z.pos.map(function (p) {
-        return "<tr class='zp-pos'><td colspan='3'>📍 " + esc(p.name) + "</td></tr>" + p.lines.map(priceRow).join("") +
-          "<tr class='zp-sub'><td>Total " + esc(p.name) + "</td><td class='r num'>" + nf.format(p.tickets) + "</td><td class='r num'>" + money(p.amount) + "</td></tr>";
-      }).join("") : z.lines.map(priceRow).join("");
+      var body = z.lines.map(priceRow).join("");
       return "<div class='zp-card'><div class='zp-head'><strong>" + esc(z.zone) + "</strong><span class='num'>" + money(z.amount) + "</span></div>" +
         "<table class='zp-table'><thead><tr><th>Ticket</th><th class='r'>Vendus</th><th class='r'>Montant</th></tr></thead><tbody>" + body +
-        "</tbody><tfoot><tr><th>" + (posDetail(z) ? "Total du routeur" : "Total") + "</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table>" +
+        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(z.tickets) + "</th><th class='r num'>" + money(z.amount) + "</th></tr></tfoot></table>" +
         (zid && !R.zone ? "<button type='button' class='link zp-print no-print' data-zp='" + esc(zid) + "'>Voir et imprimer ce routeur seul →</button>" : "") + "</div>";
     }).join("") : "<p class='pane-sub'>Aucune vente sur la période.</p>";
   }
@@ -171,10 +163,11 @@
       var row = function (a, b, c) { return "<tr><td>" + a + "</td><td class='r num'>" + nf.format(b) + "</td><td class='r num'>" + money(c) + "</td></tr>"; };
       return "<div class='zp-card'><div class='zp-head'><strong>" + esc(g.name) + "</strong><span class='num'>" + money(g.amount) + "</span></div>" +
         "<table class='zp-table'><thead><tr><th>Ticket</th><th class='r'>Vendus</th><th class='r'>Montant</th></tr></thead><tbody>" +
-        g.lines.map(function (l) {
-          return row("<span class='zp-price num'>" + nf.format(l.price) + " F</span> <span class='zp-name'>" + esc(l.label) + "</span>", l.tickets, l.amount);
+        (g.pos || []).map(function (p) {
+          return "<tr class='zp-pos'><td colspan='3'>📍 " + esc(p.name) + "</td></tr>" + p.lines.map(priceRow).join("") +
+            "<tr class='zp-sub'><td>Total " + esc(p.name) + "</td><td class='r num'>" + nf.format(p.tickets) + "</td><td class='r num'>" + money(p.amount) + "</td></tr>";
         }).join("") +
-        "</tbody><tfoot><tr><th>Total</th><th class='r num'>" + nf.format(g.tickets) + "</th><th class='r num'>" + money(g.amount) + "</th></tr></tfoot></table></div>";
+        "</tbody><tfoot><tr><th>Total du réseau</th><th class='r num'>" + nf.format(g.tickets) + "</th><th class='r num'>" + money(g.amount) + "</th></tr></tfoot></table></div>";
     }).join("");
   }
 
@@ -257,19 +250,15 @@
     });
     lines.push([], ["Routeur", "Prix du ticket (F CFA)", "Profil", "Tickets vendus", "Montant (F CFA)"]);
     (R.by_zone_price || []).forEach(function (z) {
-      if (posDetail(z)) {
-        z.pos.forEach(function (p) {
-          p.lines.forEach(function (l) { lines.push([z.zone + " - " + p.name, l.price, l.label, l.tickets, l.amount]); });
-          lines.push([z.zone + " - " + p.name + " - total", "", "", p.tickets, p.amount]);
-        });
-      } else {
-        z.lines.forEach(function (l) { lines.push([z.zone, l.price, l.label, l.tickets, l.amount]); });
-      }
+      z.lines.forEach(function (l) { lines.push([z.zone, l.price, l.label, l.tickets, l.amount]); });
       lines.push([z.zone + " - total", "", "", z.tickets, z.amount]);
     });
     (R.by_roaming || []).forEach(function (g) {
       lines.push([], ["ADER Roaming : " + g.name, "Prix du ticket (F CFA)", "Profil", "Tickets vendus", "Montant (F CFA)"]);
-      g.lines.forEach(function (l) { lines.push([g.name, l.price, l.label, l.tickets, l.amount]); });
+      (g.pos || []).forEach(function (p) {
+        p.lines.forEach(function (l) { lines.push([g.name + " - " + p.name, l.price, l.label, l.tickets, l.amount]); });
+        lines.push([g.name + " - " + p.name + " - total", "", "", p.tickets, p.amount]);
+      });
       lines.push([g.name + " - total", "", "", g.tickets, g.amount]);
     });
     // point-virgule : Excel en français ouvre le fichier directement en colonnes

@@ -922,7 +922,9 @@ class RoamingTests(unittest.TestCase):
         g = rep["by_roaming"][0]
         self.assertEqual((g["name"], g["tickets"], g["amount"]), ("Réseau ADER", 2, 200))
         self.assertEqual(g["lines"][0]["price"], 100)
-        self.assertEqual(sorted(r["zone"] for r in g["routers"]), ["Zone A", "Zone B"])
+        # détail par point de vente (sans point de vente nommé : le nom du routeur du lot)
+        self.assertEqual(sum(p["tickets"] for p in g["pos"]), 2)
+        self.assertTrue(all(p["lines"] for p in g["pos"]))
 
     def test_auto_setup_on_router(self):
         """Le routeur est réglé tout seul par l'API (RADIUS + profil hotspot), sans coller de script."""
