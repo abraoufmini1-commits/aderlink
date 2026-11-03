@@ -753,15 +753,29 @@ class Tickets:
         return sorted(out.values(), key=lambda p: (-p["day"][1], -p["month"][1], p["name"]))
 
     def _zone_price(self, base, params, zones):
-        """Pour chaque routeur : combien de tickets de 100 F, 200 F, 500 F… vendus, et le montant."""
-        rows, _ = self._q(f"SELECT b.zone_id, b.price, COALESCE(f.name, b.profile), COUNT(*), COALESCE(SUM(b.price), 0) {base} "
-                          "AND b.roaming_id IS NULL GROUP BY b.zone_id, b.price, COALESCE(f.name, b.profile) ORDER BY b.zone_id, b.price", params)
+        """Pour chaque routeur : combien de tickets de 100 F, 200 F, 500 F… vendus, et le montant,
+        et le même détail pour chaque point de vente du routeur (qui a vendu quoi)."""
+        rows, _ = self._q(f"SELECT b.zone_id, b.pos_id, pv.name, b.price, COALESCE(f.name, b.profile), COUNT(*), "
+                          f"COALESCE(SUM(b.price), 0) {base} AND b.roaming_id IS NULL "
+                          "GROUP BY b.zone_id, b.pos_id, b.price, COALESCE(f.name, b.profile) ORDER BY b.zone_id, b.price", params)
         out = {}
-        for zid, price, name, n, amount in rows:
-            z = out.setdefault(zid, {"zone": zones.get(zid, zid), "tickets": 0, "amount": 0, "lines": []})
-            z["lines"].append({"price": price, "label": name or "–", "tickets": n, "amount": amount})
+        for zid, pos, pv, price, name, n, amount in rows:
+            z = out.setdefault(zid, {"zone": zones.get(zid, zid), "tickets": 0, "amount": 0, "lines": [], "pos": {}})
+            key = (price, name or "–")
+            line = next((l for l in z["lines"] if (l["price"], l["label"]) == key), None)
+            if not line:
+                line = {"price": price, "label": name or "–", "tickets": 0, "amount": 0}
+                z["lines"].append(line)
+            line["tickets"] += n
+            line["amount"] += amount
             z["tickets"] += n
             z["amount"] += amount
+            p = z["pos"].setdefault(pos, {"name": pv or "Sans point de vente", "tickets": 0, "amount": 0, "lines": []})
+            p["lines"].append({"price": price, "label": name or "–", "tickets": n, "amount": amount})
+            p["tickets"] += n
+            p["amount"] += amount
+        for z in out.values():
+            z["pos"] = sorted(z["pos"].values(), key=lambda p: -p["amount"])
         return sorted(out.values(), key=lambda z: -z["amount"])
 
     def _roaming_sales(self, base, params, zones):

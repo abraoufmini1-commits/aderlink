@@ -1429,3 +1429,7 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .dg-row span { color: var(--muted, inherit); }
 .dg-bad b { color: #c0392b; }
 .dg-slow { margin-top: 10px; font-size: .92em; display: grid; gap: 2px; }
+/* Rapport : détail par point de vente dans chaque routeur */
+.zp-table tr.zp-pos td { padding-top: 12px; font-weight: 700; color: var(--blue-600); border-bottom: 0; }
+.zp-table tr.zp-sub td { font-weight: 600; font-size: .92em; border-bottom: 1px dashed var(--border); padding-bottom: 8px; }
+@media print { .zp-table tr.zp-pos td { color: #000; } }
