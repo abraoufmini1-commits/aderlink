@@ -766,7 +766,7 @@ def make_handler(app):
                 self.need(who.can("settings"))
                 G, act = app.guard, p[len("/api/security/"):]
                 fn = {"telegram": lambda: G.set_token(body.get("token")), "link": G.link, "unlink": G.unlink,
-                      "test": G.test, "backup": lambda: dict(G.backup_now(), **G.status())}.get(act)
+                      "test": G.test, "report": G.report_now, "backup": lambda: dict(G.backup_now(), **G.status())}.get(act)
                 self.need(fn, "Introuvable")
                 return fn()
             # ADER Roaming

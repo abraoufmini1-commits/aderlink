@@ -279,13 +279,20 @@ class Guard:
     MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
               "octobre", "novembre", "décembre")
 
-    def summary(self, now=None):
+    def report_now(self):
+        """Bouton « Recevoir le rapport maintenant » : les ventes d'aujourd'hui jusqu'à cette minute."""
+        if not (self.config.get("telegram") or {}).get("chat_id"):
+            raise GuardError("Reliez d'abord Telegram")
+        self.send_long(self.summary(today=True))
+        return {"ok": True}
+
+    def summary(self, now=None, today=False):
         """Résumé de la journée, envoyé à minuit, sur la journée qui vient de finir (0 h → 24 h) :
         pour chaque point de vente, les tickets par forfait, le total du jour et le total du mois."""
         now = now or int(time.time())
         off = self.offset()
         midnight = (now + off) // 86400 * 86400 - off
-        start, end = (midnight - 86400, midnight) if SUMMARY_HOUR == 0 else (midnight, now)
+        start, end = (midnight, now) if today or SUMMARY_HOUR != 0 else (midnight - 86400, midnight)
         day = time.gmtime(start + off)
         month_start = int(time.mktime((day.tm_year, day.tm_mon, 1, 0, 0, 0, 0, 0, 0)) - time.timezone) - off
         nf = lambda x: f"{int(x):,}".replace(",", " ")
@@ -299,7 +306,9 @@ class Guard:
         day_n, day_a = sum(p["day"][0] for p in pos), sum(p["day"][1] for p in pos)
         mon_n, mon_a = sum(p["month"][0] for p in pos), sum(p["month"][1] for p in pos)
         month = self.MONTHS[day.tm_mon - 1]
-        lines = [f"📊 <b>Ventes du {time.strftime('%d/%m/%Y', day)}</b>",
+        title = f"Ventes d'aujourd'hui ({time.strftime('%d/%m/%Y', day)}, jusqu'à {time.strftime('%H:%M', time.gmtime(now + off))})" \
+            if today else f"Ventes du {time.strftime('%d/%m/%Y', day)}"
+        lines = [f"📊 <b>{title}</b>",
                  f"Jour : <b>{nf(day_a)} F</b> · {tk(day_n)}",
                  f"Mois de {month} : <b>{nf(mon_a)} F</b> · {tk(mon_n)}"]
         sold = [p for p in pos if p["day"][0]]

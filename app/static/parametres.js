@@ -119,9 +119,15 @@
     if (t.linked) {
       box.innerHTML = "<div class='sub-state sub-ok'>" + ic("check") + "<div><strong>Relié à Telegram" + (t.who ? " (" + esc(t.who) + ")" : "") + "</strong>" +
         "<span>Vous recevez : routeur hors ligne depuis 12 heures et de retour, " + (s.summary_hour === 0 ? "ventes de la journée à minuit" : "ventes du jour à " + s.summary_hour + " h") + ", sauvegarde de la nuit.</span></div></div>" +
-        "<div class='bk-actions'><button class='btn btn-outline' type='button' id='tgTest'>Envoyer un message de test</button>" +
+        "<div class='bk-actions'><button class='btn btn-outline' type='button' id='tgReport'>Recevoir le rapport des ventes maintenant</button>" +
+        "<button class='btn btn-outline' type='button' id='tgTest'>Envoyer un message de test</button>" +
         "<button class='btn-prev' type='button' id='tgOff'>Délier</button></div>";
       $("tgTest").onclick = function () { api("/api/security/test", {}).then(function () { msg("ok", "Message envoyé : regardez Telegram."); }).catch(function (e) { msg("err", e.message); }); };
+      $("tgReport").onclick = function () {
+        var b = this; b.disabled = true;
+        api("/api/security/report", {}).then(function () { msg("ok", "Rapport envoyé : regardez Telegram."); })
+          .catch(function (e) { msg("err", e.message); }).then(function () { b.disabled = false; });
+      };
       $("tgOff").onclick = function () { api("/api/security/unlink", {}).then(render); };
     } else if (t.token) {
       box.innerHTML = "<ol class='wb-steps'><li>Ouvrez votre bot <strong>@" + esc(t.bot) + "</strong> dans Telegram : " +
