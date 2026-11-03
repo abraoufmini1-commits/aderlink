@@ -74,7 +74,7 @@
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +
     '<a class="me-chip" href="/profil" id="meChip" hidden><span class="me-av" id="meAv"></span><span class="me-txt"><b id="meChipName"></b><small id="meChipRole"></small></span></a>' +
-"<button class='icon-btn refresh-btn' type='button' id='refreshBtn' aria-label='Actualiser la page' title='Actualiser'>" + icon("refresh") + "</button>" +
+"<button class='icon-btn refresh-btn' type='button' id='refreshBtn'" + (page === "accueil" ? " hidden" : "") + " aria-label='Actualiser la page' title='Actualiser'>" + icon("refresh") + "</button>" +
     '<button class="icon-btn" type="button" id="menuBtn" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="drawer">' + icon("menu") + "</button></div></div>";
   var banner = document.getElementById("demoBanner");
   document.body.insertBefore(header, banner ? banner.nextSibling : document.body.firstChild);

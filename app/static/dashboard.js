@@ -317,6 +317,10 @@
   });
   document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
 
+  $("dashRefresh").addEventListener("click", function () {
+    this.classList.add("spin"); this.disabled = true;
+    location.reload();
+  });
   fromCache();
   load();
   setInterval(function () { if (!document.hidden) load(); }, REFRESH_MS);

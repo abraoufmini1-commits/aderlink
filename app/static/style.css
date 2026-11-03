@@ -1405,3 +1405,13 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .refresh-btn.spin svg { animation: refresh-spin .8s linear infinite; }
 @keyframes refresh-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .refresh-btn.spin svg { animation: none; } }
+/* bouton Actualiser de l'Accueil (à droite du titre) */
+.refresh-page { display: inline-flex; align-items: center; gap: 8px; align-self: center; }
+.refresh-page svg { width: 18px; height: 18px; }
+.refresh-page.spin svg { animation: refresh-spin .8s linear infinite; }
+.refresh-btn[hidden] { display: none; }
+@media (max-width: 600px) {
+  .page-head:has(.refresh-page) { flex-wrap: nowrap; align-items: flex-start; }
+  .refresh-page { padding: 10px; flex: none; }
+  .refresh-page span { display: none; }
+}
