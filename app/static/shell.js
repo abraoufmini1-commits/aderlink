@@ -15,6 +15,7 @@
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    refresh: '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
@@ -73,6 +74,7 @@
     }).join("") + "</nav>" +
     '<div class="topbar-right"><span class="updated num" id="updated" aria-live="polite"></span>' +
     '<a class="me-chip" href="/profil" id="meChip" hidden><span class="me-av" id="meAv"></span><span class="me-txt"><b id="meChipName"></b><small id="meChipRole"></small></span></a>' +
+"<button class='icon-btn refresh-btn' type='button' id='refreshBtn' aria-label='Actualiser la page' title='Actualiser'>" + icon("refresh") + "</button>" +
     '<button class="icon-btn" type="button" id="menuBtn" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="drawer">' + icon("menu") + "</button></div></div>";
   var banner = document.getElementById("demoBanner");
   document.body.insertBefore(header, banner ? banner.nextSibling : document.body.firstChild);
@@ -123,6 +125,11 @@
     document.getElementById("menuBtn").setAttribute("aria-expanded", "false");
     if (lastFocus) lastFocus.focus();
   }
+  // Actualiser : recharge la page (l'application installée n'a pas le bouton du navigateur)
+  document.getElementById("refreshBtn").addEventListener("click", function () {
+    this.classList.add("spin"); this.disabled = true;
+    location.reload();
+  });
   document.getElementById("menuBtn").addEventListener("click", open);
   document.getElementById("menuBtn2").addEventListener("click", open);
   document.getElementById("menuClose").addEventListener("click", close);

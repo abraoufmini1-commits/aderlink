@@ -1399,3 +1399,9 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .ab-tile strong { font-size: 22px; display: block; margin-top: 4px; } .ab-tile small { color: var(--ink-3); }
 .ab-tile.warn strong { color: var(--orange-hover, #d97606); } .ab-tile.over strong { color: var(--critical); }
 .feat-check { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+
+/* bouton Actualiser (en-tête) */
+.refresh-btn { margin-right: 8px; }
+.refresh-btn.spin svg { animation: refresh-spin .8s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .refresh-btn.spin svg { animation: none; } }
