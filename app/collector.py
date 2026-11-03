@@ -65,11 +65,50 @@ def internet_ok():
     return False
 
 
+class TrackedLock:
+    """Verrou de la base qui note qui le garde longtemps (pour trouver ce qui ralentit le serveur)."""
+    def __init__(self):
+        import collections
+        self._lock = threading.Lock()
+        self.long = collections.deque(maxlen=12)  # (heure, secondes, endroit)
+        self._t = 0.0
+        self._where = ""
+
+    def acquire(self, *a, **k):
+        ok = self._lock.acquire(*a, **k)
+        if ok:
+            self._t = time.time()
+        return ok
+
+    def release(self):
+        held = time.time() - self._t
+        if held > 0.5:
+            import sys
+            f = sys._getframe(1)
+            parts = []
+            while f and len(parts) < 3:
+                if "collector.py" not in f.f_code.co_filename or f.f_code.co_name not in ("__exit__", "release"):
+                    parts.append(f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name}")
+                f = f.f_back
+            self.long.append((int(self._t), round(held, 2), " < ".join(parts)))
+        self._lock.release()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+    def locked(self):
+        return self._lock.locked()
+
+
 class Store:
     """Historique et journal dans une petite base SQLite."""
 
     def __init__(self, path):
-        self.lock = threading.Lock()
+        self.lock = TrackedLock()
         self.path = path
         self._readers = queue.LifoQueue()  # quelques connexions en lecture, partagées (pas une par fil)
         self._reader_count = 0
@@ -80,7 +119,9 @@ class Store:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=NORMAL")
             self.db.execute("PRAGMA temp_store=MEMORY")
-            self.db.execute("PRAGMA cache_size=-32000")
+            self.db.execute("PRAGMA cache_size=-200000")      # 200 Mo de cache (le serveur a 8 Go)
+            self.db.execute("PRAGMA mmap_size=1073741824")    # lecture directe en mémoire
+            self.db.execute("PRAGMA journal_size_limit=67108864")
         except sqlite3.Error:
             pass
         self.db.executescript(
@@ -135,7 +176,8 @@ class Store:
                 return None
         try:
             c = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False, timeout=10)
-            c.execute("PRAGMA cache_size=-8000")
+            c.execute("PRAGMA cache_size=-32000")
+            c.execute("PRAGMA mmap_size=1073741824")
             return c
         except sqlite3.Error:
             with self._reader_lock:
@@ -152,6 +194,16 @@ class Store:
         with self.lock:
             self.db.execute("INSERT INTO events VALUES (?,?,?,?)", (ts, zone_id, kind, message))
             self.db.commit()
+
+    def checkpoint(self):
+        """Vide le journal WAL dans la base (sinon il grossit et tout ralentit)."""
+        if self.path == ":memory:":
+            return
+        try:
+            with self.lock:
+                self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            pass
 
     def prune(self):
         limit = int(time.time()) - HISTORY_DAYS * 86400
@@ -214,6 +266,7 @@ class Collector:
             if cycles % 120 == 0:
                 self.store.prune()
             if cycles % 20 == 0:
+                self.store.checkpoint()
                 n = open_files()
                 if n is not None and n > 400:
                     print(f"[collecte] fichiers ouverts : {n}", flush=True)

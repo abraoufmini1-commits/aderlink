@@ -156,8 +156,35 @@ class App:
         with self.store.lock:
             lock_wait = round(time.time() - t0, 3)
         cyc = self.collector.last_cycle
+        wal_mb = None
+        try:
+            from pathlib import Path as _P
+            w = _P(str(db) + "-wal") if db else None
+            wal_mb = round(w.stat().st_size / 1048576, 1) if w and w.exists() else 0
+        except OSError:
+            pass
+        # où les fils du programme passent leur temps : 10 coups d'œil en 1 seconde
+        import sys
+        import collections
+        spots = collections.Counter()
+        me = threading.get_ident()
+        idle = ("wait", "select", "accept", "recv", "recv_into", "readinto", "readline", "get", "sleep",
+                "_wait_for_tstate_lock", "serve_forever", "poll", "acquire", "_recv", "result")
+        for _ in range(10):
+            for tid, f in sys._current_frames().items():
+                if tid == me:
+                    continue
+                top = f
+                while f and "/app/" not in f.f_code.co_filename:
+                    f = f.f_back
+                if f is None or top.f_code.co_name in idle:
+                    continue
+                spots[f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name} ({top.f_code.co_name})"] += 1
+            time.sleep(0.1)
         return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus,
-                "memory": mem, "db_mb": db_mb, "lock_wait_s": lock_wait,
+                "memory": mem, "db_mb": db_mb, "wal_mb": wal_mb, "lock_wait_s": lock_wait,
+                "hot": [{"where": k, "n": v} for k, v in spots.most_common(6)],
+                "lock_long": [{"at": a, "seconds": b, "where": c} for a, b, c in reversed(getattr(self.store.lock, "long", []))][:6],
                 "cycle": {"at": cyc[0], "seconds": cyc[1]} if cyc else None, "poll_seconds": self.collector.poll_seconds,
                 "routers": len(self.config.get("zones", [])), "started": self.started,
                 "slow": [{"at": a, "path": b, "seconds": c} for a, b, c in reversed(self.slow)]}

@@ -48,6 +48,7 @@ class Tickets:
         self.store = store
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
+        self._sync_times = []  # quand les dernières mises à jour de scripts ont commencé
         self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
         with store.lock:
             store.db.executescript(
@@ -566,7 +567,11 @@ class Tickets:
                     continue
             self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
         last = self._synced.get(zid)
-        if api is not None and not self.demo and last != "ok" and now - (last or 0) > 3600:
+        # après un redémarrage : 3 routeurs au plus par minute (sinon tous en même temps chargent le serveur)
+        recent = [t for t in self._sync_times if now - t < 60]
+        self._sync_times[:] = recent
+        if api is not None and not self.demo and last != "ok" and now - (last or 0) > 3600 and len(recent) < 3:
+            self._sync_times.append(now)
             try:
                 self.sync_router(api)
                 self._synced[zid] = "ok"  # fait une fois par démarrage d'ADER LINK

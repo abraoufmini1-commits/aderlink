@@ -41,7 +41,7 @@
     if (!box) return;
     var t0 = Date.now();
     api("/api/diag").then(function (d) {
-      var ms = Date.now() - t0;
+      var ms = Math.max(0, Date.now() - t0 - 1000);  // moins la seconde d'observation du serveur
       var row = function (k, v, bad) { return "<div class='dg-row" + (bad ? " dg-bad" : "") + "'><span>" + k + "</span><b>" + v + "</b></div>"; };
       var c = d.cycle, mem = d.memory || {};
       var load = d.load ? d.load[0] + " (" + d.cpus + " cœurs)" : "–";
@@ -52,8 +52,12 @@
         row("Mémoire utilisée", mem.used_pct != null ? mem.used_pct + " % de " + Math.round(mem.total_mb / 1024) + " Go" : "–", mem.used_pct > 90) +
         row("Fichiers ouverts", d.open_files == null ? "–" : d.open_files, d.open_files > 3000) +
         row("Attente base de données", Math.round(d.lock_wait_s * 1000) + " ms", d.lock_wait_s > 0.5) +
-        row("Base de données", d.db_mb == null ? "–" : d.db_mb + " Mo") +
+        row("Base de données", d.db_mb == null ? "–" : d.db_mb + " Mo" + (d.wal_mb ? " (journal " + d.wal_mb + " Mo)" : "")) +
         row("En marche depuis", new Date(d.started * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) +
+        ((d.hot || []).length ? "<div class='dg-slow'><b>Le serveur travaille sur :</b>" + d.hot.map(function (x) {
+          return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") + "</div>" : "") +
+        ((d.lock_long || []).length ? "<div class='dg-slow'><b>Base bloquée longtemps par :</b>" + d.lock_long.map(function (x) {
+          return "<div>" + new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + " · " + x.seconds + " s · " + esc(x.where) + "</div>"; }).join("") + "</div>" : "") +
         (d.slow.length ? "<div class='dg-slow'><b>Pages lentes récentes :</b>" + d.slow.map(function (x) {
           return "<div>" + new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + " · " + esc(x.path) + " · " + x.seconds + " s</div>";
         }).join("") + "</div>" : "<div class='dg-slow'>Aucune page lente récemment ✓</div>");
