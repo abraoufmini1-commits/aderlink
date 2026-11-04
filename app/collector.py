@@ -211,11 +211,17 @@ class Store:
             pass
 
     def prune(self):
+        """Efface l'historique de plus de 7 jours, par petits morceaux (la base n'est jamais bloquée longtemps)."""
         limit = int(time.time()) - HISTORY_DAYS * 86400
-        with self.lock:
-            self.db.execute("DELETE FROM samples WHERE ts < ?", (limit,))
-            self.db.execute("DELETE FROM events WHERE ts < ?", (limit,))
-            self.db.commit()
+        for table in ("samples", "events"):
+            while True:
+                with self.lock:
+                    cur = self.db.execute(f"DELETE FROM {table} WHERE rowid IN "
+                                          f"(SELECT rowid FROM {table} WHERE ts < ? LIMIT 20000)", (limit,))
+                    self.db.commit()
+                if cur.rowcount < 20000:
+                    break
+                time.sleep(0.2)
 
     def history(self, since, bucket, zone_id=None):
         """Utilisateurs connectés (somme des zones) par tranche de `bucket` secondes."""
@@ -266,11 +272,18 @@ class Collector:
 
     def _loop(self):
         cycles = 0
+        # nettoyage de l'historique : toutes les heures, et 2 minutes après le démarrage
+        # (avant : compté en relevés, il ne se faisait jamais si le serveur redémarrait souvent)
+        next_prune = time.time() + 120
         while not self._stop.is_set():
             self.poll_all()
             cycles += 1
-            if cycles % 120 == 0:
-                self.store.prune()
+            if time.time() >= next_prune:
+                next_prune = time.time() + 3600
+                try:
+                    self.store.prune()
+                except sqlite3.Error as e:
+                    print(f"[collecte] nettoyage de l'historique : {e}", flush=True)
             if cycles % 20 == 0:
                 self.store.checkpoint()
                 n = open_files()

@@ -180,6 +180,9 @@ class App:
                     f = f.f_back
                 if f is None or top.f_code.co_name in idle:
                     continue
+                # boucles qui attendent un paquet ou dorment (l'appel en C n'apparaît pas) : pas du travail
+                if top is f and f.f_code.co_name in ("_loop", "loop", "_run", "run_forever"):
+                    continue
                 spots[f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name} ({top.f_code.co_name})"] += 1
             # fils qui attendent un routeur (réseau) : comptés à part, ce n'est pas du travail du processeur
             time.sleep(0.1)
