@@ -907,6 +907,16 @@ class RoamingTests(unittest.TestCase):
         out = self.r.handle(R.build_request(R.ACCOUNTING_REQUEST, 2, self.secret, attrs), ip, "acct")
         return None if out is None else R.Packet.parse(out)
 
+    def test_session_id_reused_after_reboot(self):
+        """Le routeur redémarre et réutilise un numéro de session : la consommation va au bon ticket."""
+        from app import radius as R
+        a, b = self.codes[0], self.codes[1]
+        self.auth("10.1.0.1", a); self.acct("10.1.0.1", a, "81e00001", R.ACCT_INTERIM, 5_000_000)
+        self.auth("10.1.0.1", b); self.acct("10.1.0.1", b, "81e00001", R.ACCT_INTERIM, 1_000_000)
+        used = dict(self.store.db.execute("SELECT code, bytes_used FROM tickets WHERE code IN (?,?)", (a, b)).fetchall())
+        self.assertEqual(used[a], 5_000_000)
+        self.assertEqual(used[b], 1_000_000)
+
     def test_roaming_sales_report(self):
         from app import radius as R
         self.auth("10.1.0.1", self.codes[0])          # 1er ticket : 1re connexion sur A

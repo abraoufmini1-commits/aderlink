@@ -499,6 +499,11 @@ class Roaming:
             db = self.store.db
             db.execute("DELETE FROM roaming_sessions WHERE session_id LIKE 'pending-%' AND nas_zone = ? AND code = ?",
                        (zone["id"], code))
+            # Après un redémarrage, le routeur recommence ses numéros de session : un numéro déjà vu peut
+            # appartenir à un AUTRE ticket. L'ancienne ligne est renommée (son historique reste compté pour
+            # son ticket) au lieu de recevoir la consommation du nouveau ticket.
+            db.execute("UPDATE roaming_sessions SET session_id = session_id || '-old-' || started, active = 0 "
+                       "WHERE session_id = ? AND nas_zone = ? AND code != ?", (sid, zone["id"], code))
             db.execute("INSERT OR IGNORE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac) "
                        "VALUES (?,?,?,?,?,?,?)", (sid, zone["id"], code, t["home"], now, now, pkt.text(R.CALLING_STATION_ID)))
             db.execute("UPDATE roaming_sessions SET updated = ?, bytes = MAX(bytes, ?), seconds = MAX(seconds, ?), active = ? "
