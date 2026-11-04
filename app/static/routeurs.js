@@ -274,6 +274,24 @@
       "<p class='pane-sub'>Ouvrez ce routeur <strong>de n'importe où</strong>, même s'il est derrière une box : ADER LINK passe par le tunnel " + esc(x.kind) + ".</p>" +
       "<div class='ra-list'>" +
       row("Winbox", x.winbox, "<button type='button' class='btn btn-sm' id='raWb'>" + ic("winbox") + " Ouvrir</button>") +
+      "<div class='ra-row ra-login'><div class='ra-main'><div class='ra-label'>Identifiant</div><div class='ra-value mono' id='lgUser'>" +
+        (r.login_user ? esc(r.login_user) : "<span class='ra-empty'>pas encore enregistré</span>") + "</div></div>" +
+        (r.login_user ? "<button type='button' class='icon-btn ra-copy' data-copy='" + esc(r.login_user) + "' aria-label='Copier l&#39;identifiant'>" + ic("copy") + "</button>" : "") + "</div>" +
+      "<div class='ra-row ra-login'><div class='ra-main'><div class='ra-label'>Mot de passe</div><div class='ra-value mono' id='lgPass'>" +
+        (r.login_user ? "••••••••" : "–") + "</div></div>" +
+        (r.login_user ? "<button type='button' class='btn btn-sm btn-outline' id='lgShow'>Afficher</button>" +
+          "<button type='button' class='icon-btn ra-copy' id='lgCopy' aria-label='Copier le mot de passe'>" + ic("copy") + "</button>" : "") + "</div>" +
+      "<button type='button' class='link ra-login-edit' id='lgEdit'>" + (r.login_user ? "Modifier les identifiants" : "+ Enregistrer l'identifiant et le mot de passe Winbox") + "</button>" +
+      "<form class='lg-form' id='lgForm' hidden autocomplete='off' novalidate>" +
+        "<div class='f'><label for='lgU'>Identifiant</label><input id='lgU' maxlength='64' spellcheck='false' autocapitalize='off' value='" + esc(r.login_user || "") + "'></div>" +
+        "<div class='f'><label for='lgP'>Mot de passe</label><input id='lgP' type='password' autocomplete='new-password'></div>" +
+        "<details class='lg-also'><summary>Mettre les mêmes identifiants sur d'autres routeurs</summary><div class='lg-also-list'>" +
+          S.routers.filter(function (o) { return o.id !== r.id; }).map(function (o) {
+            return "<label class='check-opt'><input type='checkbox' name='lgAlso' value='" + esc(o.id) + "'><span>" + esc(o.name) + "</span></label>";
+          }).join("") + "</div></details>" +
+        "<p class='pane-sub'>Rien n'est changé sur le routeur : ADER LINK garde seulement ces identifiants pour vous les montrer ici.</p>" +
+        "<div class='lg-acts'><button type='button' class='btn-prev' id='lgCancel'>Annuler</button><button type='submit' class='btn'>Enregistrer</button></div>" +
+      "</form>" +
       row("WebFig (navigateur)", x.webfig, "<a class='btn btn-sm btn-outline' href='" + esc(x.webfig) + "' target='_blank' rel='noopener'>Ouvrir</a>") +
       row("Adresse dans le tunnel", x.tunnel, "") + "</div>" +
       "<h3 class='sub-h'>Appareils derrière ce routeur</h3>" +
@@ -288,13 +306,43 @@
       "<div class='f'><label for='dPort'>Port</label><input id='dPort' type='number' min='1' max='65535' placeholder='80'></div>" +
       "<button class='btn' type='submit' id='dAdd'>+ Ajouter</button></form>" +
       "<div class='notice' id='bsMsg' role='status'></div>" +
-      "<div class='info-box'>Dans Winbox, collez l'adresse <strong class='mono'>" + esc(x.winbox) + "</strong> dans <strong>Connect To</strong>, puis votre identifiant et mot de passe du MikroTik.<br>" +
+      "<div class='info-box'>Dans Winbox, collez l'adresse <strong class='mono'>" + esc(x.winbox) + "</strong> dans <strong>Connect To</strong>, puis l'identifiant et le mot de passe ci-dessus.<br>" +
       "<small>Gardez un mot de passe solide sur vos MikroTik : cette adresse est joignable depuis Internet.</small><br>" +
       "<button type='button' class='link' id='raWbSetup'>Winbox ne s'ouvre pas ? Activer le bouton sur ce PC</button></div>");
     $("raWbSetup").addEventListener("click", function () { setupWinbox(x.winbox); });
+    // identifiants Winbox : le mot de passe n'arrive du serveur qu'au moment où on le demande
+    var lgPw = null;
+    var getPw = function () {
+      return lgPw !== null ? Promise.resolve(lgPw) : api("/api/routers/" + encodeURIComponent(r.id) + "/login").then(function (d) { lgPw = d.password || ""; return lgPw; });
+    };
+    if ($("lgShow")) $("lgShow").addEventListener("click", function () {
+      var b = this;
+      if (b.dataset.on === "1") { $("lgPass").textContent = "••••••••"; b.dataset.on = ""; b.textContent = "Afficher"; return; }
+      getPw().then(function (pw) { $("lgPass").textContent = pw || "(vide)"; b.dataset.on = "1"; b.textContent = "Cacher"; })
+        .catch(function (e) { toast(e.message); });
+    });
+    if ($("lgCopy")) $("lgCopy").addEventListener("click", function () {
+      getPw().then(function (pw) { copyText(pw); toast("Mot de passe copié", true); }).catch(function (e) { toast(e.message); });
+    });
+    $("lgEdit").addEventListener("click", function () {
+      $("lgForm").hidden = false; this.hidden = true;
+      if (r.login_user) getPw().then(function (pw) { $("lgP").value = pw; });
+      $("lgU").focus();
+    });
+    $("lgCancel").addEventListener("click", function () { $("lgForm").hidden = true; $("lgEdit").hidden = false; });
+    $("lgForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var also = Array.prototype.map.call(document.querySelectorAll("input[name=lgAlso]:checked"), function (c) { return c.value; });
+      var user = $("lgU").value.trim(), pw = $("lgP").value;
+      api("/api/routers/" + encodeURIComponent(r.id) + "/login", { user: user, password: pw, also: also }).then(function (d) {
+        [r.id].concat(also).forEach(function (id) { var o = byId(id); if (o) o.login_user = d.user; });
+        toast(d.count > 1 ? "Identifiants enregistrés sur " + d.count + " routeurs" : "Identifiants enregistrés", true);
+        remote(r);
+      }).catch(function (err) { toast(err.message); });
+    });
     $("bsBody").onclick = function (e) {
       var c = e.target.closest("[data-copy]");
-      if (c) { copyText(c.dataset.copy); toast("Adresse copiée", true); }
+      if (c) { copyText(c.dataset.copy); toast(c.closest(".ra-login") ? "Identifiant copié" : "Adresse copiée", true); }
     };
     function devices(list) {
       r.devices = list;

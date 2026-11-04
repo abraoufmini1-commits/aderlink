@@ -1433,3 +1433,11 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .zp-table tr.zp-pos td { padding-top: 12px; font-weight: 700; color: var(--blue-600); border-bottom: 0; }
 .zp-table tr.zp-sub td { font-weight: 600; font-size: .92em; border-bottom: 1px dashed var(--border); padding-bottom: 8px; }
 @media print { .zp-table tr.zp-pos td { color: #000; } }
+/* Accès à distance : identifiants Winbox */
+.ra-login .ra-value { word-break: break-all; }
+.ra-empty { font-family: inherit; opacity: .6; font-style: italic; }
+.ra-login-edit { margin: 2px 0 8px; }
+.lg-form { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; }
+.lg-also summary { cursor: pointer; font-weight: 600; }
+.lg-also-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; margin-top: 8px; }
+.lg-acts { display: flex; justify-content: flex-end; gap: 10px; }

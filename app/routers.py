@@ -105,7 +105,9 @@ class Routers:
         d["winbox"] = z.get("winbox", "")
         d["installed"] = bool(r.get("host"))
         d["auto_host"] = bool(r.get("auto_host"))
-        d["has_logo"] = self.logo(z["id"]) is not None
+        d["has_logo"] = bool(self._q("SELECT 1 FROM zone_logos WHERE zone_id = ?", (z["id"],))[0])  # sans charger l'image
+        login = z.get("winbox_login") or {}
+        d["login_user"] = login.get("user", "")  # le mot de passe n'est donné que sur demande (bouton Afficher)
         d["remote"] = self.remote(z)
         d["devices"] = self.devices(z)
         if not d["installed"]:
@@ -276,6 +278,33 @@ class Routers:
                 api.query("/ip/hotspot/ip-binding/remove", f"=.id={b['.id']}")
         except RouterOSError:
             pass
+
+    # --- identifiants Winbox (affichés sous l'adresse d'accès à distance) ------------------------
+    # Rien n'est changé sur le routeur : ADER LINK garde seulement ce que vous tapez, pour vous le montrer.
+    def get_login(self, zone_id):
+        z = self.zone(zone_id)
+        login = z.get("winbox_login") or {}
+        return {"user": login.get("user", ""), "password": login.get("password", "")}
+
+    def set_login(self, zone_id, data, allowed=lambda zid: True):
+        user = str(data.get("user") or "").strip()[:64]
+        password = str(data.get("password") or "")[:128]
+        if re.search(r"[\x00-\x1f]", user + password):
+            raise RouterError("Caractères invalides")
+        ids = [zone_id] + [str(x) for x in (data.get("also") or []) if str(x) != zone_id]
+        zones = []
+        for zid in ids:
+            if not allowed(zid):
+                raise RouterError("Routeur introuvable")
+            zones.append(self.zone(zid))
+        with self.lock:
+            for z in zones:
+                if user or password:
+                    z["winbox_login"] = {"user": user, "password": password}
+                else:
+                    z.pop("winbox_login", None)  # tout vide : on efface
+            self._persist()
+        return {"ok": True, "count": len(zones), "user": user}
 
     def lan_scan(self, zone_id):
         """Appareils vus par le routeur (baux DHCP + voisins) : pour choisir une antenne sans chercher son adresse."""
