@@ -31,11 +31,11 @@ def comment_for(batch_id):
     return f"ADERLINK-{batch_id}"
 
 
-def open_router(zone):
+def open_router(zone, timeout=8):
     r = zone["router"]
     return RouterOS(r["host"], r["username"], r["password"],
                     port=r.get("port", 8729 if r.get("ssl") else 8728),
-                    use_ssl=r.get("ssl", False))
+                    use_ssl=r.get("ssl", False), timeout=timeout)
 
 
 class TicketError(Exception):
@@ -64,6 +64,8 @@ class Tickets:
                     first_used INTEGER, expired_at INTEGER, removed INTEGER DEFAULT 0,
                     PRIMARY KEY (zone_id, code));
                 CREATE INDEX IF NOT EXISTS idx_tickets_batch ON tickets(batch_id);
+                CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
+                CREATE INDEX IF NOT EXISTS idx_tickets_used ON tickets(first_used);
                 CREATE TABLE IF NOT EXISTS forfaits (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     zone_id TEXT, name TEXT, router_profile TEXT, price INTEGER,
@@ -447,7 +449,7 @@ class Tickets:
                     pass
             elif t["first_used"] and not t["removed"] and not purged and not self.demo:
                 try:
-                    with open_router(self.zone(zid)) as api:
+                    with open_router(self.zone(zid), timeout=4) as api:  # État du ticket : réponse rapide même si le routeur traîne
                         users = api.query("/ip/hotspot/user/print", f"?name={code}")
                         if users:
                             u = users[0]
