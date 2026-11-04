@@ -309,12 +309,13 @@ class Roaming:
         """Regarde chaque routeur du réseau par l'API : serveurs RADIUS, compteurs, profils hotspot."""
         from .tickets import open_router
         from .routeros import RouterOSError
-        g = self.group(gid)
-        out = []
-        for zid in self.member_zones(gid):
+        g = self.group(gid, stats=False)
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(zid):  # tous les routeurs du réseau lus en même temps (avant : l'un après l'autre)
             z = self._zone(zid)
             if not z:
-                continue
+                return None
             d = {"id": zid, "name": z["name"], "expected": self.server_for(z), **self.zone_status(zid),
                  "radius": [], "profiles": [], "error": None}
             try:
@@ -341,7 +342,10 @@ class Roaming:
                     d["servers"] = [{"name": h.get("name", ""), "profile": h.get("profile", "")} for h in api.query("/ip/hotspot/print")]
             except (RouterOSError, OSError) as e:
                 d["error"] = str(e)
-            out.append(d)
+            return d
+        zones = self.member_zones(gid)
+        with ThreadPoolExecutor(max_workers=max(1, min(12, len(zones)))) as pool:
+            out = [d for d in pool.map(one, zones) if d]
         zids = {d["id"] for d in out}
         recent = [{"at": a, "zone": n, "code": c, "result": r, "message": m}
                   for a, z, n, c, r, m in reversed(self.journal) if z in zids][:30]
