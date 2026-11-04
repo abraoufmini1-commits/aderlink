@@ -55,6 +55,11 @@ class Roaming:
                 CREATE INDEX IF NOT EXISTS idx_rs_code ON roaming_sessions(home_zone, code);
                 """
             )
+            # MAC en majuscules partout, puis index : la connexion automatique par MAC ne relit plus toute la table
+            if not store.db.execute("SELECT 1 FROM sqlite_master WHERE name = 'idx_rs_mac'").fetchone():
+                store.db.execute("UPDATE roaming_sessions SET mac = upper(replace(mac, '-', ':')) WHERE mac IS NOT NULL")
+                store.db.execute("CREATE INDEX idx_rs_mac ON roaming_sessions(mac, updated)")
+            store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_active ON roaming_sessions(active, updated)")
             store.db.commit()
 
     def _q(self, sql, params=(), commit=False):
@@ -456,7 +461,7 @@ class Roaming:
                            else "Ticket deja connecte sur un autre appareil"), {}
         if moved and zone_id:
             with self.store.lock:
-                self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? AND upper(mac) = ? "
+                self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? AND mac = ? "
                                       "AND nas_zone != ?", (t["home"], code, mac.upper(), zone_id))
                 self.store.db.commit()
             if self.kicker:  # on ferme l'ancienne connexion là où il était
@@ -465,7 +470,7 @@ class Roaming:
             with self.store.lock:
                 self.store.db.execute(
                     "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
-                    "VALUES (?,?,?,?,?,?,?,1)", (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, mac))
+                    "VALUES (?,?,?,?,?,?,?,1)", (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac)))
                 self.store.db.commit()
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
@@ -505,7 +510,7 @@ class Roaming:
             db.execute("UPDATE roaming_sessions SET session_id = session_id || '-old-' || started, active = 0 "
                        "WHERE session_id = ? AND nas_zone = ? AND code != ?", (sid, zone["id"], code))
             db.execute("INSERT OR IGNORE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac) "
-                       "VALUES (?,?,?,?,?,?,?)", (sid, zone["id"], code, t["home"], now, now, pkt.text(R.CALLING_STATION_ID)))
+                       "VALUES (?,?,?,?,?,?,?)", (sid, zone["id"], code, t["home"], now, now, _mac(pkt.text(R.CALLING_STATION_ID))))
             db.execute("UPDATE roaming_sessions SET updated = ?, bytes = MAX(bytes, ?), seconds = MAX(seconds, ?), active = ? "
                        "WHERE session_id = ? AND nas_zone = ?", (now, total, secs, 0 if status == R.ACCT_STOP else 1, sid, zone["id"]))
             db.execute("UPDATE tickets SET bytes_used = (SELECT COALESCE(SUM(bytes), 0) FROM roaming_sessions WHERE home_zone = ? AND code = ?), "
@@ -551,10 +556,22 @@ class Roaming:
         zones = self.member_zones(gid)
         if not zones or not mac:
             return None
-        rows, _ = self._q("SELECT s.code FROM roaming_sessions s JOIN roaming_members m ON m.zone_id = s.nas_zone "
-                          "WHERE m.group_id = ? AND upper(s.mac) = ? AND s.code NOT LIKE '%:%' ORDER BY s.updated DESC LIMIT 1",
-                          (gid, mac.upper().replace("-", ":")))
-        return rows[0][0] if rows else None
+        # par l'index de la MAC (avant : toute la table relue à chaque téléphone qui se connecte au Wi-Fi)
+        rows, _ = self._q("SELECT code, nas_zone FROM roaming_sessions WHERE mac = ? AND code NOT LIKE '%:%' "
+                          "ORDER BY updated DESC LIMIT 20", (_mac(mac),))
+        zs = set(zones)
+        return next((c for c, z in rows if z in zs), None)
+
+    def prune_sessions(self, now=None):
+        """Sessions terminées depuis plus de 45 jours : effacées (la table ne grossit plus sans fin).
+        Les tickets ont fini bien avant : leur consommation est déjà enregistrée sur le ticket."""
+        now = now or int(time.time())
+        with self.store.lock:
+            self.store.db.execute(
+                "DELETE FROM roaming_sessions WHERE active = 0 AND updated < ? AND EXISTS (SELECT 1 FROM tickets t "
+                "WHERE t.zone_id = roaming_sessions.home_zone AND t.code = roaming_sessions.code AND t.expired_at IS NOT NULL)",
+                (now - 45 * 86400,))
+            self.store.db.commit()
 
     def sweep(self, now=None):
         """Toutes les minutes : les tickets dont la validité est passée sont fermés sur tout le réseau."""
@@ -648,8 +665,15 @@ class Roaming:
             self.log(f"ADER Roaming : serveur RADIUS en écoute (UDP {auth}/{acct})")
 
         def loop():
+            n = 0
             while True:
                 time.sleep(60)
+                n += 1
+                if n % 360 == 1:  # toutes les 6 heures
+                    try:
+                        self.prune_sessions()
+                    except Exception as e:
+                        self.log(f"ADER Roaming : nettoyage des sessions : {e!r}")
                 try:
                     self.sweep()
                 except Exception as e:
@@ -678,6 +702,11 @@ class Roaming:
             except OSError:
                 return
             pool.submit(work, data, addr)
+
+
+def _mac(m):
+    """Adresse MAC écrite toujours pareil (majuscules, deux-points) : la recherche passe par l'index."""
+    return str(m).upper().replace("-", ":") if m else m
 
 
 def _ascii(s):
