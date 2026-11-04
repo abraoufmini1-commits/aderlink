@@ -1433,3 +1433,11 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .zp-table tr.zp-pos td { padding-top: 12px; font-weight: 700; color: var(--blue-600); border-bottom: 0; }
 .zp-table tr.zp-sub td { font-weight: 600; font-size: .92em; border-bottom: 1px dashed var(--border); padding-bottom: 8px; }
 @media print { .zp-table tr.zp-pos td { color: #000; } }
+/* Compte commun des routeurs */
+.ac-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 8px; }
+.ac-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 420px; overflow: auto; }
+.ac-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.ac-list li small { opacity: .8; }
+.ac-list li.ac-off { opacity: .6; }
+.ac-list li.ac-ok small { color: #1e8e3e; opacity: 1; }
+.ac-list li.ac-bad small { color: #c0392b; opacity: 1; }

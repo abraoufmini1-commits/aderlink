@@ -150,9 +150,10 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
     lines = [
         f"# ADER LINK - installation automatique : {name}",
         "# 1. Acces de l application (compte aderlink, API ouverte seulement pour le serveur)",
+        "#    (droit « policy » : pour ajouter les comptes communs que vous choisissez dans Parametres)",
         ':if ([:len [/user group find name="aderlink-api"]] = 0) do={ /user group add name="aderlink-api" '
-        'policy=read,write,api comment="ADER LINK" } else={ /user group set [find name="aderlink-api"] '
-        'policy=read,write,api }',
+        'policy=read,write,api,policy comment="ADER LINK" } else={ /user group set [find name="aderlink-api"] '
+        'policy=read,write,api,policy }',
         f':if ([:len [/user find name="{user}"]] = 0) do={{ /user add name="{user}" group="aderlink-api" '
         f'password={q(password)} address={srv}/32 comment="ADER LINK" }} else={{ /user set [find name="{user}"] '
         f'group="aderlink-api" password={q(password)} address={srv}/32 }}',

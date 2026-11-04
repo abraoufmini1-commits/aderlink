@@ -35,6 +35,57 @@
     $("demoBanner").hidden = !demo;
   }
   function note(kind, text) { var n = $("upMsg"); n.className = "notice show notice-" + kind; n.textContent = text; }
+  // --- compte commun des routeurs ------------------------------------------------------
+  var acRouters = [];
+  function acRender(results) {
+    var byId = {};
+    (results || []).forEach(function (r) { byId[r.id] = r; });
+    $("acList").innerHTML = acRouters.map(function (r) {
+      var res = byId[r.id];
+      var can = r.state === "ready";
+      var info = res ? (res.ok ? "✓ " : "✗ ") + esc(res.message) :
+        can ? ((r.accounts || []).length ? "Comptes : " + esc(r.accounts.join(", ")) : "Prêt") : esc(r.message);
+      return "<li class='" + (res ? (res.ok ? "ac-ok" : "ac-bad") : can ? "" : "ac-off") + "'><label class='check-opt'>" +
+        "<input type='checkbox' data-ac='" + esc(r.id) + "'" + (can ? "" : " disabled") + "><span>" + esc(r.name) + "</span></label>" +
+        "<small>" + info + "</small></li>";
+    }).join("");
+  }
+  function acMsg(kind, text) { var n = $("acMsg"); n.className = "notice show notice-" + kind; n.textContent = text; }
+  if ($("acLoad")) {
+    $("acLoad").addEventListener("click", function () {
+      var b = this; b.disabled = true; b.textContent = "Lecture des routeurs…";
+      api("/api/accounts").then(function (d) {
+        acRouters = d.routers; acRender();
+        var ready = acRouters.filter(function (r) { return r.state === "ready"; }).length;
+        $("acFoot").hidden = $("acTools").hidden = false;
+        acMsg(ready ? "ok" : "info", ready + " routeur(s) prêt(s) sur " + acRouters.length +
+          (ready < acRouters.length ? ". Les autres : voir la raison à côté du nom." : "."));
+      }).catch(function (e) { acMsg("err", e.message); }).then(function () { b.disabled = false; b.textContent = "Afficher les routeurs"; });
+    });
+    $("acAll").addEventListener("click", function () { $("acList").querySelectorAll("input:not(:disabled)").forEach(function (c) { c.checked = true; }); });
+    $("acNone").addEventListener("click", function () { $("acList").querySelectorAll("input").forEach(function (c) { c.checked = false; }); });
+    var acSend = function (action, btn) {
+      var zones = Array.prototype.map.call($("acList").querySelectorAll("input:checked"), function (c) { return c.dataset.ac; });
+      if (!zones.length) { acMsg("err", "Cochez au moins un routeur."); return; }
+      if (btn.dataset.confirm !== "1") {
+        btn.dataset.confirm = "1"; var old = btn.textContent;
+        btn.textContent = "Confirmer pour " + zones.length + " routeur(s) ?";
+        setTimeout(function () { btn.dataset.confirm = ""; btn.textContent = old; }, 5000);
+        return;
+      }
+      btn.dataset.confirm = ""; btn.disabled = true;
+      api("/api/accounts", { action: action, zones: zones, username: $("acUser").value.trim(), password: $("acPass").value, access: $("acAccess").value })
+        .then(function (d) {
+          acRender(d.routers);
+          acMsg(d.done === zones.length ? "ok" : "info", d.done + " routeur(s) sur " + zones.length + " : c'est fait.");
+          if (action === "add") $("acPass").value = "";
+        }).catch(function (e) { acMsg("err", e.message); })
+        .then(function () { btn.disabled = false; btn.textContent = action === "add" ? "Ajouter aux routeurs cochés" : "Retirer des routeurs cochés"; });
+    };
+    $("acAdd").addEventListener("click", function () { acSend("add", this); });
+    $("acRemove").addEventListener("click", function () { acSend("remove", this); });
+  }
+
   // --- état du serveur ---------------------------------------------------------------
   function diag() {
     var box = $("dgBox");

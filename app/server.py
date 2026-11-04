@@ -674,6 +674,10 @@ def make_handler(app):
                 return app.subscription_info(who)
             if p == "/api/zones":
                 return {"zones": app.zones_list(who), "demo": app.demo}
+            if p == "/api/accounts" and app.routers:
+                self.need(who.can("settings"))
+                zones = [z["id"] for z in app.zones_for(who)]
+                return app.routers.accounts_status(zones)
             if p == "/api/diag":
                 self.need(who.can("settings"))
                 return app.diag()
@@ -895,6 +899,12 @@ def make_handler(app):
                 self.need(who.can("lots_manage"))
                 self.need(app.batch_visible(T.get_batch(int(parts[3])), who), "Lot introuvable")
                 return T.remove_unused(int(parts[3]))
+            # comptes communs des routeurs (Paramètres, administrateur)
+            if R and p == "/api/accounts":
+                self.need(who.can("settings"))
+                allowed = {z["id"] for z in app.zones_for(who)}
+                zones = [str(z) for z in (body.get("zones") or []) if str(z) in allowed]
+                return R.accounts_apply(zones, body)
             # routeurs
             if R and p == "/api/routers":
                 self.need(who.can("routers_write"))

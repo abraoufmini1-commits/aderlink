@@ -277,6 +277,86 @@ class Routers:
         except RouterOSError:
             pass
 
+    # --- comptes communs (Paramètres) ---------------------------------------------------------
+    # Un compte en plus (identifiant + mot de passe choisis par vous) ajouté aux routeurs cochés.
+    # Les comptes existants du routeur (admin, aderlink…) ne sont jamais modifiés ; le mot de passe
+    # n'est pas gardé par ADER LINK : il est envoyé aux routeurs, c'est tout.
+    ACCOUNT_TAG = "ADER LINK compte commun"
+
+    def _api_for(self, z):
+        r = z["router"]
+        return RouterOS(r["host"], r["username"], r["password"], port=r.get("port", 8729 if r.get("ssl") else 8728),
+                        use_ssl=r.get("ssl", False), timeout=8)
+
+    @staticmethod
+    def _can_add_users(api):
+        grp = api.query("/user/group/print", "?name=aderlink-api")
+        return bool(grp) and "policy" in (grp[0].get("policy") or "").split(",")
+
+    def _each(self, zone_ids, fn):
+        """Fait fn(zone, api) sur plusieurs routeurs en même temps ; renvoie un résultat par routeur."""
+        from concurrent.futures import ThreadPoolExecutor
+        zones = [z for z in self.zones() if z["id"] in set(zone_ids)]
+
+        def one(z):
+            base = {"id": z["id"], "name": z["name"]}
+            if self.demo:
+                return dict(base, ok=True, state="ready", accounts=[], message="Démonstration : rien envoyé")
+            if not (z.get("router") or {}).get("host"):
+                return dict(base, ok=False, state="pending", message="Pas encore installé")
+            try:
+                with self._api_for(z) as api:
+                    return dict(base, **fn(z, api))
+            except RouterOSError as e:
+                return dict(base, ok=False, state="offline", message=f"Injoignable : {e}")
+        with ThreadPoolExecutor(max_workers=max(1, min(16, len(zones)))) as pool:
+            return sorted(pool.map(one, zones), key=lambda x: x["name"].lower())
+
+    def accounts_status(self, zone_ids):
+        def look(z, api):
+            if not self._can_add_users(api):
+                return {"ok": False, "state": "repaste", "message": "À recoller : la ligne d'installation (une fois)"}
+            ours = [u.get("name") for u in api.query("/user/print") if u.get("comment") == self.ACCOUNT_TAG]
+            return {"ok": True, "state": "ready", "accounts": ours, "message": ""}
+        return {"routers": self._each(zone_ids, look)}
+
+    def accounts_apply(self, zone_ids, data):
+        name = str(data.get("username") or "").strip()
+        password = str(data.get("password") or "")
+        action = data.get("action")
+        group = "read" if data.get("access") == "read" else "full"
+        if action not in ("add", "remove"):
+            raise RouterError("Action inconnue")
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,32}", name):
+            raise RouterError("Identifiant : 3 à 32 lettres, chiffres, point, tiret")
+        protected = {"admin", "aderlink"} | {(z.get("router") or {}).get("username", "") for z in self.zones()}
+        if name.lower() in {p.lower() for p in protected if p}:
+            raise RouterError(f"« {name} » est un compte du routeur ou d'ADER LINK : choisissez un autre identifiant")
+        if action == "add" and (len(password) < 8 or not re.fullmatch(r"[\x21-\x7e]+", password)):
+            raise RouterError("Mot de passe : 8 caractères au moins, sans espace ni accent")
+        if not zone_ids:
+            raise RouterError("Cochez au moins un routeur")
+
+        def do(z, api):
+            if not self._can_add_users(api):
+                return {"ok": False, "state": "repaste", "message": "À recoller : la ligne d'installation (une fois)"}
+            found = api.query("/user/print", f"?name={name}")
+            if found and found[0].get("comment") != self.ACCOUNT_TAG:
+                return {"ok": False, "state": "ready", "message": "Ce nom existe déjà sur le routeur (pas créé ici) : rien changé"}
+            if action == "remove":
+                if found:
+                    api.query("/user/remove", f"=.id={found[0]['.id']}")
+                    return {"ok": True, "state": "ready", "message": "Compte retiré"}
+                return {"ok": True, "state": "ready", "message": "Pas de compte à retirer"}
+            if found:
+                api.query("/user/set", f"=.id={found[0]['.id']}", f"=password={password}", f"=group={group}")
+                return {"ok": True, "state": "ready", "message": "Mot de passe mis à jour"}
+            api.query("/user/add", f"=name={name}", f"=password={password}", f"=group={group}",
+                      f"=comment={self.ACCOUNT_TAG}")
+            return {"ok": True, "state": "ready", "message": "Compte ajouté"}
+        res = self._each(zone_ids, do)
+        return {"routers": res, "done": sum(1 for r in res if r["ok"])}
+
     def lan_scan(self, zone_id):
         """Appareils vus par le routeur (baux DHCP + voisins) : pour choisir une antenne sans chercher son adresse."""
         z = self.zone(zone_id)
