@@ -745,10 +745,12 @@ class Tickets:
         for zid, pos, pv, rid, label, price, n_day, a_day, n_month, a_month in rows:
             router = zones.get(zid, zid)
             # « Profil principal » (point de vente créé tout seul) : on montre le nom du routeur
+            short = router if not pv or pv == "Profil principal" else pv
             name = router if not pv or pv == "Profil principal" else f"{pv} · {router}"
             if rid:
                 name += f" · Roaming {roams.get(rid, '')}".rstrip()
-            p = out.setdefault((zid, pos, rid), {"name": name, "lines": [], "day": [0, 0], "month": [0, 0]})
+            p = out.setdefault((zid, pos, rid), {"name": name, "short": short, "lines": [], "day": [0, 0], "month": [0, 0],
+                                                 "roaming": (roams.get(rid) or "ADER Roaming") if rid else None})
             if n_day:
                 p["lines"].append({"label": label or "–", "price": price or 0, "tickets": n_day, "amount": a_day})
             p["day"][0] += n_day or 0

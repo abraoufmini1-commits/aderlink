@@ -316,13 +316,32 @@ class Guard:
         lines = [f"📊 <b>Ventes du {time.strftime('%d/%m/%Y', day)}</b>",
                  f"Jour : <b>{nf(day_a)} F</b> · {tk(day_n)}",
                  f"Mois de {month} : <b>{nf(mon_a)} F</b> · {tk(mon_n)}"]
-        sold = [p for p in pos if p["day"][0]]
-        for p in sold:
-            lines.append("")
-            lines.append(f"📍 <b>{_esc(p['name'])}</b>")
+        def pv_lines(p, indent="   ", title=None):
+            out = [f"{indent[:-3]}📍 <b>{_esc(title or p['name'])}</b>"]
             for l in p["lines"]:
-                lines.append(f"   {_esc(l['label'])} ({nf(l['price'])} F) : {tk(l['tickets'])} = {nf(l['amount'])} F")
-            lines.append(f"   <b>Jour : {nf(p['day'][1])} F</b> ({nf(p['day'][0])}) · Mois : {nf(p['month'][1])} F ({nf(p['month'][0])})")
+                out.append(f"{indent}{_esc(l['label'])} ({nf(l['price'])} F) : {tk(l['tickets'])} = {nf(l['amount'])} F")
+            out.append(f"{indent}<b>Jour : {nf(p['day'][1])} F</b> ({nf(p['day'][0])}) · Mois : {nf(p['month'][1])} F ({nf(p['month'][0])})")
+            return out
+
+        # réseaux ADER Roaming : le réseau, puis ses points de vente juste en dessous
+        nets = {}
+        for p in pos:
+            if p.get("roaming") and p["day"][0]:
+                nets.setdefault(p["roaming"], []).append(p)
+        blocks = []
+        for name, ps in nets.items():
+            day = [sum(p["day"][0] for p in ps), sum(p["day"][1] for p in ps)]
+            mon = [sum(p["month"][0] for p in ps), sum(p["month"][1] for p in ps)]
+            b = ["", f"🌍 <b>{_esc(name)}</b> (Roaming)", f"<b>Jour : {nf(day[1])} F</b> ({nf(day[0])}) · Mois : {nf(mon[1])} F ({nf(mon[0])})"]
+            for p in ps:
+                b += pv_lines(p, "      ", p.get("short"))
+            blocks.append((day[1], b))
+        # routeurs simples : un par un, comme avant
+        for p in pos:
+            if not p.get("roaming") and p["day"][0]:
+                blocks.append((p["day"][1], [""] + pv_lines(p)))
+        for _, b in sorted(blocks, key=lambda x: -x[0]):
+            lines += b
         quiet = [p for p in pos if not p["day"][0]]
         if quiet:
             lines.append("")
