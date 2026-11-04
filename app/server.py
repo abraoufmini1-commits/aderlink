@@ -169,6 +169,7 @@ class App:
         spots = collections.Counter()
         me = threading.get_ident()
         idle = ("wait", "select", "accept", "recv", "recv_into", "readinto", "readline", "get", "sleep",
+                "_recv_exact", "create_connection", "recvfrom",
                 "_wait_for_tstate_lock", "serve_forever", "poll", "acquire", "_recv", "result")
         for _ in range(10):
             for tid, f in sys._current_frames().items():
@@ -180,6 +181,7 @@ class App:
                 if f is None or top.f_code.co_name in idle:
                     continue
                 spots[f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name} ({top.f_code.co_name})"] += 1
+            # fils qui attendent un routeur (réseau) : comptés à part, ce n'est pas du travail du processeur
             time.sleep(0.1)
         return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus,
                 "memory": mem, "db_mb": db_mb, "wal_mb": wal_mb, "lock_wait_s": lock_wait,

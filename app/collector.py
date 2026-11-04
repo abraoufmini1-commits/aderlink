@@ -185,9 +185,14 @@ class Store:
             return None
 
     def add_sample(self, ts, zone_id, online, active, rx, tx):
+        self.add_samples([(ts, zone_id, int(online), active, rx, tx)])
+
+    def add_samples(self, rows):
+        """Plusieurs relevés en une seule écriture (un enregistrement au lieu d'un par routeur)."""
+        if not rows:
+            return
         with self.lock:
-            self.db.execute("INSERT INTO samples VALUES (?,?,?,?,?,?)",
-                            (ts, zone_id, int(online), active, rx, tx))
+            self.db.executemany("INSERT INTO samples VALUES (?,?,?,?,?,?)", rows)
             self.db.commit()
 
     def add_event(self, ts, zone_id, kind, message):
@@ -246,6 +251,7 @@ class Collector:
         self.poll_seconds = max(10, int(config.get("poll_seconds", 30)))
         self._stop = threading.Event()
         self.last_cycle = None   # (heure, durée en s) du dernier relevé complet
+        self._pending_samples = None  # pendant un relevé complet : les mesures, écrites d'un coup à la fin
         self._mass = 0           # relevés de suite où presque tout est injoignable (coupure côté serveur)
         self.ticket_hook = None  # fonction (zone, api, sessions) branchée par le module Tickets
         if demo:
@@ -307,8 +313,13 @@ class Collector:
                 return
         else:
             self._mass = 0
-        for zone in zones:
-            self._record(zone, snaps[zone["id"]])
+        self._pending_samples = []
+        try:
+            for zone in zones:
+                self._record(zone, snaps[zone["id"]])
+        finally:
+            rows, self._pending_samples = self._pending_samples, None
+            self.store.add_samples(rows)
         took = time.time() - t0
         self.last_cycle = (int(time.time()), round(took, 1))
         if took > self.poll_seconds:
@@ -426,6 +437,10 @@ class Collector:
                 self.store.add_event(snap["checked_at"], zid, "online", f"{zone['name']} de nouveau en ligne")
             else:
                 self.store.add_event(snap["checked_at"], zid, "offline", f"{zone['name']} hors ligne")
+        rows = self._pending_samples if self._pending_samples is not None else None
+        if rows is not None:
+            rows.append((snap["checked_at"], zid, int(snap["online"]), snap["active"], snap.get("rx_bps", 0), snap.get("tx_bps", 0)))
+            return
         self.store.add_sample(snap["checked_at"], zid, snap["online"], snap["active"],
                               snap.get("rx_bps", 0), snap.get("tx_bps", 0))
 
