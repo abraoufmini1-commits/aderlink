@@ -1445,3 +1445,8 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .lg-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .92em; }
 .lg-results li.ok { color: #1e8e3e; }
 .lg-results li.bad { color: #c0392b; }
+/* Roaming : journal des demandes */
+.ro-journal { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; font-size: .9em; max-height: 320px; overflow: auto; }
+.ro-journal li.ok { color: #1e8e3e; }
+.ro-journal li.bad { color: #c0392b; }
+.ro-jcard { padding: 12px 14px; margin-top: 12px; }

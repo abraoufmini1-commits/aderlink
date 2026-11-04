@@ -38,6 +38,10 @@ class Roaming:
         self.ignored = {}   # adresse -> (heure, nom) : paquets d'un routeur non reconnu
         self.setup = {}     # zone_id -> {"ok": bool, "msg": str, "ts": int} : réglage automatique
         self.shared = {}    # zone_id -> True si le routeur a aussi un autre système de tickets (autre RADIUS)
+        import collections
+        self._goz = {}       # zone_id -> (heure, réseau) : cache court
+        self._members = None
+        self.journal = collections.deque(maxlen=80)  # dernières demandes de connexion (heure, routeur, code, résultat)
         with store.lock:
             store.db.executescript(
                 """
@@ -67,13 +71,16 @@ class Roaming:
         return next((z for z in self.config.get("zones", []) if z["id"] == zid), None)
 
     # --- réseaux ------------------------------------------------------------------------------
-    def group(self, gid):
+    def group(self, gid, stats=True):
         rows, _ = self._q("SELECT id, name, owner, secret, created_at FROM roaming_groups WHERE id = ?", (gid,))
         if not rows:
             return None
         gid, name, owner, secret, created = rows[0]
         members, _ = self._q("SELECT zone_id FROM roaming_members WHERE group_id = ? ORDER BY rowid", (gid,))
         zones = [self._zone(m[0]) for m in members]
+        if not stats:  # léger : pour chaque paquet RADIUS et chaque relevé (les compteurs ne servent qu'à l'écran)
+            return {"id": gid, "name": name, "owner": owner, "secret": secret, "created_at": created,
+                    "zones": [{"id": z["id"], "name": z["name"]} for z in zones if z]}
         stats, _ = self._q(
             "SELECT COUNT(*), SUM(t.first_used IS NULL AND t.removed = 0), SUM(t.first_used IS NOT NULL) "
             "FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE b.roaming_id = ?", (gid,))
@@ -95,9 +102,20 @@ class Roaming:
                 out.append(g)
         return out
 
-    def group_of_zone(self, zid):
+    def group_of_zone(self, zid, ttl=30):
+        """Le réseau d'un routeur (sans les compteurs), gardé 30 s : appelé très souvent."""
+        now = time.time()
+        hit = self._goz.get(zid)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
         rows, _ = self._q("SELECT group_id FROM roaming_members WHERE zone_id = ?", (zid,))
-        return self.group(rows[0][0]) if rows else None
+        g = self.group(rows[0][0], stats=False) if rows else None
+        self._goz[zid] = (now, g)
+        return g
+
+    def _forget_cache(self):
+        self._goz.clear()
+        self._members = None
 
     def save_group(self, data, owner=None, allowed=lambda zid: True, gid=None):
         name = " ".join(str(data.get("name") or "").split())[:40]
@@ -120,12 +138,14 @@ class Roaming:
             self.store.db.executemany("INSERT OR REPLACE INTO roaming_members (zone_id, group_id) VALUES (?,?)",
                                       [(z, gid) for z in zone_ids])
             self.store.db.commit()
+        self._forget_cache()
         self.reset_setup(gid)
         return self.group(gid)
 
     def delete_group(self, gid):
         self._q("DELETE FROM roaming_members WHERE group_id = ?", (gid,))
         self._q("DELETE FROM roaming_groups WHERE id = ?", (gid,), commit=True)
+        self._forget_cache()
         return {"ok": True}
 
     def member_zones(self, gid):
@@ -317,7 +337,10 @@ class Roaming:
             except (RouterOSError, OSError) as e:
                 d["error"] = str(e)
             out.append(d)
-        return {"name": g["name"] if g else "", "routers": out}
+        zids = {d["id"] for d in out}
+        recent = [{"at": a, "zone": n, "code": c, "result": r, "message": m}
+                  for a, z, n, c, r, m in reversed(self.journal) if z in zids][:30]
+        return {"name": g["name"] if g else "", "routers": out, "recent": recent}
 
     def ensure(self, zone, api):
         """Appelé à chaque relevé : règle le routeur une fois (puis toutes les heures s'il a échoué)."""
@@ -360,8 +383,10 @@ class Roaming:
         nas_id = pkt.text(R.NAS_IDENTIFIER)
         nas_ip = pkt.get(R.NAS_IP_ADDRESS)
         nas_ip = socket.inet_ntoa(nas_ip) if nas_ip and len(nas_ip) == 4 else None
-        rows, _ = self._q("SELECT zone_id FROM roaming_members")
-        members = [self._zone(r[0]) for r in rows]
+        if self._members is None or time.time() - self._members[0] > 30:
+            rows, _ = self._q("SELECT zone_id FROM roaming_members")
+            self._members = (time.time(), [r[0] for r in rows])
+        members = [self._zone(zid) for zid in self._members[1]]
         members = [z for z in members if z]
         for z in members:
             r = z.get("router") or {}
@@ -536,6 +561,10 @@ class Roaming:
         for gid, code, home in rows:
             self.end_ticket(gid, code, home, now)
 
+    def _note(self, zone, code, result, msg):
+        """Journal des dernières demandes (bouton « Vérifier les routeurs ») : pour comprendre un refus."""
+        self.journal.append((int(time.time()), zone["id"], zone["name"], str(code)[:24], result, msg))
+
     def handle(self, data, ip, kind):
         """Traite un paquet reçu ; renvoie la réponse à envoyer (ou None pour l'ignorer)."""
         try:
@@ -573,9 +602,12 @@ class Roaming:
             else:
                 ok, msg, lim = self.authorize(g["id"], code, zone_id=zone["id"], mac=mac)
             if not ok and shared and not self._ticket(g["id"], code):
+                self._note(zone, code, "autre", "Code inconnu d'ADER LINK : laissé à l'autre système")
                 return None  # code inconnu d'ADER LINK : on se tait, le routeur demande à l'autre système
             if not ok:
+                self._note(zone, code, "refus", msg)
                 return R.reply(pkt, R.ACCESS_REJECT, secret, R.attr(R.REPLY_MESSAGE, msg))
+            self._note(zone, code, "ok", "Accepté")
             attrs = R.attr(R.ACCT_INTERIM_INTERVAL, INTERIM_S) + R.attr(R.CLASS, f"AL:{code}")
             if "timeout" in lim:
                 attrs += R.attr(R.SESSION_TIMEOUT, max(1, int(lim["timeout"])))
@@ -620,17 +652,27 @@ class Roaming:
         threading.Thread(target=loop, daemon=True, name="roaming-sweep").start()
 
     def _loop(self, sock, kind):
-        while True:
-            try:
-                data, addr = sock.recvfrom(4096)
-            except OSError:
-                return
+        # plusieurs paquets traités en même temps : une demande de connexion n'attend jamais derrière les autres
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix=f"radius-{kind}")
+
+        def work(data, addr):
+            t0 = time.time()
             try:
                 out = self.handle(data, addr[0], kind)
                 if out:
                     sock.sendto(out, addr)
             except Exception as e:  # un paquet bizarre ne doit jamais arrêter le serveur
                 self.log(f"ADER Roaming : erreur {e!r}")
+            took = time.time() - t0
+            if kind == "auth" and took > 1:
+                self.log(f"ADER Roaming : réponse lente ({took:.1f} s)")
+        while True:
+            try:
+                data, addr = sock.recvfrom(4096)
+            except OSError:
+                return
+            pool.submit(work, data, addr)
 
 
 def _ascii(s):

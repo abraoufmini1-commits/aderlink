@@ -203,7 +203,15 @@
         });
         lines.push("<li class='" + (r.seen_ago != null ? "ok" : "wait") + "'>" + (r.seen_ago != null ? "Dernier contact avec le serveur : " + ago(r.seen_ago) : "Aucun contact avec le serveur depuis le démarrage") + "</li>");
         return "<div class='ro-diag'><b>" + esc(r.name) + "</b><ul>" + lines.join("") + "</ul></div>";
-      }).join("") + "<p class='hint'>Envoyez une photo de cette page à votre support si un routeur a des lignes en rouge.</p>";
+      }).join("") +
+        "<div class='card ro-jcard'><strong>Dernières demandes de connexion</strong>" +
+        ((d.recent || []).length ? "<ul class='ro-journal'>" + d.recent.map(function (x) {
+          var cls = x.result === "ok" ? "ok" : x.result === "refus" ? "bad" : "";
+          return "<li class='" + cls + "'><span class='mono'>" + new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) +
+            "</span> · <b>" + esc(x.zone) + "</b> · <span class='mono'>" + esc(x.code) + "</span> — " + esc(x.message) + "</li>";
+        }).join("") + "</ul>" : "<p class='pane-sub'>Aucune demande depuis le dernier redémarrage du serveur.</p>") +
+        "<p class='hint'>Un code refusé avec « Veuillez entrer un code valide » qui n'apparaît pas ici : la demande n'est jamais arrivée au serveur (routeur, réseau, ou autre système de tickets passé avant).</p></div>" +
+        "<p class='hint'>Envoyez une photo de cette page à votre support si un routeur a des lignes en rouge.</p>";
     }).catch(function (e) { $("bsBody").innerHTML = "<div class='notice show notice-err'>" + esc(e.message) + "</div>"; });
   }
 

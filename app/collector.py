@@ -201,7 +201,7 @@ class Store:
             return
         try:
             with self.lock:
-                self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self.db.execute("PRAGMA wal_checkpoint(PASSIVE)")  # sans attendre les lectures en cours
         except sqlite3.Error:
             pass
 
