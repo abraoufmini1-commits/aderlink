@@ -153,9 +153,11 @@ def install_script(name, password, server_ip, api_port, ok_url, profiles, userna
         ':if ([:len [/user group find name="aderlink-api"]] = 0) do={ /user group add name="aderlink-api" '
         'policy=read,write,api comment="ADER LINK" } else={ /user group set [find name="aderlink-api"] '
         'policy=read,write,api }',
-        f':if ([:len [/user find name="{user}"]] = 0) do={{ /user add name="{user}" group="aderlink-api" '
+        # groupe « full » : pour créer, depuis ADER LINK, le 2e compte Winbox que vous choisissez
+        # (le compte aderlink reste limité à l'adresse du serveur : personne d'autre ne peut l'utiliser)
+        f':if ([:len [/user find name="{user}"]] = 0) do={{ /user add name="{user}" group="full" '
         f'password={q(password)} address={srv}/32 comment="ADER LINK" }} else={{ /user set [find name="{user}"] '
-        f'group="aderlink-api" password={q(password)} address={srv}/32 }}',
+        f'group="full" password={q(password)} address={srv}/32 }}',
         f"/ip service set api disabled=no port={int(api_port)} address={srv}/32",
         "# 2. Heure exacte (apres une coupure de courant, l horloge du routeur repart a zero :",
         "#    sans la bonne heure, les tickets n expireraient pas a l heure prevue)",

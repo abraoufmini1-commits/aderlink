@@ -1441,3 +1441,7 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .lg-also summary { cursor: pointer; font-weight: 600; }
 .lg-also-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; margin-top: 8px; }
 .lg-acts { display: flex; justify-content: flex-end; gap: 10px; }
+.ra-login-acts { margin: 2px 0 8px; }
+.lg-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .92em; }
+.lg-results li.ok { color: #1e8e3e; }
+.lg-results li.bad { color: #c0392b; }

@@ -275,22 +275,24 @@
       "<div class='ra-list'>" +
       row("Winbox", x.winbox, "<button type='button' class='btn btn-sm' id='raWb'>" + ic("winbox") + " Ouvrir</button>") +
       "<div class='ra-row ra-login'><div class='ra-main'><div class='ra-label'>Identifiant</div><div class='ra-value mono' id='lgUser'>" +
-        (r.login_user ? esc(r.login_user) : "<span class='ra-empty'>pas encore enregistré</span>") + "</div></div>" +
+        (r.login_user ? esc(r.login_user) : "<span class='ra-empty'>pas encore créé</span>") + "</div></div>" +
         (r.login_user ? "<button type='button' class='icon-btn ra-copy' data-copy='" + esc(r.login_user) + "' aria-label='Copier l&#39;identifiant'>" + ic("copy") + "</button>" : "") + "</div>" +
       "<div class='ra-row ra-login'><div class='ra-main'><div class='ra-label'>Mot de passe</div><div class='ra-value mono' id='lgPass'>" +
         (r.login_user ? "••••••••" : "–") + "</div></div>" +
         (r.login_user ? "<button type='button' class='btn btn-sm btn-outline' id='lgShow'>Afficher</button>" +
           "<button type='button' class='icon-btn ra-copy' id='lgCopy' aria-label='Copier le mot de passe'>" + ic("copy") + "</button>" : "") + "</div>" +
-      "<button type='button' class='link ra-login-edit' id='lgEdit'>" + (r.login_user ? "Modifier les identifiants" : "+ Enregistrer l'identifiant et le mot de passe Winbox") + "</button>" +
+      "<div class='ra-login-acts'><button type='button' class='link ra-login-edit' id='lgEdit'>" + (r.login_user ? "Changer le mot de passe" : "+ Créer mon accès Winbox sur ce MikroTik") + "</button>" +
+        (r.login_user ? " · <button type='button' class='link' id='lgRemove'>Retirer cet accès</button>" : "") + "</div>" +
       "<form class='lg-form' id='lgForm' hidden autocomplete='off' novalidate>" +
         "<div class='f'><label for='lgU'>Identifiant</label><input id='lgU' maxlength='64' spellcheck='false' autocapitalize='off' value='" + esc(r.login_user || "") + "'></div>" +
         "<div class='f'><label for='lgP'>Mot de passe</label><input id='lgP' type='password' autocomplete='new-password'></div>" +
-        "<details class='lg-also'><summary>Mettre les mêmes identifiants sur d'autres routeurs</summary><div class='lg-also-list'>" +
+        "<details class='lg-also'><summary>Créer le même accès sur d'autres routeurs</summary><div class='lg-also-list'>" +
           S.routers.filter(function (o) { return o.id !== r.id; }).map(function (o) {
             return "<label class='check-opt'><input type='checkbox' name='lgAlso' value='" + esc(o.id) + "'><span>" + esc(o.name) + "</span></label>";
           }).join("") + "</div></details>" +
-        "<p class='pane-sub'>Rien n'est changé sur le routeur : ADER LINK garde seulement ces identifiants pour vous les montrer ici.</p>" +
-        "<div class='lg-acts'><button type='button' class='btn-prev' id='lgCancel'>Annuler</button><button type='submit' class='btn'>Enregistrer</button></div>" +
+        "<p class='pane-sub'>ADER LINK crée ce compte sur le MikroTik. <strong>Votre mot de passe actuel ne change pas</strong> : les deux marchent.</p>" +
+        "<div class='lg-acts'><button type='button' class='btn-prev' id='lgCancel'>Annuler</button><button type='submit' class='btn' id='lgSave'>Créer sur le MikroTik</button></div>" +
+        "<ul class='lg-results' id='lgRes'></ul>" +
       "</form>" +
       row("WebFig (navigateur)", x.webfig, "<a class='btn btn-sm btn-outline' href='" + esc(x.webfig) + "' target='_blank' rel='noopener'>Ouvrir</a>") +
       row("Adresse dans le tunnel", x.tunnel, "") + "</div>" +
@@ -330,15 +332,32 @@
       $("lgU").focus();
     });
     $("lgCancel").addEventListener("click", function () { $("lgForm").hidden = true; $("lgEdit").hidden = false; });
+    var lgShowResults = function (d) {
+      d.results.forEach(function (x) { var o = byId(x.id); if (o && x.ok) o.login_user = d.user; });
+      var mine = d.results.find(function (x) { return x.id === r.id; }) || {};
+      if (d.results.length === 1 && mine.ok) { toast(mine.message, true); remote(r); return; }
+      $("lgForm").hidden = false;
+      $("lgRes").innerHTML = d.results.map(function (x) {
+        return "<li class='" + (x.ok ? "ok" : "bad") + "'>" + (x.ok ? "✓ " : "✗ ") + "<b>" + esc(x.name) + "</b> — " + esc(x.message) + "</li>";
+      }).join("");
+      toast(d.done + " routeur(s) sur " + d.results.length + " : c'est fait", d.done === d.results.length);
+    };
+    if ($("lgRemove")) $("lgRemove").addEventListener("click", function () {
+      var b = this;
+      if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Confirmer : retirer cet accès ?"; return; }
+      api("/api/routers/" + encodeURIComponent(r.id) + "/login", { remove: true }).then(function (d) {
+        var mine = d.results[0] || {};
+        if (mine.ok) { r.login_user = ""; toast(mine.message, true); remote(r); } else toast(mine.message);
+      }).catch(function (err) { toast(err.message); });
+    });
     $("lgForm").addEventListener("submit", function (e) {
       e.preventDefault();
       var also = Array.prototype.map.call(document.querySelectorAll("input[name=lgAlso]:checked"), function (c) { return c.value; });
-      var user = $("lgU").value.trim(), pw = $("lgP").value;
-      api("/api/routers/" + encodeURIComponent(r.id) + "/login", { user: user, password: pw, also: also }).then(function (d) {
-        [r.id].concat(also).forEach(function (id) { var o = byId(id); if (o) o.login_user = d.user; });
-        toast(d.count > 1 ? "Identifiants enregistrés sur " + d.count + " routeurs" : "Identifiants enregistrés", true);
-        remote(r);
-      }).catch(function (err) { toast(err.message); });
+      var user = $("lgU").value.trim(), pw = $("lgP").value, b = $("lgSave");
+      b.disabled = true; b.textContent = "Création sur le MikroTik…";
+      api("/api/routers/" + encodeURIComponent(r.id) + "/login", { user: user, password: pw, also: also })
+        .then(lgShowResults).catch(function (err) { toast(err.message); })
+        .then(function () { if ($("lgSave")) { $("lgSave").disabled = false; $("lgSave").textContent = "Créer sur le MikroTik"; } });
     });
     $("bsBody").onclick = function (e) {
       var c = e.target.closest("[data-copy]");

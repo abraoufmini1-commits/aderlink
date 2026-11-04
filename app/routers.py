@@ -279,32 +279,95 @@ class Routers:
         except RouterOSError:
             pass
 
-    # --- identifiants Winbox (affichés sous l'adresse d'accès à distance) ------------------------
-    # Rien n'est changé sur le routeur : ADER LINK garde seulement ce que vous tapez, pour vous le montrer.
+    # --- 2e compte Winbox, créé par ADER LINK sur le MikroTik ----------------------------------
+    # L'ancien compte du routeur (admin…) ne change pas : les deux marchent. Le compte créé est noté
+    # ici pour vous le montrer sous l'adresse d'accès à distance (copier, afficher).
+    ACCOUNT_TAG = "ADER LINK acces Winbox"
+
     def get_login(self, zone_id):
         z = self.zone(zone_id)
         login = z.get("winbox_login") or {}
         return {"user": login.get("user", ""), "password": login.get("password", "")}
 
+    def _api_for(self, z):
+        r = z["router"]
+        return RouterOS(r["host"], r["username"], r["password"], port=r.get("port", 8729 if r.get("ssl") else 8728),
+                        use_ssl=r.get("ssl", False), timeout=8)
+
+    @staticmethod
+    def _can_add_users(api, api_user):
+        me = api.query("/user/print", f"?name={api_user}")
+        group = (me[0].get("group") if me else "") or ""
+        if group == "full":
+            return True
+        grp = api.query("/user/group/print", f"?name={group}") if group else []
+        return bool(grp) and "policy" in (grp[0].get("policy") or "").split(",")
+
     def set_login(self, zone_id, data, allowed=lambda zid: True):
-        user = str(data.get("user") or "").strip()[:64]
-        password = str(data.get("password") or "")[:128]
-        if re.search(r"[\x00-\x1f]", user + password):
-            raise RouterError("Caractères invalides")
+        """Crée (ou change, ou retire) le 2e compte Winbox sur ce routeur et ceux cochés en plus."""
+        from concurrent.futures import ThreadPoolExecutor
+        action = "remove" if data.get("remove") else "set"
         ids = [zone_id] + [str(x) for x in (data.get("also") or []) if str(x) != zone_id]
         zones = []
         for zid in ids:
             if not allowed(zid):
                 raise RouterError("Routeur introuvable")
             zones.append(self.zone(zid))
+        if action == "set":
+            user = str(data.get("user") or "").strip()
+            password = str(data.get("password") or "")
+            if not re.fullmatch(r"[A-Za-z0-9._-]{3,32}", user):
+                raise RouterError("Identifiant : 3 à 32 lettres ou chiffres (sans espace ni accent)")
+            if len(password) < 8 or not re.fullmatch(r"[\x21-\x7e]+", password):
+                raise RouterError("Mot de passe : 8 caractères au moins, sans espace ni accent")
+            if user.lower() in ("admin", "aderlink") or any(user.lower() == (z["router"].get("username") or "").lower() for z in zones):
+                raise RouterError(f"« {user} » est déjà un compte du routeur ou d'ADER LINK : choisissez un autre identifiant")
+
+        def one(z):
+            res = {"id": z["id"], "name": z["name"], "ok": False}
+            old = (z.get("winbox_login") or {}).get("user")
+            if self.demo:
+                return dict(res, ok=True, message="Démonstration : rien envoyé au routeur")
+            if not (z.get("router") or {}).get("host"):
+                return dict(res, message="Pas encore installé")
+            try:
+                with self._api_for(z) as api:
+                    if not self._can_add_users(api, z["router"]["username"]):
+                        return dict(res, repaste=True, message="À recoller une fois : la ligne d'installation")
+                    if action == "remove":
+                        if old:
+                            for u in api.query("/user/print", f"?name={old}"):
+                                if u.get("comment") == self.ACCOUNT_TAG:
+                                    api.query("/user/remove", f"=.id={u['.id']}")
+                        return dict(res, ok=True, message="Accès retiré (l'ancien mot de passe reste)")
+                    found = api.query("/user/print", f"?name={user}")
+                    if found and found[0].get("comment") != self.ACCOUNT_TAG:
+                        return dict(res, message=f"« {user} » existe déjà sur ce MikroTik : choisissez un autre identifiant")
+                    if found:
+                        api.query("/user/set", f"=.id={found[0]['.id']}", f"=password={password}", "=group=full")
+                    else:
+                        api.query("/user/add", f"=name={user}", f"=password={password}", "=group=full",
+                                  f"=comment={self.ACCOUNT_TAG}")
+                    if old and old != user:  # nouvel identifiant : l'ancien compte ADER LINK est retiré
+                        for u in api.query("/user/print", f"?name={old}"):
+                            if u.get("comment") == self.ACCOUNT_TAG:
+                                api.query("/user/remove", f"=.id={u['.id']}")
+                    return dict(res, ok=True, message="Accès prêt" if not found else "Mot de passe changé")
+            except RouterOSError as e:
+                return dict(res, message=f"Le routeur a refusé : {e}")
+
+        with ThreadPoolExecutor(max_workers=max(1, min(16, len(zones)))) as pool:
+            results = list(pool.map(one, zones))
+        ok = {r["id"] for r in results if r["ok"]}
         with self.lock:
             for z in zones:
-                if user or password:
-                    z["winbox_login"] = {"user": user, "password": password}
-                else:
-                    z.pop("winbox_login", None)  # tout vide : on efface
+                if z["id"] in ok:
+                    if action == "remove":
+                        z.pop("winbox_login", None)
+                    else:
+                        z["winbox_login"] = {"user": user, "password": password}
             self._persist()
-        return {"ok": True, "count": len(zones), "user": user}
+        return {"results": results, "done": len(ok), "user": "" if action == "remove" else user}
 
     def lan_scan(self, zone_id):
         """Appareils vus par le routeur (baux DHCP + voisins) : pour choisir une antenne sans chercher son adresse."""
