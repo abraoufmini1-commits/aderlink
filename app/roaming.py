@@ -60,6 +60,9 @@ class Roaming:
                 store.db.execute("UPDATE roaming_sessions SET mac = upper(replace(mac, '-', ':')) WHERE mac IS NOT NULL")
                 store.db.execute("CREATE INDEX idx_rs_mac ON roaming_sessions(mac, updated)")
             store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_active ON roaming_sessions(active, updated)")
+            # chaque paquet de consommation efface la réservation « pending » du routeur : par index (avant : toute la table)
+            store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_nas_code ON roaming_sessions(nas_zone, code)")
+            store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_code_only ON roaming_sessions(code)")
             store.db.commit()
 
     def _q(self, sql, params=(), commit=False):
@@ -68,8 +71,8 @@ class Roaming:
         with self.store.lock:
             cur = self.store.db.execute(sql, params)
             rows = cur.fetchall()
-            if commit:
-                self.store.db.commit()
+            # toujours enregistrer une écriture : une écriture laissée ouverte bloquait les lectures et le journal
+            self.store.db.commit()
             return rows, cur.lastrowid
 
     def _zone(self, zid):

@@ -107,8 +107,8 @@ class Tickets:
         with self.store.lock:
             cur = self.store.db.execute(sql, params)
             rows = cur.fetchall()
-            if commit:
-                self.store.db.commit()
+            # toujours enregistrer une écriture : une écriture laissée ouverte bloquait les lectures et le journal
+            self.store.db.commit()
             return rows, cur.lastrowid
 
     def profiles(self, zone_id):
