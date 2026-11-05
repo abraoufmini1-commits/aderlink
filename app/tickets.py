@@ -48,6 +48,7 @@ class Tickets:
         self.store = store
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
+        self._seen_used = {}   # zone_id -> codes déjà marqués « utilisés » (pour ne pas les réécrire)
         self._sync_times = []  # quand les dernières mises à jour de scripts ont commencé
         self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
         with store.lock:
@@ -288,6 +289,8 @@ class Tickets:
              forfait["id"] if forfait else None, pos_id, created_by, group["id"] if group else None, zone["id"]), commit=True)
 
         zone_ids = [zone["id"]] + ([z["id"] for z in group["zones"]] if group else [])
+        for z in zone_ids:  # nouveaux codes : la mémoire « déjà utilisé » de ces routeurs repart à zéro
+            self._seen_used.pop(z, None)
         rows, _ = self._q("SELECT code FROM tickets WHERE zone_id IN (%s)" % ",".join("?" * len(zone_ids)), zone_ids)
         taken = {r[0] for r in rows}
         added, error = [], None
@@ -569,12 +572,18 @@ class Tickets:
             rows, _ = self._q("SELECT code FROM tickets WHERE zone_id = ? AND first_used IS NULL "
                               "AND removed = 0 ORDER BY RANDOM() LIMIT 1", (zid,)) if random.random() < 0.25 else ([], None)
             users = [r[0] for r in rows]
-        if users:
+        # seulement les tickets pas encore vus : avant, chaque relevé réécrivait tous les connectés (base bloquée ~1 s)
+        seen = self._seen_used.setdefault(zid, set())
+        fresh = [u for u in users if u not in seen]
+        if fresh:
             with self.store.lock:
                 self.store.db.executemany(
                     "UPDATE tickets SET first_used = ? WHERE zone_id = ? AND code = ? AND first_used IS NULL",
-                    [(now, zid, u) for u in users])
+                    [(now, zid, u) for u in fresh])
                 self.store.db.commit()
+            seen.update(fresh)
+            if len(seen) > 20000:  # mémoire bornée
+                seen.clear()
         due, _ = self._q(
             "SELECT t.code FROM tickets t JOIN batches b ON b.id = t.batch_id "
             "WHERE t.zone_id = ? AND b.validity_s > 0 AND t.first_used IS NOT NULL "
