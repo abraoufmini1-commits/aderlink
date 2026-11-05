@@ -113,6 +113,7 @@ class Store:
     def __init__(self, path):
         self.lock = TrackedLock()
         self.path = path
+        self._radius_local = threading.local()
         self._readers = queue.LifoQueue()  # quelques connexions en lecture, partagées (pas une par fil)
         self._reader_count = 0
         self._reader_lock = threading.Lock()
@@ -155,6 +156,21 @@ class Store:
             # écriture laissée sans « commit » (personne n'écrit en ce moment) : on la voit par la connexion principale
             with self.lock:
                 return self.db.execute(sql, params).fetchall()
+        if threading.current_thread().name.startswith("radius-"):
+            # ADER Roaming : chaque fil RADIUS a SA connexion de lecture (jamais d'attente derrière les autres :
+            # le routeur n'attend que 3 secondes la réponse)
+            con = getattr(self._radius_local, "con", None)
+            if con is None:
+                con = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False, timeout=10)
+                con.execute("PRAGMA cache_size=-16000")
+                con.execute("PRAGMA mmap_size=1073741824")
+                self._radius_local.con = con
+            try:
+                return con.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                self._radius_local.con = None
+                con.close()
+                raise
         for attempt in (1, 2):
             con = self._take_reader()
             if con is None:

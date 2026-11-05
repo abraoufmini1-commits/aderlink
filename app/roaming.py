@@ -487,12 +487,16 @@ class Roaming:
                 self.store.db.commit()
             if self.kicker:  # on ferme l'ancienne connexion là où il était
                 threading.Thread(target=self._kick_zones, args=(moved, [code, mac]), daemon=True).start()
-        if zone_id:  # réservation immédiate : bloque un 2e appareil pendant que le routeur ouvre la session
-            with self.store.lock:
+        # réservation immédiate : bloque un 2e appareil pendant que le routeur ouvre la session.
+        # Si la base est occupée plus d'une demi-seconde, on répond quand même (le routeur n'attend que 3 s).
+        if zone_id and self.store.lock.acquire(timeout=0.5):
+            try:
                 self.store.db.execute(
                     "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
                     "VALUES (?,?,?,?,?,?,?,1)", (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac)))
                 self.store.db.commit()
+            finally:
+                self.store.lock.release()
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
