@@ -78,7 +78,7 @@ class Tickets:
                                ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
                                ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
                                ("tickets", "uptime_used INTEGER DEFAULT 0"),
-                               ("tickets", "purged_at INTEGER")):  # base créée par une version précédente
+                               ("tickets", "purged_at INTEGER"), ("batches", "zone_seq INTEGER")):  # base créée par une version précédente
                 try:
                     store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                 except Exception:
@@ -88,6 +88,9 @@ class Tickets:
                     "AND (t.removed = 0 OR t.first_used IS NOT NULL))"
             store.db.execute(f"DELETE FROM tickets WHERE batch_id IN ({empty})")
             store.db.execute(f"DELETE FROM batches WHERE id IN ({empty})")
+            # numéro du lot sur son routeur (1, 2, 3… pour chaque routeur) : donné aux lots existants, dans l'ordre
+            store.db.execute("UPDATE batches SET zone_seq = (SELECT COUNT(*) FROM batches b2 WHERE b2.zone_id = batches.zone_id "
+                             "AND b2.id <= batches.id) WHERE zone_seq IS NULL")
             store.db.commit()
 
     # --- outils ---------------------------------------------------------------
@@ -279,9 +282,10 @@ class Tickets:
 
         _, batch_id = self._q(
             "INSERT INTO batches (zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, note, "
-            "forfait_id, pos_id, created_by, roaming_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "forfait_id, pos_id, created_by, roaming_id, zone_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,"
+            "(SELECT COALESCE(MAX(zone_seq), 0) + 1 FROM batches WHERE zone_id = ?))",
             (zone["id"], int(time.time()), 0, profile, price, uptime_s, data_mb, validity_s, note,
-             forfait["id"] if forfait else None, pos_id, created_by, group["id"] if group else None), commit=True)
+             forfait["id"] if forfait else None, pos_id, created_by, group["id"] if group else None, zone["id"]), commit=True)
 
         zone_ids = [zone["id"]] + ([z["id"] for z in group["zones"]] if group else [])
         rows, _ = self._q("SELECT code FROM tickets WHERE zone_id IN (%s)" % ",".join("?" * len(zone_ids)), zone_ids)
@@ -335,7 +339,8 @@ class Tickets:
         if error and not added:
             self._q("DELETE FROM batches WHERE id = ?", (batch_id,), commit=True)
             raise TicketError(f"Le routeur a refusé : {error}")
-        return {"id": batch_id, "created": len(added), "requested": count, "error": error,
+        num = self._q("SELECT zone_seq FROM batches WHERE id = ?", (batch_id,))[0]
+        return {"id": batch_id, "number": (num[0][0] if num and num[0][0] else batch_id), "created": len(added), "requested": count, "error": error,
                 "roaming": bool(group)}
 
     # --- lecture ------------------------------------------------------------------
@@ -364,6 +369,7 @@ class Tickets:
             "created_by": row[13] if len(row) > 13 else None,
             "roaming_id": rid,
             "roaming_name": ((n["roam"].get(rid) if "roam" in n else self._roaming_name(rid)) or "ADER Roaming") if rid else None,
+            "number": (row[15] if len(row) > 15 and row[15] else bid),  # numéro du lot sur ce routeur
         }
 
     def _roaming_name(self, gid):
@@ -402,6 +408,23 @@ class Tickets:
         names = {"color": table("SELECT id, color FROM forfaits"), "pos": table("SELECT id, name FROM points_vente"),
                  "roam": table("SELECT id, name FROM roaming_groups")}
         return [self._batch_dict(r, stats, names) for r in rows]
+
+    def batch_summary(self, zone_ids=None, created_by=None):
+        """Page Lots : pour chaque routeur, combien de lots et de tickets (restants, utilisés, vendus)."""
+        sc, sp = self._scope(zone_ids, created_by)
+        lots = dict(self.store.read("SELECT b.zone_id, COUNT(*) FROM batches b WHERE 1=1" + sc + " GROUP BY b.zone_id", sp))
+        rows = self.store.read(
+            "SELECT b.zone_id, COUNT(*), SUM(t.first_used IS NOT NULL), SUM(t.removed = 1 AND t.first_used IS NULL), "
+            "COALESCE(SUM(CASE WHEN t.first_used IS NOT NULL THEN b.price END), 0), "
+            "COALESCE(SUM(CASE WHEN t.first_used IS NULL AND t.removed = 0 THEN b.price END), 0), MAX(b.created_at) "
+            "FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE 1=1" + sc + " GROUP BY b.zone_id", sp)
+        out = {}
+        for zid, n, used, removed, sold, left_value, last in rows:
+            out[zid] = {"lots": lots.get(zid, 0), "tickets": n, "used": used or 0, "left": n - (used or 0) - (removed or 0),
+                        "sold": sold, "left_value": left_value, "last": last}
+        for zid, n in lots.items():
+            out.setdefault(zid, {"lots": n, "tickets": 0, "used": 0, "left": 0, "sold": 0, "left_value": 0, "last": None})
+        return out
 
     def get_batch(self, batch_id):
         rows, _ = self._q("SELECT * FROM batches WHERE id = ?", (batch_id,))

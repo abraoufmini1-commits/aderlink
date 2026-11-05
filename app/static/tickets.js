@@ -386,7 +386,7 @@
       roaming: !!S.roam })
       .then(function (d) {
         S.result = d;
-        $("doneTitle").textContent = "Lot n° " + d.id + " généré";
+        $("doneTitle").textContent = "Lot n° " + (d.number || d.id) + " généré";
         $("doneSub").innerHTML = "<strong>" + nf.format(d.created) + " ticket" + (d.created > 1 ? "s" : "") + " « " + esc(S.forfait.name) + " »</strong> ajouté" +
           (d.created > 1 ? "s" : "") + (d.roaming ? " · <span class='ro-badge'>ADER Roaming</span> valables sur tout le réseau « " + esc((zoneObj().roaming || {}).name) + " »" : " sur " + esc(zoneObj().name)) + " · valeur " + nf.format(d.created * S.forfait.price) + " F CFA" +
           (d.error ? "<br><span class='err-text'>Arrêt après une erreur du routeur : " + esc(d.error) + "</span>" : "");

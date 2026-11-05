@@ -106,8 +106,8 @@
     .then(function (b) {
       if (b.error) { $("title").textContent = b.error; return; }
       batch = b;
-      document.title = "ADER LINK · Impression lot " + b.id;
-      $("title").textContent = "Lot n° " + b.id + " — " + (b.note || b.zone_name);
+      document.title = "ADER LINK · Impression lot " + (b.number || b.id);
+      $("title").textContent = "Lot n° " + (b.number || b.id) + " — " + (b.note || b.zone_name);
       render();
     });
   $("onlyNew").addEventListener("change", function () { if (batch) render(); });

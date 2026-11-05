@@ -77,7 +77,7 @@
       "<div><dt>Fin de validité</dt><dd>" + (t.ends_at ? date(t.ends_at) : b.validity_s ? dur(b.validity_s) + " après la 1re connexion" : "Sans limite") + "</dd></div>" +
       (L.delete_at && L.finished === "validity" ? "<div><dt>Supprimé du routeur le</dt><dd>" + date(L.delete_at) + "</dd></div>" : "") +
       (L.finished && L.finished !== "validity" && L.finished !== "removed" && L.finished !== "purged" && !b.roaming_id ? "<div><dt>Suppression</dt><dd>7 jours après la fin</dd></div>" : "") +
-      "<div><dt>Lot</dt><dd><a class='link' href='/lots#lot-" + b.id + "'>n° " + b.id + "</a></dd></div>" +
+      "<div><dt>Lot</dt><dd><a class='link' href='/lots#lot-" + b.id + "'>n° " + (b.number || b.id) + "</a></dd></div>" +
       "</dl></div>";
     return html;
   }

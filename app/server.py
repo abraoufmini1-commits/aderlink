@@ -766,9 +766,19 @@ def make_handler(app):
                 lines = (app.roaming.script_lines(g, srv, wg.get("ovpn_server", "10.67.0.1")) if wg
                          else app.roaming.script_lines(g, srv))
                 return {"script": "\r\n".join(lines), "server": srv}
+            if app.tickets and p == "/api/batches/summary":
+                zone_ids, mine = app.sales_scope(who)
+                summary = app.tickets.batch_summary(zone_ids, mine)
+                return {"zones": [dict(id=z["id"], name=z["name"], **summary.get(z["id"], {"lots": 0, "tickets": 0, "used": 0,
+                                  "left": 0, "sold": 0, "left_value": 0, "last": None})) for z in app.zones_for(who)],
+                        "demo": app.demo}
             if app.tickets and p == "/api/batches":
                 zid = q.get("zone", [None])[0]
-                lots = [b for b in app.tickets.list_batches(limit=300, zone_id=zid) if app.batch_visible(b, who)]
+                if zid:  # un seul routeur : tous ses lots
+                    self.need(who.can_zone(zid), "Routeur introuvable")
+                    lots = [b for b in app.tickets.list_batches(limit=2000, zone_id=zid) if app.batch_visible(b, who)]
+                    return {"batches": lots, "demo": app.demo, "can_manage": who.can("lots_manage")}
+                lots = [b for b in app.tickets.list_batches(limit=300) if app.batch_visible(b, who)]
                 return {"batches": lots[:150], "demo": app.demo, "can_manage": who.can("lots_manage")}
             if app.tickets and len(parts) == 4 and parts[2] == "batches" and parts[3].isdigit():
                 b = app.tickets.get_batch(int(parts[3]))
