@@ -323,7 +323,12 @@ class Roaming:
                     # on corrige l'ordre tout de suite (ADER Roaming avant l'autre système de tickets)
                     if g and self.server_for(z):
                         try:
-                            ok, msg = self.put_first(z, api, self._our_fields(self.server_for(z), g))
+                            if not any(e.get("comment") == "ADER Roaming" for e in api.query("/radius/print")):
+                                ok, msg = self.apply_zone(z, api, g)  # réglage effacé : on le remet tout de suite
+                                self.setup[zid] = {"ok": ok, "msg": msg, "ts": int(time.time()), "gid": g["id"],
+                                                   "checked": time.time()}
+                            else:
+                                ok, msg = self.put_first(z, api, self._our_fields(self.server_for(z), g))
                             d["order_error"] = None if ok else msg
                         except RouterOSError as e:
                             d["order_error"] = f"Le routeur a refusé : {e}"
@@ -351,26 +356,35 @@ class Roaming:
                   for a, z, n, c, r, m in reversed(self.journal) if z in zids][:30]
         return {"name": g["name"] if g else "", "routers": out, "recent": recent}
 
+    CHECK_S = 600  # toutes les 10 minutes : l'autre système de tickets peut remettre sa configuration
+
     def ensure(self, zone, api):
-        """Appelé à chaque relevé : règle le routeur une fois (puis toutes les heures s'il a échoué)."""
+        """Appelé à chaque relevé : règle le routeur, puis vérifie toutes les 10 minutes que le réglage
+        ADER Roaming est toujours là et passe toujours en premier (sinon on le remet aussitôt)."""
+        from .routeros import RouterOSError
         g = self.group_of_zone(zone["id"])
         if not g:
             return
+        now = time.time()
         st = self.setup.get(zone["id"])
-        if st and st.get("gid") == g["id"] and (st["ok"] or time.time() - st["ts"] < 3600):
-            # déjà réglé : toutes les heures on vérifie seulement que l'autre système n'est pas repassé devant
-            if st["ok"] and time.time() - st.get("checked", st["ts"]) >= 3600 and self.server_for(zone):
-                st["checked"] = time.time()
-                from .routeros import RouterOSError
-                try:
-                    ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g))
-                except RouterOSError as e:
-                    ok, msg = False, f"Le routeur a refusé : {e}"
-                if not ok:
-                    st.update(ok=False, msg=msg, ts=int(time.time()))
+        if st and st.get("gid") == g["id"] and now - st.get("checked", st["ts"]) < self.CHECK_S:
             return
+        if st and st.get("gid") == g["id"] and st["ok"] and self.server_for(zone):
+            try:
+                present = any(e.get("comment") == "ADER Roaming" for e in api.query("/radius/print"))
+                if present:
+                    ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g))
+                    st["checked"] = now
+                    if ok:
+                        return
+                    self.log(f"ADER Roaming : {zone['name']} : {msg}")
+            except RouterOSError as e:
+                st.update(ok=False, msg=f"Le routeur a refusé : {e}", ts=int(now), checked=now)
+                return
+            # réglage effacé (souvent par l'autre système) ou pas en premier : on remet tout
+            self.log(f"ADER Roaming : {zone['name']} : réglage absent ou pas en premier, remis automatiquement")
         ok, msg = self.apply_zone(zone, api, g)
-        self.setup[zone["id"]] = {"ok": ok, "msg": msg, "ts": int(time.time()), "gid": g["id"]}
+        self.setup[zone["id"]] = {"ok": ok, "msg": msg, "ts": int(now), "gid": g["id"], "checked": now}
         if not ok:
             self.log(f"ADER Roaming : {zone['name']} : {msg}")
 
