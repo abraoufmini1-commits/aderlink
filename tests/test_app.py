@@ -131,6 +131,10 @@ class FakeRouter(threading.Thread):
                         if u.get(key) == val:
                             _send(conn, "!re", *[f"={k}={v}" for k, v in u.items()])
                     _send(conn, "!done")
+                elif cmd == "/ip/hotspot/user/print":  # liste complète (=.proplist=…)
+                    for u in list(self.users.values()):
+                        _send(conn, "!re", f"=.id={u['.id']}", f"=name={u['name']}")
+                    _send(conn, "!done")
                 elif cmd == "/ip/hotspot/user/remove":
                     for name, u in list(self.users.items()):
                         if u[".id"] == attrs[".id"]:
@@ -338,6 +342,7 @@ class TicketTests(unittest.TestCase):
             self.t.on_poll(self.config["zones"][0], api, [])
             self.assertIn(code, self.router.users)  # 6 jours : toujours là
             self.t._q("UPDATE tickets SET expired_at = ? WHERE code = ?", (int(time.time()) - 8 * 86400, code), commit=True)
+            self.t._purged_at.clear()  # le nettoyage passe toutes les 10 minutes par routeur
             self.t.on_poll(self.config["zones"][0], api, [])
         self.assertNotIn(code, self.router.users)  # 8 jours : supprimé
         self.assertTrue(self.t.find(code)[0]["first_used"])  # la vente reste dans l'historique

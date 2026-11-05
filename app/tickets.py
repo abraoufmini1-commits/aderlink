@@ -48,6 +48,7 @@ class Tickets:
         self.store = store
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
+        self._purged_at = {}   # zone_id -> heure du dernier nettoyage des anciens tickets
         self._seen_used = {}   # zone_id -> codes déjà marqués « utilisés » (pour ne pas les réécrire)
         self._sync_times = []  # quand les dernières mises à jour de scripts ont commencé
         self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
@@ -659,27 +660,45 @@ class Tickets:
         if cmds:
             api.pipeline(cmds)
 
+    PURGE_EVERY = 600  # secondes entre deux nettoyages d'un même routeur
+
     def _purge(self, zid, api, now):
         """Filet de sécurité : un ticket fini depuis 7 jours est supprimé du routeur
-        (le routeur le fait lui-même ; ceci rattrape un routeur resté éteint ce jour-là)."""
+        (le routeur le fait lui-même ; ceci rattrape un routeur resté éteint ce jour-là).
+        Toutes les 10 minutes par routeur, et en 2 demandes au routeur (avant : 2 à 4 demandes PAR ticket,
+        jusqu'à 200 tickets à chaque relevé — le relevé des routeurs prenait plus de 2 minutes)."""
         from .mikrotik import KEEP_DAYS
+        if now - self._purged_at.get(zid, 0) < self.PURGE_EVERY:
+            return
+        self._purged_at[zid] = now
         old, _ = self._q(
             "SELECT t.code FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE t.zone_id = ? "
             "AND b.roaming_id IS NULL AND t.expired_at IS NOT NULL AND t.expired_at <= ? "
-            "AND t.purged_at IS NULL AND t.removed = 0 LIMIT 200", (zid, now - KEEP_DAYS * 86400))
-        for (code,) in old:
+            "AND t.purged_at IS NULL AND t.removed = 0 LIMIT 2000", (zid, now - KEEP_DAYS * 86400))
+        if not old:
+            return
+        codes = {c for (c,) in old}
+        try:
+            users = {u.get("name"): u.get(".id") for u in api.query("/ip/hotspot/user/print", "=.proplist=.id,name")}
+            jobs = {t.get("name"): t.get(".id") for t in api.query("/system/scheduler/print", "=.proplist=.id,name")}
+        except RouterOSError as e:
+            self.store.add_event(now, zid, "offline", f"Nettoyage des anciens tickets impossible : {e}")
+            return
+        done = []
+        for code in codes:
             try:
-                for u in api.query("/ip/hotspot/user/print", f"?name={code}"):
-                    api.query("/ip/hotspot/user/remove", f"=.id={u['.id']}")
-            except RouterOSError as e:
-                self.store.add_event(now, zid, "offline", f"Ticket {code} non supprimé : {e}")
-                return
-            try:
-                for t in api.query("/system/scheduler/print", f"?name=AL-EXP-{code}"):
-                    api.query("/system/scheduler/remove", f"=.id={t['.id']}")
+                if code in users:
+                    api.query("/ip/hotspot/user/remove", f"=.id={users[code]}")
+                if f"AL-EXP-{code}" in jobs:
+                    api.query("/system/scheduler/remove", f"=.id={jobs[f'AL-EXP-{code}']}")
             except RouterOSError:
-                pass  # la tâche n'existe plus : rien à faire
-            self._q("UPDATE tickets SET purged_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
+                continue  # déjà parti : on le marque quand même au prochain passage
+            done.append(code)
+        if done:
+            with self.store.lock:
+                self.store.db.executemany("UPDATE tickets SET purged_at = ? WHERE zone_id = ? AND code = ?",
+                                          [(now, zid, c) for c in done])
+                self.store.db.commit()
 
     # --- ventes ---------------------------------------------------------------------------
     @staticmethod
