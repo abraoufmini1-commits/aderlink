@@ -199,7 +199,11 @@ class App:
         bucket = 300 if hours <= 24 else 3600
         state = self.collector.snapshot()
         since = int(time.time()) - hours * 3600
-        peaks = self._cached(("peaks", hours), lambda: dict(self._peaks(since)))
+        per_zone = self._cached(("zone_hist", hours), lambda: self._zone_history(since, bucket), ttl=30 if hours <= 24 else 300)
+        peaks = {}
+        for b, zid, active, rx, tx in per_zone:
+            if (active or 0) > peaks.get(zid, 0):
+                peaks[zid] = active
         logos = self._cached(("logos",), lambda: self.routers.logo_ids() if self.routers else set(), ttl=60)
         zones = []
         for z in self.zones_for(who):
@@ -222,10 +226,16 @@ class App:
         midnight = (int(time.time()) + off) // 86400 * 86400 - off
         zone_ids, mine = self.sales_scope(who)
         sales = self.tickets.sales(midnight, zone_ids, mine) if self.tickets else []
-        if who.zones is None:
-            history = self._cached(("hist", hours), lambda: self.store.history(since, bucket))
-        else:
-            history = self._cached(("hist", hours, tuple(sorted(who.zones))), lambda: self._merged_history(who.zones, since, bucket))
+        keep = None if who.zones is None else set(who.zones)
+        merged = {}
+        for b, zid, active, rx, tx in per_zone:  # même lecture pour tout le monde : chacun ne garde que ses routeurs
+            if keep is not None and zid not in keep:
+                continue
+            m = merged.setdefault(b, {"ts": b, "active": 0, "rx_bps": 0, "tx_bps": 0})
+            m["active"] += active or 0
+            m["rx_bps"] += rx or 0
+            m["tx_bps"] += tx or 0
+        history = [merged[k] for k in sorted(merged)]
         events = [e for e in self.store.events(40) if who.can_zone(e["zone_id"])][:15]
         return self._overview_result(zones, online, sales, history, events, who)
 
@@ -242,6 +252,12 @@ class App:
                 self._cache.clear()
             self._cache[key] = (now, val)
         return val
+
+    def _zone_history(self, since, bucket):
+        """Une seule lecture de l'historique (tous les routeurs), gardée 30 s : sert aux pics ET aux courbes."""
+        return self.store.read(
+            "SELECT (ts / ?) * ? AS b, zone_id, MAX(CASE WHEN online = 1 THEN active END), MAX(rx_bps), MAX(tx_bps) "
+            "FROM samples WHERE ts >= ? GROUP BY b, zone_id", (bucket, bucket, since))
 
     def _peaks(self, since):
         return self.store.read(
@@ -307,7 +323,10 @@ class App:
         if self.users:
             rows, _ = self.users._q("SELECT username, name FROM users")
             names.update(dict(rows))
-        rep = self.tickets.report(d1 * 86400 - off, (d2 + 1) * 86400 - off, off, zone_ids, mine, names)
+        # même rapport demandé plusieurs fois (impression, Excel, autre onglet) : gardé 60 s
+        rep = dict(self._cached(("report", d1, d2, tuple(zone_ids or ()), mine),
+                                lambda: self.tickets.report(d1 * 86400 - off, (d2 + 1) * 86400 - off, off, zone_ids, mine, names),
+                                ttl=60))
         rep.update({"from": str(dt.date(1970, 1, 1) + dt.timedelta(days=d1)),
                     "to": str(dt.date(1970, 1, 1) + dt.timedelta(days=d2)),
                     "today": str(dt.date(1970, 1, 1) + dt.timedelta(days=today)),
@@ -770,7 +789,8 @@ def make_handler(app):
                     days = 30
                 days = days if days in (7, 30, 90) else 30
                 zone_ids, mine = app.sales_scope(who)
-                out = analytics(app.store, app.tickets, days, app.offset(), zone_ids, mine)
+                out = dict(app._cached(("analytique", days, tuple(zone_ids or ()), mine),
+                                       lambda: analytics(app.store, app.tickets, days, app.offset(), zone_ids, mine), ttl=300))
                 out.update(demo=app.demo, me=who.public())
                 return out
             if app.tickets and p == "/api/report":

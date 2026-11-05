@@ -73,14 +73,17 @@ class TrackedLock:
         self.long = collections.deque(maxlen=12)  # (heure, secondes, endroit)
         self._t = 0.0
         self._where = ""
+        self.owner = None
 
     def acquire(self, *a, **k):
         ok = self._lock.acquire(*a, **k)
         if ok:
             self._t = time.time()
+            self.owner = threading.get_ident()
         return ok
 
     def release(self):
+        self.owner = None
         held = time.time() - self._t
         if held > 0.5:
             import sys
@@ -129,7 +132,6 @@ class Store:
             CREATE TABLE IF NOT EXISTS samples (
                 ts INTEGER, zone_id TEXT, online INTEGER,
                 active INTEGER, rx_bps INTEGER, tx_bps INTEGER);
-            CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
             CREATE INDEX IF NOT EXISTS idx_samples_cover ON samples(ts, zone_id, online, active, rx_bps, tx_bps);
             CREATE INDEX IF NOT EXISTS idx_samples_zone ON samples(zone_id, ts);
             CREATE TABLE IF NOT EXISTS events (
@@ -137,26 +139,46 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
             """
         )
+        if path != ":memory:":
+            self._tune()
 
     def read(self, sql, params=()):
-        """Lecture sans attendre le collecteur : chaque fil a sa propre connexion en lecture (base WAL).
-        Base en mémoire (démo, tests) : on passe par la connexion principale."""
-        if self.path == ":memory:" or self.db.in_transaction:  # écriture pas encore enregistrée : on la voit par ici
+        """Lecture sans bloquer la base : connexions en lecture à part (base WAL).
+        Une lecture ne prend JAMAIS le verrou des écritures (avant : une longue lecture le gardait
+        plusieurs secondes et tout le serveur attendait). Base en mémoire (démo, tests) : connexion principale."""
+        if self.path == ":memory:":
             with self.lock:
                 return self.db.execute(sql, params).fetchall()
-        con = self._take_reader()
-        if con is None:  # toutes occupées : on passe par la voie normale
+        if getattr(self.lock, "owner", None) == threading.get_ident():  # déjà dans une écriture : on lit ici
+            return self.db.execute(sql, params).fetchall()
+        if self.db.in_transaction and not self.lock.locked():
+            # écriture laissée sans « commit » (personne n'écrit en ce moment) : on la voit par la connexion principale
             with self.lock:
                 return self.db.execute(sql, params).fetchall()
-        try:
-            return con.execute(sql, params).fetchall()
-        except sqlite3.OperationalError:  # table créée après l'ouverture, etc. : on réessaie par la voie normale
-            with self.lock:
-                return self.db.execute(sql, params).fetchall()
-        finally:
-            self._readers.put(con)
+        for attempt in (1, 2):
+            con = self._take_reader()
+            if con is None:
+                break
+            try:
+                return con.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                # connexion abîmée (rare) : on la remplace et on réessaie une fois
+                try:
+                    con.close()
+                except sqlite3.Error:
+                    pass
+                with self._reader_lock:
+                    self._reader_count -= 1
+                con = None
+                if attempt == 2:
+                    raise
+            finally:
+                if con is not None:
+                    self._readers.put(con)
+        with self.lock:  # aucune connexion de lecture disponible (très rare)
+            return self.db.execute(sql, params).fetchall()
 
-    MAX_READERS = 6
+    MAX_READERS = 8
 
     def _take_reader(self):
         try:
@@ -171,7 +193,7 @@ class Store:
                 con = True
         if con is None:
             try:
-                return self._readers.get(timeout=2)
+                return self._readers.get(timeout=20)  # on attend une connexion de lecture, pas le verrou
             except queue.Empty:
                 return None
         try:
@@ -183,6 +205,17 @@ class Store:
             with self._reader_lock:
                 self._reader_count -= 1
             return None
+
+    def _tune(self):
+        """Une fois : l'index (ts) seul est retiré — l'index complet commence aussi par ts et évite
+        de relire la table ; puis statistiques pour que SQLite choisisse le bon index."""
+        try:
+            if self.db.execute("SELECT 1 FROM sqlite_master WHERE name = 'idx_samples_ts'").fetchone():
+                self.db.execute("DROP INDEX idx_samples_ts")
+                self.db.execute("ANALYZE")
+                self.db.commit()
+        except sqlite3.Error:
+            pass
 
     def add_sample(self, ts, zone_id, online, active, rx, tx):
         self.add_samples([(ts, zone_id, int(online), active, rx, tx)])

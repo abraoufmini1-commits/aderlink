@@ -22,10 +22,9 @@ def analytics(store, tickets, days, off, zone_ids=None, created_by=None):
 
     # 1. Connectés par heure de la journée : moyenne, sur les jours, de la somme des routeurs
     zsql, zparams = _scope(zone_ids, None, "zone_id")
-    with store.lock:
-        rows = store.db.execute(
-            f"SELECT (ts + {off}) / 86400 AS d, ((ts + {off}) / 3600) % 24 AS h, zone_id, AVG(active), MAX(active) "
-            f"FROM samples WHERE ts >= ? AND online = 1{zsql} GROUP BY d, h, zone_id", [since] + zparams).fetchall()
+    rows = store.read(  # lecture à part : ne bloque pas les écritures du serveur
+        f"SELECT (ts + {off}) / 86400 AS d, ((ts + {off}) / 3600) % 24 AS h, zone_id, AVG(active), MAX(active) "
+        f"FROM samples WHERE ts >= ? AND online = 1{zsql} GROUP BY d, h, zone_id", [since] + zparams)
     per_dh, peak = {}, {}
     for d, h, _z, avg, mx in rows:
         per_dh[(d, h)] = per_dh.get((d, h), 0) + (avg or 0)
