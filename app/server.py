@@ -199,7 +199,10 @@ class App:
         bucket = 300 if hours <= 24 else 3600
         state = self.collector.snapshot()
         since = int(time.time()) - hours * 3600
-        per_zone = self._cached(("zone_hist", hours), lambda: self._zone_history(since, bucket), ttl=30 if hours <= 24 else 300)
+        per_zone = list(self._cached(("zone_hist", hours), lambda: self._zone_history(since, bucket), ttl=30 if hours <= 24 else 300))
+        # + les 5 dernières minutes, encore en mémoire (pas encore écrites dans la base)
+        for b, zid, online, active, rx, tx in [tuple(v) for v in list(getattr(self.collector, "_agg", {}).values())]:
+            per_zone.append((b // bucket * bucket, zid, active if online else None, rx, tx))
         peaks = {}
         for b, zid, active, rx, tx in per_zone:
             if (active or 0) > peaks.get(zid, 0):

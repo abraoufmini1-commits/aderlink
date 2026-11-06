@@ -152,10 +152,6 @@ class Store:
                 return self.db.execute(sql, params).fetchall()
         if getattr(self.lock, "owner", None) == threading.get_ident():  # déjà dans une écriture : on lit ici
             return self.db.execute(sql, params).fetchall()
-        if self.db.in_transaction and not self.lock.locked():
-            # écriture laissée sans « commit » (personne n'écrit en ce moment) : on la voit par la connexion principale
-            with self.lock:
-                return self.db.execute(sql, params).fetchall()
         if threading.current_thread().name.startswith("radius-"):
             # ADER Roaming : chaque fil RADIUS a SA connexion de lecture (jamais d'attente derrière les autres :
             # le routeur n'attend que 3 secondes la réponse)
@@ -259,6 +255,28 @@ class Store:
         except sqlite3.Error:
             pass
 
+    def thin(self, step=300):
+        """Une fois : l'ancien historique (une mesure toutes les 30 s) est regroupé en une mesure toutes
+        les 5 minutes, heure par heure, sans bloquer la base plus d'un instant. La base devient bien plus petite."""
+        if self.path == ":memory:":
+            return
+        stop_at = int(time.time()) // step * step - step
+        start = self.read("SELECT MIN(ts) FROM samples WHERE ts % ? != 0", (step,))[0][0]
+        if start is None:
+            return
+        t = start // 3600 * 3600
+        while t < stop_at:
+            end = min(t + 3600, stop_at)
+            with self.lock:
+                self.db.execute(
+                    "INSERT INTO samples SELECT (ts / ?) * ?, zone_id, MAX(online), MAX(active), MAX(rx_bps), MAX(tx_bps) "
+                    "FROM samples WHERE ts >= ? AND ts < ? AND ts % ? != 0 GROUP BY ts / ?, zone_id",
+                    (step, step, t, end, step, step))
+                self.db.execute("DELETE FROM samples WHERE ts >= ? AND ts < ? AND ts % ? != 0", (t, end, step))
+                self.db.commit()
+            t = end
+            time.sleep(0.3)
+
     def prune(self):
         """Efface l'historique de plus de 7 jours, par petits morceaux (la base n'est jamais bloquée longtemps)."""
         limit = int(time.time()) - HISTORY_DAYS * 86400
@@ -306,6 +324,7 @@ class Collector:
         self.poll_seconds = max(10, int(config.get("poll_seconds", 30)))
         self._stop = threading.Event()
         self.last_cycle = None   # (heure, durée en s) du dernier relevé complet
+        self._agg = {}  # zone_id -> mesure des 5 minutes en cours (pas encore écrite)
         self._pending_samples = None  # pendant un relevé complet : les mesures, écrites d'un coup à la fin
         self._mass = 0           # relevés de suite où presque tout est injoignable (coupure côté serveur)
         self.ticket_hook = None  # fonction (zone, api, sessions) branchée par le module Tickets
@@ -331,6 +350,8 @@ class Collector:
                 next_prune = time.time() + 3600
                 try:
                     self.store.prune()
+                    if not self.demo and 2 <= (time.gmtime().tm_hour + 1) % 24 < 6:  # la nuit (heure du Niger)
+                        self.store.thin()
                 except sqlite3.Error as e:
                     print(f"[collecte] nettoyage de l'historique : {e}", flush=True)
             if cycles % 20 == 0:
@@ -381,11 +402,36 @@ class Collector:
                 self._record(zone, snaps[zone["id"]])
         finally:
             rows, self._pending_samples = self._pending_samples, None
-            self.store.add_samples(rows)
+            self._aggregate(rows)
         took = time.time() - t0
         self.last_cycle = (int(time.time()), round(took, 1))
         if took > self.poll_seconds:
             print(f"[collecte] relevé lent : {took:.0f} s pour {len(zones)} routeurs", flush=True)
+
+    SAMPLE_STEP = 300  # une mesure par routeur toutes les 5 minutes dans la base (le direct reste en mémoire)
+
+    def _aggregate(self, rows):
+        """Les relevés de 30 s sont regroupés en mémoire et écrits une fois toutes les 5 minutes
+        (le maximum de la période) : 10 fois moins d'écritures et une base 10 fois plus petite."""
+        if self.demo or not rows:
+            self.store.add_samples(rows)
+            return
+        out = []
+        for ts, zid, online, active, rx, tx in rows:
+            b = ts // self.SAMPLE_STEP * self.SAMPLE_STEP
+            cur = self._agg.get(zid)
+            if cur and cur[0] != b:
+                out.append(tuple(cur))
+                cur = None
+            if not cur:
+                self._agg[zid] = [b, zid, online, active, rx, tx]
+            else:
+                cur[2] = max(cur[2], online)
+                cur[3] = max(cur[3] or 0, active or 0)
+                cur[4] = max(cur[4] or 0, rx or 0)
+                cur[5] = max(cur[5] or 0, tx or 0)
+        if out:
+            self.store.add_samples(out)
 
     def _failed(self, zone, snap):
         prev = self.state.get(zone["id"])

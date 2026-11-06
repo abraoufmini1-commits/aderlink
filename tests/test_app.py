@@ -1126,6 +1126,7 @@ class RoamingTests(unittest.TestCase):
         self.assertIsNone(self.auth("10.1.0.1", code, secret=b"mauvais"))  # mauvais secret : ignoré
         # validité dépassée
         self.store.db.execute("UPDATE tickets SET first_used = ? WHERE code = ?", (int(time.time()) - 4000, code))
+        self.store.db.commit()
         p = self.auth("10.1.0.1", code)
         self.assertEqual(p.code, R.ACCESS_REJECT)
         self.assertIsNotNone(self.t.find(code)[0]["expired_at"])
