@@ -189,6 +189,13 @@ def cmd_radius(args):
     run(CONFIG, DATA, load_config)
 
 
+def cmd_collect(args):
+    """Programme séparé des relevés des routeurs (lancé tout seul par « serve »)."""
+    raise_file_limit()
+    from .collectd import run
+    run(CONFIG, DATA, load_config)
+
+
 def cmd_serve(args):
     raise_file_limit()
     # passage plus rapide d'un fil à l'autre : une demande Roaming n'attend pas derrière la collecte
@@ -205,7 +212,13 @@ def cmd_serve(args):
     else:
         cfg = load_config()
         store = Store(str(DATA / "aderlink.db"))
-    collector = Collector(cfg, store, demo=args.demo)
+    # relevés des routeurs dans leur propre programme : les pages ne les attendent plus jamais
+    separate = not args.demo and (cfg.get("collect") or {}).get("separate", True)
+    if separate:
+        from .collectd import RemoteCollector
+        collector = RemoteCollector(cfg, DATA)
+    else:
+        collector = Collector(cfg, store, demo=args.demo)
     tickets = Tickets(cfg, store, demo=args.demo)
     routers = Routers(cfg, store, collector, save=save_config, demo=args.demo)
     if not args.demo and (cfg.get("wireguard") or {}).get("enabled"):
@@ -219,6 +232,7 @@ def cmd_serve(args):
     from .roaming import Roaming
     roaming = Roaming(cfg, store, tickets, collector)
     tickets.roaming = roaming
+    collector.roaming = roaming
     roaming.wg_conf = routers.wg
 
     def kick(zid, code):  # coupe un ticket Roaming sur un routeur (et le désactive s'il y était en local)
@@ -241,7 +255,8 @@ def cmd_serve(args):
             tickets.create_batch({"forfait_id": fs[-1]["id"], "count": 20, "roaming": True, "note": "Pass Roaming"})
         _demo_users(cfg, users, tickets)
         _demo_samples(cfg, store)
-    collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
+    if not separate:
+        collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()
     if not args.demo:
         updater.start()
@@ -362,6 +377,7 @@ def main():
     w.add_argument("--zone", help="identifiant de la zone (par défaut : la première)")
     w.set_defaults(func=cmd_set_ssid)
     sub.add_parser("radius", help="programme ADER Roaming (lancé par serve)").set_defaults(func=cmd_radius)
+    sub.add_parser("collect", help="programme des relevés des routeurs (lancé par serve)").set_defaults(func=cmd_collect)
     s = sub.add_parser("serve")
     s.add_argument("--host", default=os.environ.get("ADERLINK_HOST", "127.0.0.1"))
     s.add_argument("--port", type=int, default=int(os.environ.get("ADERLINK_PORT", 8080)))

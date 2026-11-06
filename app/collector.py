@@ -117,7 +117,7 @@ class Store:
         self._readers = queue.LifoQueue()  # quelques connexions en lecture, partagées (pas une par fil)
         self._reader_count = 0
         self._reader_lock = threading.Lock()
-        self.db = sqlite3.connect(path, check_same_thread=False)
+        self.db = sqlite3.connect(path, check_same_thread=False, timeout=15)  # 3 programmes écrivent dans la même base
         # WAL : les écritures du collecteur ne bloquent plus les lectures, et chaque enregistrement est bien plus rapide
         try:
             self.db.execute("PRAGMA journal_mode=WAL")

@@ -192,6 +192,8 @@ class App:
                 "lock_long": [{"at": a, "seconds": b, "where": c} for a, b, c in reversed(getattr(self.store.lock, "long", []))][:6],
                 "cycle": {"at": cyc[0], "seconds": cyc[1]} if cyc else None, "poll_seconds": self.collector.poll_seconds,
                 "routers": len(self.config.get("zones", [])), "started": self.started,
+                "collect": ({"age": int(time.time() - self.collector.updated) if self.collector.updated else None,
+                             "restarts": self.collector.restarts} if hasattr(self.collector, "restarts") else None),
                 "slow": [{"at": a, "path": b, "seconds": c} for a, b, c in reversed(self.slow)]}
 
     def overview(self, range_key, who):

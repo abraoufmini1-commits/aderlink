@@ -48,6 +48,8 @@
       box.innerHTML =
         row("Réponse du serveur", ms + " ms", ms > 1500) +
         row("Relevé des " + d.routers + " routeurs", c ? c.seconds + " s (toutes les " + d.poll_seconds + " s)" : "en cours…", c && c.seconds > d.poll_seconds) +
+        (d.collect ? row("Programme des relevés", d.collect.age == null ? "démarrage…" : (d.collect.age > 60 ? "pas de nouvelles depuis " + d.collect.age + " s" : "en marche ✓") +
+          (d.collect.restarts ? " · relancé " + d.collect.restarts + " fois" : ""), d.collect.age == null || d.collect.age > 60) : "") +
         row("Charge du processeur", load, d.load && d.cpus && d.load[0] > d.cpus) +
         row("Mémoire utilisée", mem.used_pct != null ? mem.used_pct + " % de " + Math.round(mem.total_mb / 1024) + " Go" : "–", mem.used_pct > 90) +
         row("Fichiers ouverts", d.open_files == null ? "–" : d.open_files, d.open_files > 3000) +
