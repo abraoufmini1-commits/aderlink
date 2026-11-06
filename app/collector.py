@@ -343,6 +343,7 @@ class Collector:
         # nettoyage de l'historique : toutes les heures, et 2 minutes après le démarrage
         # (avant : compté en relevés, il ne se faisait jamais si le serveur redémarrait souvent)
         next_prune = time.time() + 120
+        cycles_thin = 0
         while not self._stop.is_set():
             self.poll_all()
             cycles += 1
@@ -350,8 +351,13 @@ class Collector:
                 next_prune = time.time() + 3600
                 try:
                     self.store.prune()
-                    if not self.demo and 2 <= (time.gmtime().tm_hour + 1) % 24 < 6:  # la nuit (heure du Niger)
+                    # 2 minutes après le démarrage, puis la nuit (heure du Niger). Les relevés ont leur propre
+                    # programme : l'allègement ne ralentit ni les pages ni les tickets Roaming.
+                    if not self.demo and (cycles_thin == 0 or 2 <= (time.gmtime().tm_hour + 1) % 24 < 6):
+                        cycles_thin += 1
+                        t0 = time.time()
                         self.store.thin()
+                        print(f"[collecte] historique allégé en {time.time() - t0:.0f} s", flush=True)
                 except sqlite3.Error as e:
                     print(f"[collecte] nettoyage de l'historique : {e}", flush=True)
             if cycles % 20 == 0:

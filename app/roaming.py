@@ -42,6 +42,7 @@ class Roaming:
         self._goz = {}       # zone_id -> (heure, réseau) : cache court
         self._members = None
         self._tl = threading.local()
+        self._held, self._held_lock = {}, threading.Lock()  # réservations immédiates, en mémoire
         self.journal = collections.deque(maxlen=80)  # dernières demandes de connexion (heure, routeur, code, résultat)
         with store.lock:
             store.db.executescript(
@@ -488,6 +489,15 @@ class Roaming:
                           "AND active = 1 AND updated >= ?", (t["home"], code, now - ACTIVE_S))
         same = lambda r: bool(mac) and (r[1] or "").upper() == mac.upper()
         busy = [r for r in rows if not same(r) and not (r[2].startswith("pending-") and r[3] < now - 90)]
+        # réservations encore en mémoire (pas encore écrites dans la base) : comptées aussi
+        with self._held_lock:
+            held = [h for h in self._held.get((t["home"], code), []) if h[2] >= now - 90]
+            self._held[(t["home"], code)] = held
+        known = {(r[1] or "").upper() for r in rows}
+        for z, m, ts in held:
+            r = (z, m, "pending-" + (m or "x"), ts)
+            if not same(r) and (m or "").upper() not in known:
+                busy.append(r)
         moved = {r[0] for r in rows if same(r) and r[0] != zone_id}  # le même téléphone est passé sur un autre routeur
         if len(busy) >= shared:
             other = any(r[0] != zone_id for r in busy)
@@ -509,6 +519,10 @@ class Roaming:
         # réponse : si l'application principale écrit au même moment, la base peut faire attendre jusqu'à 5 s,
         # et c'était autant de secondes d'attente pour le client devant la page de connexion.
         if zone_id:
+            with self._held_lock:
+                if len(self._held) > 5000:
+                    self._held.clear()
+                self._held.setdefault((t["home"], code), []).append((zone_id, _mac(mac), now))
             args = (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac))
             threading.Thread(target=self._reserve, args=(args,), daemon=True).start()
         if f:
@@ -549,6 +563,8 @@ class Roaming:
         total = (pkt.int(R.ACCT_INPUT_OCTETS) + (pkt.int(R.ACCT_INPUT_GIGAWORDS) << 32) +
                  pkt.int(R.ACCT_OUTPUT_OCTETS) + (pkt.int(R.ACCT_OUTPUT_GIGAWORDS) << 32))
         secs = pkt.int(R.ACCT_SESSION_TIME)
+        with self._held_lock:  # le routeur a confirmé : la base prend le relais de la réservation en mémoire
+            self._held.pop((t["home"], code), None)
         with self.store.lock:
             db = self.store.db
             db.execute("DELETE FROM roaming_sessions WHERE session_id LIKE 'pending-%' AND nas_zone = ? AND code = ?",
