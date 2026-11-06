@@ -273,6 +273,25 @@ class App:
             with self._cache_lock:
                 self._refreshing.discard(key)
 
+    def keep_warm(self):
+        """Historique des courbes recalculé à l'avance, en continu (dès le démarrage) : personne
+        n'attend jamais ce calcul en ouvrant le tableau de bord."""
+        def loop():
+            n = 0
+            while True:
+                for hours, bucket, every in ((24, 300, 1), (168, 3600, 10)):
+                    if n % every == 0:
+                        try:
+                            since = int(time.time()) - hours * 3600
+                            val = self._zone_history(since, bucket)
+                            with self._cache_lock:
+                                self._cache[("zone_hist", hours)] = (time.time(), val)
+                        except Exception as e:
+                            print(f"[pages] courbes non préparées : {e!r}", flush=True)
+                n += 1
+                time.sleep(25)
+        threading.Thread(target=loop, daemon=True, name="pages-warm").start()
+
     def _zone_history(self, since, bucket):
         """Une seule lecture de l'historique (tous les routeurs), gardée 30 s : sert aux pics ET aux courbes."""
         return self.store.read(
@@ -1091,6 +1110,7 @@ def make_handler(app):
 def serve(app, host, port):
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     httpd.daemon_threads = True
+    app.keep_warm()
     print(f"ADER LINK en écoute sur http://{host}:{port}" + ("  (mode démonstration)" if app.demo else ""))
     try:
         httpd.serve_forever()
