@@ -182,6 +182,13 @@ def cmd_set_ssid(args):
     print(f"Nom du Wi-Fi de « {zone['name']} » : {args.ssid}")
 
 
+def cmd_radius(args):
+    """Programme séparé du serveur RADIUS ADER Roaming (lancé tout seul par « serve »)."""
+    raise_file_limit()
+    from .radiusd import run
+    run(CONFIG, DATA, load_config)
+
+
 def cmd_serve(args):
     raise_file_limit()
     # passage plus rapide d'un fil à l'autre : une demande Roaming n'attend pas derrière la collecte
@@ -238,8 +245,14 @@ def cmd_serve(args):
     collector.start()
     if not args.demo:
         updater.start()
-        if (cfg.get("radius") or {}).get("enabled", True):
-            roaming.start()
+        rc = cfg.get("radius") or {}
+        if rc.get("enabled", True):
+            if rc.get("separate", True):
+                # ADER Roaming dans son propre programme : jamais derrière les relevés des routeurs
+                from .radiusd import RoamingProcess
+                RoamingProcess(roaming, collector, DATA).start()
+            else:
+                roaming.start()
         guard.start()
     print(f"ADER LINK version {updater.state['current']}")
     serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
@@ -348,6 +361,7 @@ def main():
     w.add_argument("ssid")
     w.add_argument("--zone", help="identifiant de la zone (par défaut : la première)")
     w.set_defaults(func=cmd_set_ssid)
+    sub.add_parser("radius", help="programme ADER Roaming (lancé par serve)").set_defaults(func=cmd_radius)
     s = sub.add_parser("serve")
     s.add_argument("--host", default=os.environ.get("ADERLINK_HOST", "127.0.0.1"))
     s.add_argument("--port", type=int, default=int(os.environ.get("ADERLINK_PORT", 8080)))
