@@ -91,7 +91,7 @@ class App:
         self.config = config
         self.collector = collector
         self.store = store
-        self._cache, self._cache_lock = {}, threading.Lock()
+        self._cache, self._cache_lock, self._refreshing = {}, threading.Lock(), set()
         import collections
         self.slow = collections.deque(maxlen=15)  # pages lentes (heure, adresse, secondes)
         self.started = int(time.time())
@@ -246,17 +246,32 @@ class App:
 
     # Les courbes et pics changent seulement à chaque passage du collecteur : on les garde 30 s
     def _cached(self, key, fn, ttl=30):
+        """Résultat gardé `ttl` secondes. Une fois périmé, l'ancien résultat est rendu TOUT DE SUITE et le
+        nouveau est calculé à côté : seule la toute première ouverture attend le calcul (avant : un clic
+        sur deux tombait sur le recalcul de l'historique des 72 routeurs, 2 à 3 s d'attente)."""
         now = time.time()
         with self._cache_lock:
             hit = self._cache.get(key)
             if hit and now - hit[0] < ttl:
                 return hit[1]
-        val = fn()
-        with self._cache_lock:
-            if len(self._cache) > 200:
-                self._cache.clear()
-            self._cache[key] = (now, val)
-        return val
+            if hit and now - hit[0] < ttl * 10:
+                if key not in self._refreshing:
+                    self._refreshing.add(key)
+                    threading.Thread(target=self._refresh_cache, args=(key, fn), daemon=True).start()
+                return hit[1]
+        return self._refresh_cache(key, fn)
+
+    def _refresh_cache(self, key, fn):
+        try:
+            val = fn()
+            with self._cache_lock:
+                if len(self._cache) > 200:
+                    self._cache.clear()
+                self._cache[key] = (time.time(), val)
+            return val
+        finally:
+            with self._cache_lock:
+                self._refreshing.discard(key)
 
     def _zone_history(self, since, bucket):
         """Une seule lecture de l'historique (tous les routeurs), gardée 30 s : sert aux pics ET aux courbes."""
