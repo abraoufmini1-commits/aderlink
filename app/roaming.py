@@ -41,6 +41,7 @@ class Roaming:
         import collections
         self._goz = {}       # zone_id -> (heure, réseau) : cache court
         self._members = None
+        self._tl = threading.local()
         self.journal = collections.deque(maxlen=80)  # dernières demandes de connexion (heure, routeur, code, résultat)
         with store.lock:
             store.db.executescript(
@@ -361,8 +362,9 @@ class Roaming:
         with ThreadPoolExecutor(max_workers=max(1, min(12, len(zones)))) as pool:
             out = [d for d in pool.map(one, zones) if d]
         zids = {d["id"] for d in out}
-        recent = [{"at": a, "zone": n, "code": c, "result": r, "message": m}
-                  for a, z, n, c, r, m in reversed(self.journal) if z in zids][:30]
+        recent = [{"at": x[0], "zone": x[2], "code": x[3], "result": x[4], "message": x[5],
+                   "took": x[6] if len(x) > 6 else None}
+                  for x in reversed(self.journal) if x[1] in zids][:30]
         return {"name": g["name"] if g else "", "routers": out, "recent": recent}
 
     CHECK_S = 600  # toutes les 10 minutes : l'autre système de tickets peut remettre sa configuration
@@ -492,22 +494,23 @@ class Roaming:
             return False, ("Ticket deja connecte sur un autre routeur du reseau : deconnectez-le d'abord" if other
                            else "Ticket deja connecte sur un autre appareil"), {}
         if moved and zone_id:
-            with self.store.lock:
-                self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? AND mac = ? "
-                                      "AND nas_zone != ?", (t["home"], code, mac.upper(), zone_id))
-                self.store.db.commit()
+            def close_old(a):  # écrit à côté : la réponse au routeur n'attend pas la base
+                try:
+                    with self.store.lock:
+                        self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? "
+                                              "AND mac = ? AND nas_zone != ?", a)
+                        self.store.db.commit()
+                except Exception as e:
+                    self.log(f"ADER Roaming : ancienne session non fermée ({e!r})")
+            threading.Thread(target=close_old, args=((t["home"], code, mac.upper(), zone_id),), daemon=True).start()
             if self.kicker:  # on ferme l'ancienne connexion là où il était
                 threading.Thread(target=self._kick_zones, args=(moved, [code, mac]), daemon=True).start()
-        # réservation immédiate : bloque un 2e appareil pendant que le routeur ouvre la session.
-        # Si la base est occupée plus d'une demi-seconde, on répond quand même (le routeur n'attend que 3 s).
-        if zone_id and self.store.lock.acquire(timeout=0.5):
-            try:
-                self.store.db.execute(
-                    "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
-                    "VALUES (?,?,?,?,?,?,?,1)", (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac)))
-                self.store.db.commit()
-            finally:
-                self.store.lock.release()
+        # réservation : bloque un 2e appareil pendant que le routeur ouvre la session. Écrite à côté, APRÈS la
+        # réponse : si l'application principale écrit au même moment, la base peut faire attendre jusqu'à 5 s,
+        # et c'était autant de secondes d'attente pour le client devant la page de connexion.
+        if zone_id:
+            args = (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac))
+            threading.Thread(target=self._reserve, args=(args,), daemon=True).start()
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
@@ -515,6 +518,16 @@ class Roaming:
         # La 1re utilisation (début de la validité, ticket compté vendu) n'est plus notée ici : seulement
         # quand des données passent vraiment (account). Avant, un ticket accepté mais resté à 0 Ko était « brûlé ».
         return True, "", limits
+
+    def _reserve(self, args):
+        try:
+            with self.store.lock:
+                self.store.db.execute(
+                    "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
+                    "VALUES (?,?,?,?,?,?,?,1)", args)
+                self.store.db.commit()
+        except Exception as e:
+            self.log(f"ADER Roaming : réservation non écrite ({e!r})")
 
     def _expire(self, home, code, now):
         self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ? AND expired_at IS NULL",
@@ -640,7 +653,9 @@ class Roaming:
 
     def _note(self, zone, code, result, msg):
         """Journal des dernières demandes (bouton « Vérifier les routeurs ») : pour comprendre un refus."""
-        self.journal.append((int(time.time()), zone["id"], zone["name"], str(code)[:24], result, msg))
+        e = [int(time.time()), zone["id"], zone["name"], str(code)[:24], result, msg, None]
+        self.journal.append(e)
+        self._tl.entry = e  # le temps de réponse est ajouté une fois la réponse envoyée
 
     def handle(self, data, ip, kind):
         """Traite un paquet reçu ; renvoie la réponse à envoyer (ou None pour l'ignorer)."""
@@ -740,15 +755,17 @@ class Roaming:
         from concurrent.futures import ThreadPoolExecutor
         pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix=f"radius-{kind}")
 
-        def work(data, addr):
-            t0 = time.time()
+        def work(data, addr, t0):
+            self._tl.entry = None
             try:
                 out = self.handle(data, addr[0], kind)
                 if out:
                     sock.sendto(out, addr)
             except Exception as e:  # un paquet bizarre ne doit jamais arrêter le serveur
                 self.log(f"ADER Roaming : erreur {e!r}")
-            took = time.time() - t0
+            took = time.time() - t0  # depuis l'arrivée du paquet (attente comprise)
+            if self._tl.entry is not None:
+                self._tl.entry[6] = round(took, 2)
             if kind == "auth" and took > 1:
                 self.log(f"ADER Roaming : réponse lente ({took:.1f} s)")
         while True:
@@ -756,7 +773,7 @@ class Roaming:
                 data, addr = sock.recvfrom(4096)
             except OSError:
                 return
-            pool.submit(work, data, addr)
+            pool.submit(work, data, addr, time.time())
 
 
 def _mac(m):

@@ -208,7 +208,8 @@
         ((d.recent || []).length ? "<ul class='ro-journal'>" + d.recent.map(function (x) {
           var cls = x.result === "ok" ? "ok" : x.result === "refus" ? "bad" : "";
           return "<li class='" + cls + "'><span class='mono'>" + new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) +
-            "</span> · <b>" + esc(x.zone) + "</b> · <span class='mono'>" + esc(x.code) + "</span> — " + esc(x.message) + "</li>";
+            "</span> · <b>" + esc(x.zone) + "</b> · <span class='mono'>" + esc(x.code) + "</span> — " + esc(x.message) +
+            (x.took != null ? " · <b class='" + (x.took > 2 ? "bad" : "") + "'>réponse " + String(x.took).replace(".", ",") + " s</b>" : "") + "</li>";
         }).join("") + "</ul>" : "<p class='pane-sub'>Aucune demande depuis le dernier redémarrage du serveur.</p>") +
         "<p class='hint'>Un code refusé avec « Veuillez entrer un code valide » qui n'apparaît pas ici : la demande n'est jamais arrivée au serveur (routeur, réseau, ou autre système de tickets passé avant).</p></div>" +
         "<p class='hint'>Envoyez une photo de cette page à votre support si un routeur a des lignes en rouge.</p>";
