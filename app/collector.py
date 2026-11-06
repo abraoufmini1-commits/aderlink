@@ -367,7 +367,8 @@ class Collector:
             return
         t0 = time.time()
         # beaucoup de routeurs : plus de relevés en parallèle, pour qu'un routeur éteint (8 s d'attente) ne ralentisse pas les autres
-        with ThreadPoolExecutor(max_workers=min(48, len(zones))) as pool:
+        # 16 relevés en parallèle : assez pour 70+ routeurs, sans étouffer les réponses Roaming (même programme)
+        with ThreadPoolExecutor(max_workers=min(16, len(zones))) as pool:
             snaps = dict(zip((z["id"] for z in zones), pool.map(self._poll_zone, zones)))
             # Un routeur qui était en ligne et ne répond pas : on réessaie une fois, quelques secondes après,
             # avant de le dire hors ligne (une petite perte de paquets ne doit pas donner une fausse coupure).

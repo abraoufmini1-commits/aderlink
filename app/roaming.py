@@ -204,7 +204,7 @@ class Roaming:
         try:
             for r in api.query("/radius/print", "?comment=ADER Roaming"):
                 api.query("/radius/remove", f"=.id={r['.id']}")
-            ours_fields = self._our_fields(srv, g)
+            ours_fields = self._our_fields(srv, g, zone["id"])
             api.query("/radius/add", *ours_fields)
             for prof in api.query("/ip/hotspot/profile/print"):
                 api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
@@ -233,10 +233,16 @@ class Roaming:
             return True, f"Réglé (serveur {srv}), avec l'autre système de tickets du routeur"
         return True, f"Réglé (serveur {srv})"
 
-    def _our_fields(self, srv, g):
+    def _timeout(self, zid=None):
+        """Temps que le routeur attend ADER Roaming : 8 s, ou 3 s s'il a aussi un autre système de tickets
+        (pour que ses clients à lui n'attendent pas trop quand le code n'est pas un ticket ADER LINK)."""
+        return "3s" if zid and self.shared.get(zid) else "8s"
+
+    def _our_fields(self, srv, g, zid=None):
         auth, acct = self.ports()
         return ["=service=hotspot", f"=address={srv}", f"=secret={g['secret']}",
-                f"=authentication-port={auth}", f"=accounting-port={acct}", "=timeout=3s", "=comment=ADER Roaming"]
+                f"=authentication-port={auth}", f"=accounting-port={acct}", f"=timeout={self._timeout(zid)}",
+                "=comment=ADER Roaming"]
 
     # champs d'une entrée RADIUS qu'on peut recopier tels quels
     RADIUS_FIELDS = ("service", "called-id", "domain", "address", "secret", "authentication-port", "accounting-port",
@@ -331,7 +337,7 @@ class Roaming:
                                 self.setup[zid] = {"ok": ok, "msg": msg, "ts": int(time.time()), "gid": g["id"],
                                                    "checked": time.time()}
                             else:
-                                ok, msg = self.put_first(z, api, self._our_fields(self.server_for(z), g))
+                                ok, msg = self.put_first(z, api, self._our_fields(self.server_for(z), g, z["id"]))
                             d["order_error"] = None if ok else msg
                         except RouterOSError as e:
                             d["order_error"] = f"Le routeur a refusé : {e}"
@@ -374,9 +380,14 @@ class Roaming:
             return
         if st and st.get("gid") == g["id"] and st["ok"] and self.server_for(zone):
             try:
-                present = any(e.get("comment") == "ADER Roaming" for e in api.query("/radius/print"))
+                entries = api.query("/radius/print")
+                present = any(e.get("comment") == "ADER Roaming" for e in entries)
                 if present:
-                    ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g))
+                    want = self._timeout(zone["id"])
+                    for e in entries:  # le délai d'attente du routeur, mis à jour sans recréer le réglage
+                        if e.get("comment") == "ADER Roaming" and (e.get("timeout") or "").replace("ms", "") not in (want, want[:-1] + "000"):
+                            api.query("/radius/set", f"=.id={e['.id']}", f"=timeout={want}")
+                    ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g, zone["id"]))
                     st["checked"] = now
                     if ok:
                         return

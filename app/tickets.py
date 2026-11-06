@@ -660,12 +660,12 @@ class Tickets:
         if cmds:
             api.pipeline(cmds)
 
-    PURGE_EVERY = 600  # secondes entre deux nettoyages d'un même routeur
+    PURGE_EVERY = 6 * 3600  # toutes les 6 heures par routeur (liste complète des tickets du routeur : lourd)
 
     def _purge(self, zid, api, now):
         """Filet de sécurité : un ticket fini depuis 7 jours est supprimé du routeur
         (le routeur le fait lui-même ; ceci rattrape un routeur resté éteint ce jour-là).
-        Toutes les 10 minutes par routeur, et en 2 demandes au routeur (avant : 2 à 4 demandes PAR ticket,
+        Toutes les 6 heures par routeur, et en 2 demandes au routeur (avant : 2 à 4 demandes PAR ticket,
         jusqu'à 200 tickets à chaque relevé — le relevé des routeurs prenait plus de 2 minutes)."""
         from .mikrotik import KEEP_DAYS
         if now - self._purged_at.get(zid, 0) < self.PURGE_EVERY:

@@ -184,6 +184,8 @@ def cmd_set_ssid(args):
 
 def cmd_serve(args):
     raise_file_limit()
+    # passage plus rapide d'un fil à l'autre : une demande Roaming n'attend pas derrière la collecte
+    sys.setswitchinterval(0.001)
     DATA.mkdir(parents=True, exist_ok=True)
     if args.demo:
         cfg = json.loads(json.dumps(DEMO_CONFIG))
