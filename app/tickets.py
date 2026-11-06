@@ -579,7 +579,8 @@ class Tickets:
         if fresh:
             with self.store.lock:
                 self.store.db.executemany(
-                    "UPDATE tickets SET first_used = ? WHERE zone_id = ? AND code = ? AND first_used IS NULL",
+                    "UPDATE tickets SET first_used = ? WHERE zone_id = ? AND code = ? AND first_used IS NULL "
+                    "AND batch_id NOT IN (SELECT id FROM batches WHERE roaming_id IS NOT NULL)",  # Roaming : compté par les données
                     [(now, zid, u) for u in fresh])
                 self.store.db.commit()
             seen.update(fresh)

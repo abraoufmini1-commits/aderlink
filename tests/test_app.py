@@ -922,13 +922,32 @@ class RoamingTests(unittest.TestCase):
         self.assertEqual(used[a], 5_000_000)
         self.assertEqual(used[b], 1_000_000)
 
+    def test_burned_ticket_revived(self):
+        from app import radius as R
+        code, used = self.codes[0], self.codes[1]
+        old = int(time.time()) - 7200
+        self.auth("10.1.0.1", used)
+        self.acct("10.1.0.1", used, "s9", R.ACCT_INTERIM, 9000)  # vraiment consommé : on n'y touche pas
+        with self.store.lock:  # ancienne règle : « utilisé » puis « fini » sans aucune donnée
+            self.store.db.execute("UPDATE tickets SET first_used = ?, expired_at = ? WHERE code = ?", (old, old + 60, code))
+            self.store.db.execute("UPDATE tickets SET first_used = ? WHERE code = ?", (old, used))
+            self.store.db.commit()
+        self.assertEqual(self.r.revive_unused(), 1)
+        t = self.t.find(code)[0]
+        self.assertIsNone(t["first_used"]); self.assertIsNone(t["expired_at"])
+        self.assertEqual(self.t.find(used)[0]["first_used"], old)
+        self.assertEqual(self.auth("10.1.0.1", code).code, R.ACCESS_ACCEPT)
+
     def test_roaming_sales_report(self):
         from app import radius as R
         self.auth("10.1.0.1", self.codes[0])          # 1er ticket : 1re connexion sur A
         self.acct("10.1.0.1", self.codes[0], "s1", R.ACCT_START, 0)
+        self.assertIsNone(self.t.find(self.codes[0])[0]["first_used"])  # 0 Ko : pas encore vendu
+        self.acct("10.1.0.1", self.codes[0], "s1", R.ACCT_INTERIM, 5000)
         time.sleep(0.01)
         self.auth("41.0.0.9", self.codes[1])          # 2e ticket : 1re connexion sur B
         self.acct("41.0.0.9", self.codes[1], "s2", R.ACCT_START, 0)
+        self.acct("41.0.0.9", self.codes[1], "s2", R.ACCT_INTERIM, 5000)
         self.store.db.execute("CREATE TABLE IF NOT EXISTS points_vente (id INTEGER PRIMARY KEY, name TEXT)")
         now = int(time.time())
         rep = self.t.report(now - 3600, now + 3600)
@@ -1055,7 +1074,7 @@ class RoamingTests(unittest.TestCase):
         vs = [v for t, v in p.attrs if t == R.VENDOR_SPECIFIC]
         self.assertTrue(any(v[4] == R.MT_TOTAL_LIMIT and int.from_bytes(v[6:10], "big") == 1024 * 1024 for v in vs))
         self.assertTrue(any(v[4] == R.MT_RATE_LIMIT and v[6:] == b"1M/2M" for v in vs))
-        self.assertIsNotNone(self.t.find(code)[0]["first_used"])
+        self.assertIsNone(self.t.find(code)[0]["first_used"])  # accepté, mais la validité ne part qu'avec les données
         # 700 Ko consommés sur A, session terminée
         self.assertEqual(self.acct("10.1.0.1", code, "s1", R.ACCT_START, 0).code, R.ACCOUNTING_RESPONSE)
         self.acct("10.1.0.1", code, "s1", R.ACCT_STOP, 700 * 1024)

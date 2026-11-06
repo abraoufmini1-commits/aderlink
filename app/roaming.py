@@ -512,8 +512,8 @@ class Roaming:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
                 limits["rate"] = rate
-        if not t["first_used"]:
-            self.tickets._mark_used(t["home"], code, now)
+        # La 1re utilisation (début de la validité, ticket compté vendu) n'est plus notée ici : seulement
+        # quand des données passent vraiment (account). Avant, un ticket accepté mais resté à 0 Ko était « brûlé ».
         return True, "", limits
 
     def _expire(self, home, code, now):
@@ -551,8 +551,9 @@ class Roaming:
                        "WHERE session_id = ? AND nas_zone = ?", (now, total, secs, 0 if status == R.ACCT_STOP else 1, sid, zone["id"]))
             db.execute("UPDATE tickets SET bytes_used = (SELECT COALESCE(SUM(bytes), 0) FROM roaming_sessions WHERE home_zone = ? AND code = ?), "
                        "uptime_used = (SELECT COALESCE(SUM(seconds), 0) FROM roaming_sessions WHERE home_zone = ? AND code = ?), "
-                       "first_used = COALESCE(first_used, ?) WHERE zone_id = ? AND code = ?",
-                       (t["home"], code, t["home"], code, now, t["home"], code))
+                       "first_used = CASE WHEN ? > 0 THEN COALESCE(first_used, ?) ELSE first_used END "
+                       "WHERE zone_id = ? AND code = ?",
+                       (t["home"], code, t["home"], code, total, now, t["home"], code))
             db.commit()
         if status != R.ACCT_START and self.finished(gid, code, now):
             self.end_ticket(gid, code, t["home"], now)
@@ -599,15 +600,33 @@ class Roaming:
         return next((c for c, z in rows if z in zs), None)
 
     def prune_sessions(self, now=None):
-        """Sessions terminées depuis plus de 45 jours : effacées (la table ne grossit plus sans fin).
-        Les tickets ont fini bien avant : leur consommation est déjà enregistrée sur le ticket."""
+        """Détail des connexions d'un ticket fini depuis plus de 7 jours : effacé (la table ne grossit plus).
+        Le ticket, sa vente et sa consommation totale restent : ils sont déjà enregistrés sur le ticket."""
         now = now or int(time.time())
         with self.store.lock:
             self.store.db.execute(
                 "DELETE FROM roaming_sessions WHERE active = 0 AND updated < ? AND EXISTS (SELECT 1 FROM tickets t "
-                "WHERE t.zone_id = roaming_sessions.home_zone AND t.code = roaming_sessions.code AND t.expired_at IS NOT NULL)",
-                (now - 45 * 86400,))
+                "WHERE t.zone_id = roaming_sessions.home_zone AND t.code = roaming_sessions.code "
+                "AND t.expired_at IS NOT NULL AND t.expired_at < ?)",
+                (now - 7 * 86400, now - 7 * 86400))
             self.store.db.commit()
+        self.revive_unused(now)
+
+    def revive_unused(self, now=None):
+        """Tickets Roaming « brûlés » : marqués utilisés (ou finis) sans avoir jamais consommé (0 Ko, 0 min),
+        à cause de l'ancienne règle ou d'une surcharge. Ils redeviennent neufs : validité repartie à zéro."""
+        now = now or int(time.time())
+        with self.store.lock:
+            cur = self.store.db.execute(
+                "UPDATE tickets SET first_used = NULL, expired_at = NULL WHERE first_used IS NOT NULL "
+                "AND COALESCE(bytes_used, 0) = 0 AND COALESCE(uptime_used, 0) = 0 AND removed = 0 AND first_used < ? "
+                "AND batch_id IN (SELECT id FROM batches WHERE roaming_id IS NOT NULL) "
+                "AND NOT EXISTS (SELECT 1 FROM roaming_sessions s WHERE s.home_zone = tickets.zone_id "
+                "AND s.code = tickets.code AND s.bytes > 0)", (now - 600,))
+            self.store.db.commit()
+        if cur.rowcount:
+            self.log(f"ADER Roaming : {cur.rowcount} ticket(s) jamais consommés remis à neuf")
+        return cur.rowcount
 
     def sweep(self, now=None):
         """Toutes les minutes : les tickets dont la validité est passée sont fermés sur tout le réseau."""
