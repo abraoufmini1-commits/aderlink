@@ -669,7 +669,12 @@ class Tickets:
         Toutes les 6 heures par routeur, et en 2 demandes au routeur (avant : 2 à 4 demandes PAR ticket,
         jusqu'à 200 tickets à chaque relevé — le relevé des routeurs prenait plus de 2 minutes)."""
         from .mikrotik import KEEP_DAYS
-        if now - self._purged_at.get(zid, 0) < self.PURGE_EVERY:
+        if zid not in self._purged_at:
+            # 1re fois depuis le démarrage : pas tous les routeurs d'un coup (le 1er relevé durait plusieurs
+            # minutes). Chaque routeur reçoit une heure au hasard dans les 30 prochaines minutes.
+            import random
+            self._purged_at[zid] = now - self.PURGE_EVERY + random.randint(60, 1800)
+        if now - self._purged_at[zid] < self.PURGE_EVERY:
             return
         self._purged_at[zid] = now
         old, _ = self._q(

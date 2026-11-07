@@ -52,16 +52,31 @@ def run(config_path, data_dir, load_config):
     collector.ticket_hook = tickets.on_poll
 
     parent = os.getppid()
+    started = time.time()
     seen = {"config": _mtime(config_path), "poll": _mtime(data_dir / POLL_REQ)}
 
+    def copy(fn, fallback):
+        for _ in range(5):  # un autre fil peut modifier la liste pendant la copie : on réessaie
+            try:
+                return fn()
+            except RuntimeError:
+                time.sleep(0.01)
+        return fallback
+
     def write_state():
+        if collector.last_cycle is None:
+            # premier relevé pas encore fini : on garde le dernier état connu, on donne juste signe de vie
+            old = _read_json(data_dir / STATE) or {}
+            old.update({"at": int(time.time()), "pid": os.getpid()})
+            _write_json(data_dir / STATE, old)
+            return
         with collector.lock:
             state = {k: dict(v) for k, v in collector.state.items()}
         _write_json(data_dir / STATE, {
             "at": int(time.time()), "pid": os.getpid(), "state": state,
-            "agg": [list(v) for v in list(collector._agg.values())],
+            "agg": copy(lambda: [list(v) for v in list(collector._agg.values())], []),
             "last_cycle": list(collector.last_cycle) if collector.last_cycle else None,
-            "shared": dict(roaming.shared)})
+            "shared": copy(lambda: dict(roaming.shared), {})})
 
     def poll_now():
         try:
@@ -76,8 +91,20 @@ def run(config_path, data_dir, load_config):
         while True:
             time.sleep(1)
             n += 1
+            try:
+                last = step(n, last)
+            except Exception as e:  # ce fil ne doit jamais s'arrêter
+                log(f"[collecte] {e!r}")
+
+    def step(n, last):
+        if True:
             if os.getppid() != parent:  # le programme principal s'est arrêté : on s'arrête aussi
                 os._exit(0)
+            # aucun relevé complet depuis 15 minutes (un routeur coincé sur la ligne…) : on repart proprement
+            done = collector.last_cycle[0] if collector.last_cycle else started
+            if time.time() - done > 900:
+                log("[collecte] aucun relevé complet depuis 15 min : redémarrage du programme des relevés")
+                os._exit(3)
             # configuration modifiée (routeur ajouté, mot de passe…) : relue
             m = _mtime(config_path)
             if m != seen["config"]:
@@ -94,19 +121,21 @@ def run(config_path, data_dir, load_config):
             if m != seen["poll"]:
                 seen["poll"] = m
                 threading.Thread(target=poll_now, daemon=True).start()
-            # état des routeurs : après chaque relevé, et au moins toutes les 10 s
+            # état des routeurs (et signe de vie) : après chaque relevé, et au moins toutes les 10 s,
+            # même pendant un relevé long. Aucune erreur ne doit arrêter ce fil.
             if collector.last_cycle != last or n % 10 == 0:
                 last = collector.last_cycle
                 try:
                     write_state()
-                except (OSError, TypeError, ValueError) as e:
-                    log(f"[collecte] état non écrit ({e})")
+                except Exception as e:
+                    log(f"[collecte] état non écrit ({e!r})")
+            return last
 
-    collector.poll_all()  # premier état
-    write_state()
-    collector.start()
-    log("[collecte] programme des relevés démarré")
+    # le signe de vie part AVANT le premier relevé : un premier relevé long ne fait plus croire à un blocage
+    # (avant : relancé toutes les 3 minutes, en boucle, sans jamais finir son premier relevé)
     threading.Thread(target=sync, daemon=True, name="collect-sync").start()
+    log("[collecte] programme des relevés démarré")
+    collector.start()
     while True:
         time.sleep(3600)
 
@@ -182,9 +211,9 @@ class RemoteCollector:
     def _watch(self):
         while True:
             time.sleep(2)
-            # bloqué (vivant mais n'écrit plus rien depuis 3 minutes) : arrêté, puis relancé ci-dessous
-            if self.proc and self.proc.poll() is None and self.updated and time.time() - self.updated > 180 \
-                    and time.time() - self._started > 180:
+            # bloqué (vivant mais n'écrit plus rien depuis 5 minutes) : arrêté, puis relancé ci-dessous
+            if self.proc and self.proc.poll() is None and self.updated and time.time() - self.updated > 300 \
+                    and time.time() - self._started > 300:
                 self.log("[collecte] programme des relevés bloqué : relancé")
                 self.proc.kill()
                 self.proc.wait(10)

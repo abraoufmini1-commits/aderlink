@@ -342,7 +342,7 @@ class TicketTests(unittest.TestCase):
             self.t.on_poll(self.config["zones"][0], api, [])
             self.assertIn(code, self.router.users)  # 6 jours : toujours là
             self.t._q("UPDATE tickets SET expired_at = ? WHERE code = ?", (int(time.time()) - 8 * 86400, code), commit=True)
-            self.t._purged_at.clear()  # le nettoyage passe toutes les 10 minutes par routeur
+            self.t._purged_at["z1"] = 0  # le nettoyage passe toutes les 6 heures par routeur : on fait comme si c'était l'heure
             self.t.on_poll(self.config["zones"][0], api, [])
         self.assertNotIn(code, self.router.users)  # 8 jours : supprimé
         self.assertTrue(self.t.find(code)[0]["first_used"])  # la vente reste dans l'historique
