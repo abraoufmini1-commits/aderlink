@@ -8,6 +8,7 @@ import math
 import queue
 import random
 import re
+import os
 import sqlite3
 import threading
 import time
@@ -245,6 +246,35 @@ class Store:
             self.db.execute("INSERT INTO events VALUES (?,?,?,?)", (ts, zone_id, kind, message))
             self.db.commit()
 
+    def compact_once(self, marker):
+        """Une seule fois (au démarrage, avant tout le reste) : fin de l'allègement de l'historique, puis
+        compactage du fichier (la place libérée est rendue : 1 Go -> quelques centaines de Mo au plus).
+        Base en pause pendant ce temps : fait au démarrage, quand rien d'autre ne tourne."""
+        import shutil
+        from pathlib import Path
+        if self.path == ":memory:" or Path(marker).exists():
+            return
+        t0 = time.time()
+        size = lambda: os.path.getsize(self.path) / 1e6
+        before = size()
+        try:
+            if shutil.disk_usage(os.path.dirname(os.path.abspath(self.path))).free < os.path.getsize(self.path) * 2.2:
+                print("[base] compactage reporté : pas assez de place libre sur le disque", flush=True)
+                return
+            print(f"[base] ménage unique : allègement puis compactage ({before:.0f} Mo)…", flush=True)
+            self.prune()
+            self.thin(pause=0)
+            with self.lock:
+                self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self.db.execute("VACUUM")
+                self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self.db.execute("ANALYZE")
+                self.db.commit()
+            Path(marker).write_text(str(int(time.time())))
+            print(f"[base] compactée : {before:.0f} Mo -> {size():.0f} Mo en {time.time() - t0:.0f} s", flush=True)
+        except (sqlite3.Error, OSError) as e:
+            print(f"[base] compactage non fait ({e})", flush=True)
+
     def checkpoint(self):
         """Vide le journal WAL dans la base (sinon il grossit et tout ralentit)."""
         if self.path == ":memory:":
@@ -255,7 +285,7 @@ class Store:
         except sqlite3.Error:
             pass
 
-    def thin(self, step=300):
+    def thin(self, step=300, pause=0.3):
         """Une fois : l'ancien historique (une mesure toutes les 30 s) est regroupé en une mesure toutes
         les 5 minutes, heure par heure, sans bloquer la base plus d'un instant. La base devient bien plus petite."""
         if self.path == ":memory:":
@@ -275,7 +305,7 @@ class Store:
                 self.db.execute("DELETE FROM samples WHERE ts >= ? AND ts < ? AND ts % ? != 0", (t, end, step))
                 self.db.commit()
             t = end
-            time.sleep(0.3)
+            time.sleep(pause)
 
     def prune(self):
         """Efface l'historique de plus de 7 jours, par petits morceaux (la base n'est jamais bloquée longtemps)."""
