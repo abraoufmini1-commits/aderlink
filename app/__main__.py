@@ -214,13 +214,19 @@ def cmd_serve(args):
         store = Store(str(DATA / "aderlink.db"))
         store.compact_once(DATA / "compacted-1")  # une seule fois : base allégée et compactée
     # relevés des routeurs dans leur propre programme : les pages ne les attendent plus jamais
-    separate = not args.demo and (cfg.get("collect") or {}).get("separate", False)  # remis dans le principal en attendant de corriger le programme séparé
+    separate = not args.demo and (cfg.get("collect") or {}).get("separate", True)
     if separate:
         from .collectd import RemoteCollector
         collector = RemoteCollector(cfg, DATA)
     else:
         collector = Collector(cfg, store, demo=args.demo)
     tickets = Tickets(cfg, store, demo=args.demo)
+    if separate:
+        def local_collector():  # secours : relevés dans le programme principal si le séparé ne tient pas
+            c = Collector(cfg, store)
+            c.ticket_hook = tickets.on_poll
+            return c
+        collector.fallback = local_collector
     routers = Routers(cfg, store, collector, save=save_config, demo=args.demo)
     if not args.demo and (cfg.get("wireguard") or {}).get("enabled"):
         routers.wg_file = DATA / "wg-peers.conf"

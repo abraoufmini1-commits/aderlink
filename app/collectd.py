@@ -21,6 +21,7 @@ from .radiusd import _read_json, _write_json
 
 STATE = "collect-state.json"
 POLL_REQ = "collect-poll"
+ERRORS = "collect-errors.log"
 
 
 def _mtime(path):
@@ -152,12 +153,16 @@ class RemoteCollector:
         self.poll_seconds = max(10, int(config.get("poll_seconds", 30)))
         self.lock = threading.Lock()
         self.state = {}
-        self._agg = {}
-        self.last_cycle = None
+        self._r_agg = {}
+        self._r_last_cycle = None
         self.roaming = None  # pour recevoir les routeurs qui ont un autre système de tickets
         self.proc = None
         self.restarts = 0
         self.updated = None  # heure du dernier état écrit par le programme des relevés
+        self.local = None      # relevés repris par le programme principal si le séparé ne tient pas
+        self.fallback = None   # fonction qui crée ce collecteur de secours
+        self.quick_fails = 0
+        self.last_error = None
         self._mtime = None
         self._refresh()      # dernier état connu (avant le redémarrage) en attendant le premier relevé
 
@@ -172,20 +177,24 @@ class RemoteCollector:
         self._mtime = m
         with self.lock:
             self.state = d.get("state") or {}
-            self._agg = {v[1]: v for v in (d.get("agg") or []) if len(v) >= 6}
+            self._r_agg = {v[1]: v for v in (d.get("agg") or []) if len(v) >= 6}
             lc = d.get("last_cycle")
-            self.last_cycle = tuple(lc) if lc else None
+            self._r_last_cycle = tuple(lc) if lc else None
             self.updated = d.get("at")
         if self.roaming is not None:
             self.roaming.shared.update(d.get("shared") or {})
 
     def snapshot(self):
+        if self.local:
+            return self.local.snapshot()
         self._refresh()
         with self.lock:
             return {k: dict(v) for k, v in self.state.items()}
 
     def poll_all(self):
         """Relevé immédiat : demandé au programme des relevés."""
+        if self.local:
+            return self.local.poll_all()
         p = self.data_dir / POLL_REQ
         try:
             p.write_text(str(time.time()))
@@ -193,6 +202,8 @@ class RemoteCollector:
             self.log(f"[collecte] relevé immédiat non demandé ({e})")
 
     def add_tickets(self, zone_id, n):
+        if self.local:
+            return self.local.add_tickets(zone_id, n)
         with self.lock:
             st = self.state.get(zone_id)
             if st and st.get("tickets") is not None:
@@ -201,8 +212,32 @@ class RemoteCollector:
     def _spawn(self):
         root = Path(__file__).resolve().parent.parent
         self._started = time.time()
-        self.proc = subprocess.Popen([sys.executable, "-m", "app", "collect"], cwd=str(root), env=dict(os.environ))
+        # les messages d'erreur du programme sont gardés dans un fichier, affichés dans « État du serveur »
+        err = open(self.data_dir / ERRORS, "w")
+        self.proc = subprocess.Popen([sys.executable, "-m", "app", "collect"], cwd=str(root), env=dict(os.environ),
+                                     stderr=err)
+        err.close()
         self.log(f"[collecte] programme des relevés lancé (n° {self.proc.pid})")
+
+    def _save_error(self):
+        try:
+            lines = [l.rstrip() for l in (self.data_dir / ERRORS).read_text(errors="replace").splitlines() if l.strip()]
+            self.last_error = " | ".join(lines[-6:])[-900:] or f"arrêt sans message (code {self.proc.returncode})"
+        except OSError:
+            self.last_error = f"arrêt sans message (code {self.proc.returncode})"
+        self.log(f"[collecte] arrêt : {self.last_error}")
+
+    @property
+    def last_cycle(self):
+        return self.local.last_cycle if self.local else self._r_last_cycle
+
+    @property
+    def _agg(self):
+        return self.local._agg if self.local else self._r_agg
+
+    @property
+    def mode(self):
+        return "principal" if self.local else "séparé"
 
     def start(self):
         self._spawn()
@@ -217,6 +252,18 @@ class RemoteCollector:
                 self.log("[collecte] programme des relevés bloqué : relancé")
                 self.proc.kill()
                 self.proc.wait(10)
+            if self.proc and self.proc.poll() is not None and time.time() - self._started < 90:
+                self.quick_fails += 1
+                self._save_error()
+                if self.quick_fails >= 3 and self.fallback:
+                    # s'arrête dès le démarrage, 3 fois de suite : relevés faits par le programme principal,
+                    # pour que les routeurs ne restent jamais sans relevés
+                    self.log("[collecte] programme séparé arrêté 3 fois au démarrage : relevés dans le programme principal")
+                    self.local = self.fallback()
+                    self.local.start()
+                    return
+            elif self.proc and self.proc.poll() is None and time.time() - self._started > 120:
+                self.quick_fails = 0
             if self.proc and self.proc.poll() is not None:
                 self.restarts += 1
                 self.log(f"[collecte] programme des relevés arrêté (code {self.proc.returncode}), relancé")
