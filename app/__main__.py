@@ -214,7 +214,7 @@ def cmd_serve(args):
         store = Store(str(DATA / "aderlink.db"))
         store.compact_once(DATA / "compacted-1")  # une seule fois : base allégée et compactée
     # relevés des routeurs dans leur propre programme : les pages ne les attendent plus jamais
-    separate = not args.demo and (cfg.get("collect") or {}).get("separate", True)
+    separate = not args.demo and (cfg.get("collect") or {}).get("separate", False)  # remis dans le principal en attendant de corriger le programme séparé
     if separate:
         from .collectd import RemoteCollector
         collector = RemoteCollector(cfg, DATA)
