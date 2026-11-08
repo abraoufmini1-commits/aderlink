@@ -7,6 +7,7 @@
 """
 import random
 import secrets
+import sqlite3
 import time
 
 from .routeros import RouterOS, RouterOSError
@@ -43,7 +44,10 @@ class TicketError(Exception):
 
 
 class Tickets:
-    def __init__(self, config, store, demo=False):
+    def __init__(self, config, store, demo=False, maintenance=True):
+        """maintenance=False : programmes séparés (relevés, Roaming). Le ménage de démarrage n'est fait que
+        par le programme principal : avant, les 3 le faisaient en même temps, la base était occupée et le
+        programme des relevés s'arrêtait (« database is locked »)."""
         self.config = config
         self.store = store
         self.demo = demo
@@ -76,24 +80,30 @@ class Tickets:
                     created_at INTEGER, archived INTEGER DEFAULT 0);
                 """
             )
-            for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
-                               ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
-                               ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
-                               ("tickets", "uptime_used INTEGER DEFAULT 0"),
-                               ("tickets", "purged_at INTEGER"), ("batches", "zone_seq INTEGER")):  # base créée par une version précédente
-                try:
-                    store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
-                except Exception:
-                    pass
-            # lots vidés avant cette version (tous supprimés, aucun vendu) : on les retire de la liste
-            empty = "SELECT b.id FROM batches b WHERE NOT EXISTS (SELECT 1 FROM tickets t WHERE t.batch_id = b.id " \
-                    "AND (t.removed = 0 OR t.first_used IS NOT NULL))"
-            store.db.execute(f"DELETE FROM tickets WHERE batch_id IN ({empty})")
-            store.db.execute(f"DELETE FROM batches WHERE id IN ({empty})")
-            # numéro du lot sur son routeur (1, 2, 3… pour chaque routeur) : donné aux lots existants, dans l'ordre
-            store.db.execute("UPDATE batches SET zone_seq = (SELECT COUNT(*) FROM batches b2 WHERE b2.zone_id = batches.zone_id "
-                             "AND b2.id <= batches.id) WHERE zone_seq IS NULL")
             store.db.commit()
+        if maintenance:
+            try:
+                with store.lock:
+                    for table, col in (("batches", "forfait_id INTEGER"), ("batches", "pos_id INTEGER"),
+                                       ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
+                                       ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
+                                       ("tickets", "uptime_used INTEGER DEFAULT 0"),
+                                       ("tickets", "purged_at INTEGER"), ("batches", "zone_seq INTEGER")):  # base créée par une version précédente
+                        try:
+                            store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+                        except Exception:
+                            pass
+                    # lots vidés avant cette version (tous supprimés, aucun vendu) : on les retire de la liste
+                    empty = "SELECT b.id FROM batches b WHERE NOT EXISTS (SELECT 1 FROM tickets t WHERE t.batch_id = b.id " \
+                            "AND (t.removed = 0 OR t.first_used IS NOT NULL))"
+                    store.db.execute(f"DELETE FROM tickets WHERE batch_id IN ({empty})")
+                    store.db.execute(f"DELETE FROM batches WHERE id IN ({empty})")
+                    # numéro du lot sur son routeur (1, 2, 3… pour chaque routeur) : donné aux lots existants, dans l'ordre
+                    store.db.execute("UPDATE batches SET zone_seq = (SELECT COUNT(*) FROM batches b2 WHERE b2.zone_id = batches.zone_id "
+                                     "AND b2.id <= batches.id) WHERE zone_seq IS NULL")
+                    store.db.commit()
+            except sqlite3.OperationalError as e:  # base occupée : le ménage sera fait au prochain démarrage
+                print(f"[tickets] ménage de démarrage reporté ({e})", flush=True)
 
     # --- outils ---------------------------------------------------------------
     def zone(self, zone_id):

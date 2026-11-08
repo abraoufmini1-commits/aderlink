@@ -52,10 +52,19 @@ def run(config_path, data_dir, load_config):
 
     data_dir = Path(data_dir)
     cfg = load_config()
-    store = Store(str(data_dir / "aderlink.db"))
-    tickets = Tickets(cfg, store)
+    import sqlite3
     snap = _Snapshot()
-    roaming = Roaming(cfg, store, tickets, snap, log=lambda m: print(m, flush=True))
+    for attempt in range(24):  # base occupée au démarrage : on attend et on réessaie au lieu de s'arrêter
+        try:
+            store = Store(str(data_dir / "aderlink.db"))
+            tickets = Tickets(cfg, store, maintenance=False)
+            roaming = Roaming(cfg, store, tickets, snap, log=lambda m: print(m, flush=True))
+            break
+        except sqlite3.OperationalError as e:
+            print(f"ADER Roaming : base occupée au démarrage ({e}), nouvel essai dans 5 s", flush=True)
+            time.sleep(5)
+    else:
+        raise RuntimeError("base de données occupée depuis plus de 2 minutes au démarrage")
     tickets.roaming = roaming
 
     def kick(zid, code):

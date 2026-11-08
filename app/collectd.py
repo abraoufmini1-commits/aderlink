@@ -40,10 +40,19 @@ def run(config_path, data_dir, load_config):
     data_dir = Path(data_dir)
     log = lambda m: print(m, flush=True)
     cfg = load_config()
-    store = Store(str(data_dir / "aderlink.db"))
-    collector = Collector(cfg, store)
-    tickets = Tickets(cfg, store)
-    roaming = Roaming(cfg, store, tickets, collector, log=log)  # seulement pour le réglage des routeurs (ensure)
+    import sqlite3
+    for attempt in range(24):  # base occupée au démarrage : on attend et on réessaie au lieu de s'arrêter
+        try:
+            store = Store(str(data_dir / "aderlink.db"))
+            collector = Collector(cfg, store)
+            tickets = Tickets(cfg, store, maintenance=False)
+            roaming = Roaming(cfg, store, tickets, collector, log=log)  # seulement pour le réglage des routeurs
+            break
+        except sqlite3.OperationalError as e:
+            log(f"[collecte] base occupée au démarrage ({e}), nouvel essai dans 5 s")
+            time.sleep(5)
+    else:
+        raise RuntimeError("base de données occupée depuis plus de 2 minutes au démarrage")
     tickets.roaming = roaming
 
     def wg():
