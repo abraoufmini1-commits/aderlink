@@ -400,10 +400,16 @@ class Tickets:
             rows = R("SELECT * FROM batches ORDER BY id DESC LIMIT ?", (limit,))
         if not rows:
             return []
-        lo = min(r[0] for r in rows)
-        stats = {b: (u, e, rm) for b, u, e, rm in R(
-            "SELECT batch_id, SUM(first_used IS NOT NULL), SUM(expired_at IS NOT NULL), SUM(removed) "
-            "FROM tickets WHERE batch_id >= ? GROUP BY batch_id", (lo,))}
+        # seulement les lots affichés (avant : tous les lots de tous les routeurs créés depuis le plus ancien
+        # lot affiché, soit 40 fois trop de tickets comptés, 3 s d'attente sur la page Lots)
+        ids = [r[0] for r in rows]
+        stats = {}
+        for i in range(0, len(ids), 500):
+            part = ids[i:i + 500]
+            for b, u, e, rm in R(
+                    "SELECT batch_id, SUM(first_used IS NOT NULL), SUM(expired_at IS NOT NULL), SUM(removed) "
+                    f"FROM tickets WHERE batch_id IN ({','.join('?' * len(part))}) GROUP BY batch_id", part):
+                stats[b] = (u, e, rm)
         def table(sql):
             try:
                 return dict(R(sql))
