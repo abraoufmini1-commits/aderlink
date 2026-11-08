@@ -15,6 +15,11 @@ import secrets
 import sys
 from pathlib import Path
 
+# en tout premier (avant le reste du code, qui pourrait venir d'une mise à jour cassée) :
+# trop de démarrages ratés après une mise à jour = retour à la version d'avant
+from . import rollback as _rollback
+_rollback.early()
+
 from .collector import Collector, Store
 from .routeros import RouterOS, RouterOSError
 from .server import App, hash_password, serve, verify_password
@@ -234,7 +239,7 @@ def cmd_serve(args):
     for z in cfg.get("zones", []):
         routers.ensure_default_pv(z["id"])
     users = Users(cfg, store, routers, hash_password, verify_password)
-    updater = Updater(cfg)
+    updater = Updater(cfg, data_dir=None if args.demo else DATA)
     collector.ticket_hook = tickets.on_poll
     from .roaming import Roaming
     roaming = Roaming(cfg, store, tickets, collector)
@@ -262,6 +267,7 @@ def cmd_serve(args):
             tickets.create_batch({"forfait_id": fs[-1]["id"], "count": 20, "roaming": True, "note": "Pass Roaming"})
         _demo_users(cfg, users, tickets)
         _demo_samples(cfg, store)
+    roaming_proc = None
     if not separate:
         collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()
@@ -272,15 +278,20 @@ def cmd_serve(args):
             if rc.get("separate", True):
                 # ADER Roaming dans son propre programme : jamais derrière les relevés des routeurs
                 from .radiusd import RoamingProcess
-                RoamingProcess(roaming, collector, DATA).start()
+                roaming_proc = RoamingProcess(roaming, collector, DATA)
+                roaming_proc.start()
             else:
                 roaming.start()
         guard.start()
     print(f"ADER LINK version {updater.state['current']}")
-    serve(App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
+    app = App(cfg, collector, store, demo=args.demo, tickets=tickets, routers=routers, updater=updater,
               users=users, save_config=save_config, roaming=roaming, guard=guard,
-              paths={"config": CONFIG, "db": None if args.demo else DATA / "aderlink.db"}),
-          args.host, args.port)
+              paths={"config": CONFIG, "db": None if args.demo else DATA / "aderlink.db"})
+    if not args.demo:
+        # surveillance jour et nuit : message Telegram si problème, retour en arrière après une mise à jour ratée
+        from .health import Health
+        Health(app, collector, roaming_proc, guard, DATA).start()
+    serve(app, args.host, args.port)
 
 
 def _demo_samples(cfg, store):

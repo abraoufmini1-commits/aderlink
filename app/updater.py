@@ -37,8 +37,9 @@ def _get(url, timeout=20):
 
 
 class Updater:
-    def __init__(self, config, on_restart=None):
+    def __init__(self, config, on_restart=None, data_dir=None):
         self.config = config
+        self.data_dir = data_dir  # pour garder la version d'avant (retour automatique si problème)
         self.on_restart = on_restart or (lambda: os._exit(RESTART_CODE))
         self.state = {"current": local_version(), "latest": None, "checked_at": None,
                       "status": "idle", "message": "", "updated_at": None}
@@ -89,6 +90,12 @@ class Updater:
         if latest == self.state["current"]:
             self._set(status="uptodate", message="À jour")
             return self.info()
+        if self.data_dir:
+            from . import rollback
+            if latest in rollback.bad_versions(self.data_dir):
+                self._set(status="uptodate", message=f"Version {latest} annulée après un problème : "
+                                                     "on attend la suivante")
+                return self.info()
         if not install:
             self._set(status="available", message=f"Version {latest} disponible")
             return self.info()
@@ -108,6 +115,10 @@ class Updater:
             src = top / "aderlink" if (top / "aderlink" / "app").is_dir() else top
             if not (src / "app" / "__main__.py").is_file() or not (src / "VERSION").is_file():
                 raise RuntimeError("Le dépôt ne contient pas ADER LINK")
+            if self.data_dir:  # version actuelle gardée : remise toute seule si la nouvelle pose problème
+                from . import rollback
+                rollback.backup(COPY, self.data_dir)
+                rollback.mark_pending(self.state["current"], latest, self.data_dir)
             for name in COPY:
                 s, d = src / name, ROOT / name
                 if name in KEEP or not s.exists():
