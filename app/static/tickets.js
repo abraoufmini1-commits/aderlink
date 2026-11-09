@@ -207,8 +207,8 @@
         "<span class='pick-main'><span class='pick-title'>" + esc(f.name) + "</span><span class='pick-sub'>" + esc(bits) + "</span>" +
         "<span class='pick-stock'>" + nf.format(f.stock) + " en stock" + (f.down_mbps ? " · " + nf.format(f.down_mbps) + " Mb/s" : "") + "</span></span>" +
         "<span class='pick-price num'>" + nf.format(f.price) + " F</span><span class='radio' aria-hidden='true'></span></button>" +
-        "<button type='button' class='row-edit need-gerant' data-edit='" + f.id + "' aria-label='Modifier le profil " + esc(f.name) + "'>" + window.AderShell.icon("pencil") + "<span>Modifier</span></button>" +
-        "<button type='button' class='row-del' data-archive='" + f.id + "' aria-label='Retirer le profil " + esc(f.name) + "'>Retirer</button></div>";
+        "<button type='button' class='row-edit" + (f.mine ? "" : " need-gerant") + "' data-edit='" + f.id + "' aria-label='Modifier le profil " + esc(f.name) + "'>" + window.AderShell.icon("pencil") + "<span>Modifier</span></button>" +
+        "<button type='button' class='row-del" + (f.mine === false ? " need-gerant" : "") + "' data-archive='" + f.id + "' aria-label='Retirer le profil " + esc(f.name) + "'>Retirer</button></div>";
     }).join("") : "<div class='empty-step'>Aucun profil sur ce routeur. Créez le premier, par exemple <strong>1 heure à 200 F</strong>.</div>";
     $("manage").hidden = !S.forfaits.length;
   }

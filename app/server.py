@@ -116,9 +116,9 @@ class App:
         out = []
         for z in self.zones_for(who):
             pvs = self.routers.list_pv(z["id"]) if self.routers else []
-            if who.is_reseller:  # le revendeur ne voit que son point de vente
-                mine = self.users.pv_for(who, z["id"]) if self.users else None
-                pvs = [p for p in pvs if p["id"] == mine]
+            if who.is_reseller:  # le client ne voit que ses points de vente
+                mine = set(self.users.pvs_of(who, z["id"])) if self.users else set()
+                pvs = [p for p in pvs if p["id"] in mine]
             g = self.roaming.group_of_zone(z["id"]) if self.roaming else None
             out.append({"id": z["id"], "name": z["name"], "ssid": z.get("ssid") or z["name"],
                         "code_length": z.get("code_length", 8), "points_vente": pvs,
@@ -751,7 +751,7 @@ def make_handler(app):
                     self.need(data is not None, "Routeur inconnu")
                     return data
                 if what == "forfaits" and app.tickets:
-                    return {"forfaits": app.tickets.list_forfaits(zid)}
+                    return {"forfaits": app.tickets.list_forfaits(zid, who.username if who.is_reseller else None)}
                 if what == "profiles" and app.tickets:
                     return {"profiles": app.tickets.profiles(zid)}
             if app.routers and p == "/api/routers":
@@ -912,7 +912,10 @@ def make_handler(app):
                 self.need(who.can_zone(zid))
                 if who.is_reseller:
                     self.need(f is not None, "Choisissez un profil")
-                    body = dict(body, pos_id=U.pv_for(who, zid) if U else None)
+                    self.need(not f.get("reseller") or f["reseller"] == who.username, "Profil introuvable")
+                    mine = U.pvs_of(who, zid) if U else []
+                    want = int(body.get("pos_id") or 0)
+                    body = dict(body, pos_id=want if want in mine else (mine[0] if mine else None))
                 elif body.get("pos_id") and R:
                     pv = R.get_pv(int(body["pos_id"]))
                     self.need(pv and pv["zone_id"] == zid, "Point de vente invalide")
@@ -958,16 +961,18 @@ def make_handler(app):
             if p == "/api/forfaits":
                 self.need(who.can("forfaits_write"))
                 self.need(who.can_zone(str(body.get("zone_id", ""))))
-                return T.create_forfait(body)
+                return T.create_forfait(body, reseller=who.username if who.is_reseller else None)
             if len(parts) == 4 and parts[2] == "forfaits" and parts[3].isdigit():
                 self.need(who.can("forfaits_write"))
                 f = T.get_forfait(int(parts[3]))
                 self.need(f and who.can_zone(f["zone_id"]), "Profil introuvable")
+                self.need(not who.is_reseller or f.get("reseller") == who.username, "Vous ne pouvez modifier que vos profils")
                 return T.update_forfait(int(parts[3]), body)
             if len(parts) == 5 and parts[2] == "forfaits" and parts[4] == "archive" and parts[3].isdigit():
                 self.need(who.can("forfaits_write"))
                 f = T.get_forfait(int(parts[3]))
                 self.need(f and who.can_zone(f["zone_id"]), "Profil introuvable")
+                self.need(not who.is_reseller or f.get("reseller") == who.username, "Vous ne pouvez retirer que vos profils")
                 return T.archive_forfait(int(parts[3]))
             if len(parts) == 5 and parts[2] == "batches" and parts[4] == "remove-unused" and parts[3].isdigit():
                 self.need(who.can("lots_manage"))
@@ -991,6 +996,8 @@ def make_handler(app):
                 if action == "test":
                     self.need(who.can("routers_read"))
                     return R.test(zid)
+                if action == "pv" and who.is_reseller and U:  # un client crée son propre point de vente
+                    return U.create_pv_for(who, zid, body)
                 self.need(who.can("routers_write"))
                 if action == "winbox":
                     self.need_feature(who, "remote")
@@ -1009,7 +1016,12 @@ def make_handler(app):
                 return R.remove_device(parts[3], int(parts[5]))
             if R and len(parts) == 5 and parts[2] == "pv" and parts[4] == "archive" and parts[3].isdigit():
                 pv = R.get_pv(int(parts[3]))
-                self.need(who.can("routers_write") and pv and who.can_zone(pv["zone_id"]))
+                self.need(pv and who.can_zone(pv["zone_id"]))
+                if who.is_reseller:  # un client retire seulement ses points de vente, jamais le principal
+                    mine = U.pvs_of(who, pv["zone_id"]) if U else []
+                    self.need(pv["id"] in mine[1:], "Vous ne pouvez retirer que les points de vente que vous avez créés")
+                else:
+                    self.need(who.can("routers_write"))
                 return R.archive_pv(int(parts[3]))
             # utilisateurs
             if U and p == "/api/me/password":

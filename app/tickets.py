@@ -88,7 +88,8 @@ class Tickets:
                                        ("forfaits", "color TEXT"), ("batches", "created_by TEXT"),
                                        ("batches", "roaming_id INTEGER"), ("tickets", "bytes_used INTEGER DEFAULT 0"),
                                        ("tickets", "uptime_used INTEGER DEFAULT 0"),
-                                       ("tickets", "purged_at INTEGER"), ("batches", "zone_seq INTEGER")):  # base créée par une version précédente
+                                       ("tickets", "purged_at INTEGER"), ("batches", "zone_seq INTEGER"),
+                                       ("forfaits", "reseller TEXT")):  # base créée par une version précédente
                         try:
                             store.db.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
                         except Exception:
@@ -134,7 +135,7 @@ class Tickets:
 
     # --- forfaits (profils) -------------------------------------------------------
     FORFAIT_COLS = ("id", "zone_id", "name", "router_profile", "price", "uptime_s", "data_mb",
-                    "validity_s", "down_mbps", "up_mbps", "shared_users", "created_at", "archived", "color")
+                    "validity_s", "down_mbps", "up_mbps", "shared_users", "created_at", "archived", "color", "reseller")
     COLORS = ("bleu", "orange", "vert", "rouge", "violet", "cyan", "rose", "marron", "nuit")
 
     def _forfait(self, row):
@@ -145,10 +146,14 @@ class Tickets:
         f["stock"] = rows[0][0]
         return f
 
-    def list_forfaits(self, zone_id):
+    def list_forfaits(self, zone_id, reseller=None):
+        """reseller : un client ne voit que les profils du routeur et les siens (pas ceux des autres clients)."""
         self.zone(zone_id)
         rows, _ = self._q("SELECT * FROM forfaits WHERE zone_id = ? AND archived = 0 ORDER BY price, id", (zone_id,))
-        return [self._forfait(r) for r in rows]
+        out = [self._forfait(r) for r in rows]
+        if reseller:
+            out = [dict(f, mine=f.get("reseller") == reseller) for f in out if not f.get("reseller") or f["reseller"] == reseller]
+        return out
 
     def get_forfait(self, forfait_id):
         rows, _ = self._q("SELECT * FROM forfaits WHERE id = ?", (forfait_id,))
@@ -212,7 +217,7 @@ class Tickets:
                           (zone_id, name, exclude or 0))
         return bool(rows)
 
-    def create_forfait(self, data):
+    def create_forfait(self, data, reseller=None):
         zone = self.zone(str(data.get("zone_id", "")))
         v = self._forfait_values(data)
         if self._name_taken(zone["id"], v["name"]):
@@ -223,9 +228,9 @@ class Tickets:
         self._push_profile(zone, router_profile, v)
         _, fid = self._q(
             "INSERT INTO forfaits (zone_id, name, router_profile, price, uptime_s, data_mb, validity_s, "
-            "down_mbps, up_mbps, shared_users, created_at, color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "down_mbps, up_mbps, shared_users, created_at, color, reseller) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (zone["id"], v["name"], router_profile, v["price"], v["uptime_s"], v["data_mb"], v["validity_s"],
-             v["down_mbps"], v["up_mbps"], v["shared_users"], int(time.time()), v["color"]), commit=True)
+             v["down_mbps"], v["up_mbps"], v["shared_users"], int(time.time()), v["color"], reseller), commit=True)
         return self.get_forfait(fid)
 
     def update_forfait(self, forfait_id, data):

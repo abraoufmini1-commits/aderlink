@@ -69,7 +69,7 @@ class Principal:
     def can(self, action):
         rules = {
             "users": ("admin",), "team": ("admin", "client"), "settings": ("admin",), "routers_write": ("admin", "client"),
-            "routers_read": ("admin", "client", "gerant"), "forfaits_write": ("admin", "client", "gerant"),
+            "routers_read": ("admin", "client", "gerant"), "forfaits_write": ("admin", "client", "gerant", "revendeur"),
             "lots_manage": ("admin", "client", "gerant"), "dashboard_full": ("admin", "client", "gerant"),
         }
         return self.role in rules.get(action, ROLES)
@@ -256,16 +256,36 @@ class Users:
         """Un revendeur a son propre point de vente sur chacun de ses routeurs."""
         if not self.routers:
             return
-        rows, _ = self._q("SELECT id, zone_id FROM points_vente WHERE user_id = ? AND archived = 0", (user["id"],))
-        have = {z: pid for pid, z in rows}
+        rows, _ = self._q("SELECT id, zone_id FROM points_vente WHERE user_id = ? AND archived = 0 ORDER BY id", (user["id"],))
+        have, extra = {}, {}
+        for pid, z in rows:  # le 1er point de vente du routeur est le principal (à son nom) ; les autres, il les a créés
+            if z in have:
+                extra.setdefault(z, []).append(pid)
+            else:
+                have[z] = pid
         want = set(user["zones"]) if user["role"] == "revendeur" and user["active"] else set()
         for z in want - set(have):
             pv = self.routers.create_pv(z, {"name": user["name"]})
             self._q("UPDATE points_vente SET user_id = ? WHERE id = ?", (user["id"], pv["id"]), commit=True)
         for z in set(have) - want:
-            self._q("UPDATE points_vente SET archived = 1 WHERE id = ?", (have[z],), commit=True)
+            for pid in [have[z]] + extra.get(z, []):
+                self._q("UPDATE points_vente SET archived = 1 WHERE id = ?", (pid,), commit=True)
         for z in want & set(have):
             self._q("UPDATE points_vente SET name = ? WHERE id = ?", (user["name"], have[z]), commit=True)
+
+    def pvs_of(self, principal, zone_id):
+        """Tous les points de vente d'un client sur ce routeur (le principal d'abord)."""
+        if not principal.is_reseller:
+            return []
+        rows, _ = self._q("SELECT id FROM points_vente WHERE user_id = ? AND zone_id = ? AND archived = 0 ORDER BY id",
+                          (principal.user_id, zone_id))
+        return [r[0] for r in rows]
+
+    def create_pv_for(self, principal, zone_id, data):
+        """Un client crée son propre point de vente sur un de ses routeurs."""
+        pv = self.routers.create_pv(zone_id, data)
+        self._q("UPDATE points_vente SET user_id = ? WHERE id = ?", (principal.user_id, pv["id"]), commit=True)
+        return pv
 
     def pv_for(self, principal, zone_id):
         if not principal.is_reseller:

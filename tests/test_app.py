@@ -646,7 +646,35 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertEqual(detail["created_by"], "moussa")
         self.assertEqual(len(self.get(r, "/api/batches")["batches"]), 1)
         self.assertEqual(self.post(r, "/api/batches", {"forfait_id": self.fb["id"], "count": 1})[0], 403)
-        self.assertEqual(self.post(r, "/api/forfaits", {"zone_id": "a", "name": "X", "price": 1})[0], 403)
+        # le client crée son profil et son point de vente, et ses tickets avec
+        code, mf = self.post(r, "/api/forfaits", {"zone_id": "a", "name": "Moussa 1 Go", "price": 100})
+        self.assertEqual(code, 200, mf)
+        self.assertEqual(self.post(r, "/api/forfaits", {"zone_id": "b", "name": "Y", "price": 1})[0], 403)  # pas son routeur
+        code, mpv = self.post(r, "/api/routers/a/pv", {"name": "Boutique Marché"})
+        self.assertEqual(code, 200, mpv)
+        zones = self.get(r, "/api/zones")["zones"]
+        self.assertEqual([p["name"] for p in zones[0]["points_vente"]], ["Moussa Issa", "Boutique Marché"])
+        code, lot2 = self.post(r, "/api/batches", {"forfait_id": mf["id"], "count": 2, "pos_id": mpv["id"]})
+        self.assertEqual(code, 200, lot2)
+        self.assertEqual(self.get(r, f"/api/batches/{lot2['id']}")["pos_name"], "Boutique Marché")
+        mine = {f["name"]: f for f in self.get(r, "/api/zones/a/forfaits")["forfaits"]}
+        self.assertTrue(mine["Moussa 1 Go"]["mine"])
+        self.assertFalse(mine[self.fa["name"]]["mine"])
+        # il ne touche pas aux profils et points de vente des autres
+        self.assertEqual(self.post(r, f"/api/forfaits/{self.fa['id']}", {"name": "Pirate", "price": 1})[0], 403)
+        self.assertEqual(self.post(r, f"/api/forfaits/{self.fa['id']}/archive", {})[0], 403)
+        self.assertEqual(self.post(r, "/api/pv/1/archive", {})[0], 403)
+        main_pv = zones[0]["points_vente"][0]["id"]
+        self.assertEqual(self.post(r, f"/api/pv/{main_pv}/archive", {})[0], 403)  # son point de vente principal reste
+        self.assertEqual(self.post(r, f"/api/forfaits/{mf['id']}", {"name": "Moussa 1 Go", "price": 150})[0], 200)
+        # un autre client ne voit pas le profil de Moussa ; l'admin le voit
+        self.assertIn("Moussa 1 Go", [f["name"] for f in self.get(admin, "/api/zones/a/forfaits")["forfaits"]])
+        code, rev2 = self.post(admin, "/api/users", {"name": "Client Deux", "username": "client-deux", "role": "revendeur", "zones": ["a"]})
+        r2 = self.login("client-deux", rev2["password"])
+        self.assertNotIn("Moussa 1 Go", [f["name"] for f in self.get(r2, "/api/zones/a/forfaits")["forfaits"]])
+        self.assertEqual(self.post(r2, "/api/batches", {"forfait_id": mf["id"], "count": 1})[0], 403)
+        self.assertEqual(self.post(r2, f"/api/pv/{mpv['id']}/archive", {})[0], 403)
+        self.assertEqual(self.post(r, f"/api/pv/{mpv['id']}/archive", {})[0], 200)  # il retire le sien
         self.assertEqual(self.post(r, "/api/users", {})[0], 403)
         for path in ("/api/routers", "/api/users", "/api/settings", "/api/zones/b/forfaits"):
             with self.assertRaises(urllib.error.HTTPError, msg=path):
@@ -668,7 +696,7 @@ class UsersAndRolesTests(unittest.TestCase):
         self.tickets._q("UPDATE tickets SET first_used = ? WHERE batch_id = ?", (int(time.time()), lot["id"]), commit=True)
         users = {u["username"]: u for u in self.get(admin, "/api/users")["users"]}
         self.assertEqual(users["moussa"]["stats"]["sold"], 3)
-        self.assertEqual(users["moussa"]["stats"]["commission_due"], 60)
+        self.assertEqual(users["moussa"]["stats"]["commission_due"], 60)  # lot 2 pas encore vendu
 
         # Changer son mot de passe, puis désactivation : la session tombe
         self.assertEqual(self.post(r, "/api/me/password", {"old": "faux", "new": "nouveau-1"})[0], 400)
