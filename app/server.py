@@ -85,6 +85,31 @@ class Forbidden(Exception):
     pass
 
 
+def waits_router(path, method):
+    """Actions qui attendent la réponse d'un routeur par internet : leur lenteur est normale."""
+    return method == "POST" or path.endswith(("/check", "/test"))
+
+
+def slow_label(path, method):
+    """Nom clair d'une page lente, pour « État du serveur »."""
+    parts = path.split("/")
+    if method == "POST":
+        if path == "/api/batches":
+            return "Création d'un lot de tickets (envoi au routeur)"
+        if path.endswith("/remove-unused"):
+            return "Suppression des tickets non utilisés d'un lot (sur le routeur)"
+        if path.startswith("/api/forfaits"):
+            return "Création ou modification d'un profil (sur le routeur)"
+        return "Action : " + path
+    if path.endswith("/check"):
+        return "Bouton « Vérifier les routeurs » (attend les routeurs)"
+    if path.endswith("/test"):
+        return "Bouton « Tester » un routeur (attend le routeur)"
+    names = {"/api/batches": "Ouverture de la page Lots", "/api/overview": "Tableau de bord",
+             "/api/report": "Rapports", "/api/forfaits": "Profils", "/api/zones": "Liste des routeurs"}
+    return names.get(path, path)
+
+
 class App:
     def __init__(self, config, collector, store, demo=False, tickets=None, routers=None, updater=None,
                  users=None, save_config=None, paths=None, roaming=None, guard=None):
@@ -195,7 +220,8 @@ class App:
                 "collect": ({"age": int(time.time() - self.collector.updated) if self.collector.updated else None,
                              "restarts": self.collector.restarts, "mode": self.collector.mode,
                              "error": self.collector.last_error} if hasattr(self.collector, "restarts") else None),
-                "slow": [{"at": a, "path": b, "seconds": c} for a, b, c in reversed(self.slow)]}
+                "slow": [{"at": x[0], "path": x[1], "seconds": x[2], "label": slow_label(x[1], x[3] if len(x) > 3 else "GET"),
+                          "waits_router": waits_router(x[1], x[3] if len(x) > 3 else "GET")} for x in reversed(self.slow)]}
 
     def overview(self, range_key, who):
         hours = {"6h": 6, "24h": 24, "7j": 168}.get(range_key, 24)
@@ -463,7 +489,7 @@ def make_handler(app):
                 took = time.time() - t0
                 path = (self.path or "").split("?")[0][:60]
                 if took > 1.5 and not path.startswith("/api/restore"):
-                    app.slow.append((int(t0), path, round(took, 1)))
+                    app.slow.append((int(t0), path, round(took, 1), self.command))
                     print(f"[lent] {path} : {took:.1f} s", flush=True)
 
         def log_message(self, fmt, *args):  # journal discret
