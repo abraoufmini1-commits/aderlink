@@ -42,6 +42,10 @@ class Roaming:
         self._goz = {}       # zone_id -> (heure, réseau) : cache court
         self._members = None
         self._tl = threading.local()
+        self.flow = {}  # file d'attente des demandes RADIUS (en attente, traitées, abandonnées)
+        import queue
+        self._writes = queue.Queue()
+        threading.Thread(target=self._writer, daemon=True, name="roaming-writer").start()
         self._held, self._held_lock = {}, threading.Lock()  # réservations immédiates, en mémoire
         self.journal = collections.deque(maxlen=80)  # dernières demandes de connexion (heure, routeur, code, résultat)
         with store.lock:
@@ -512,7 +516,7 @@ class Roaming:
                         self.store.db.commit()
                 except Exception as e:
                     self.log(f"ADER Roaming : ancienne session non fermée ({e!r})")
-            threading.Thread(target=close_old, args=((t["home"], code, mac.upper(), zone_id),), daemon=True).start()
+            self._write(close_old, (t["home"], code, mac.upper(), zone_id))
             if self.kicker:  # on ferme l'ancienne connexion là où il était
                 threading.Thread(target=self._kick_zones, args=(moved, [code, mac]), daemon=True).start()
         # réservation : bloque un 2e appareil pendant que le routeur ouvre la session. Écrite à côté, APRÈS la
@@ -524,7 +528,7 @@ class Roaming:
                     self._held.clear()
                 self._held.setdefault((t["home"], code), []).append((zone_id, _mac(mac), now))
             args = (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac))
-            threading.Thread(target=self._reserve, args=(args,), daemon=True).start()
+            self._write(self._reserve, args)
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
@@ -534,8 +538,14 @@ class Roaming:
         return True, "", limits
 
     def _reserve(self, args):
+        # args = (session_id, nas_zone, code, home, started, updated, mac)
         try:
             with self.store.lock:
+                # vérifié sous le même verrou que la confirmation du routeur : si elle est déjà passée,
+                # la réservation est devenue inutile et ne doit pas bloquer le ticket
+                with self._held_lock:
+                    if not any(h[0] == args[1] and h[2] == args[4] for h in self._held.get((args[3], args[2]), [])):
+                        return
                 self.store.db.execute(
                     "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
                     "VALUES (?,?,?,?,?,?,?,1)", args)
@@ -766,30 +776,71 @@ class Roaming:
                     self.log(f"ADER Roaming : vérification des tickets : {e!r}")
         threading.Thread(target=loop, daemon=True, name="roaming-sweep").start()
 
+    MAX_WAIT = {"auth": 6, "acct": 15}  # au-delà, le routeur a déjà abandonné (ou renverra) : inutile de répondre
+
     def _loop(self, sock, kind):
         # plusieurs paquets traités en même temps : une demande de connexion n'attend jamais derrière les autres
         from concurrent.futures import ThreadPoolExecutor
         pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix=f"radius-{kind}")
+        st = self.flow.setdefault(kind, {"pending": 0, "done_at": time.time(), "dropped": 0, "dup": 0, "lag": 0.0})
+        waiting = set()  # demandes en file (adresse, n°, signature) : une copie renvoyée par le routeur est ignorée
+        lock = threading.Lock()
 
-        def work(data, addr, t0):
-            self._tl.entry = None
+        def work(data, addr, t0, key):
             try:
-                out = self.handle(data, addr[0], kind)
-                if out:
-                    sock.sendto(out, addr)
-            except Exception as e:  # un paquet bizarre ne doit jamais arrêter le serveur
-                self.log(f"ADER Roaming : erreur {e!r}")
-            took = time.time() - t0  # depuis l'arrivée du paquet (attente comprise)
-            if self._tl.entry is not None:
-                self._tl.entry[6] = round(took, 2)
-            if kind == "auth" and took > 1:
-                self.log(f"ADER Roaming : réponse lente ({took:.1f} s)")
+                age = time.time() - t0
+                if age > self.MAX_WAIT[kind]:
+                    st["dropped"] += 1  # trop vieille : le routeur ne l'attend plus, on passe aux demandes fraîches
+                    return
+                self._tl.entry = None
+                try:
+                    out = self.handle(data, addr[0], kind)
+                    if out:
+                        sock.sendto(out, addr)
+                except Exception as e:  # un paquet bizarre ne doit jamais arrêter le serveur
+                    self.log(f"ADER Roaming : erreur {e!r}")
+                took = time.time() - t0  # depuis l'arrivée du paquet (attente comprise)
+                st["lag"] = round(took, 2)
+                if self._tl.entry is not None:
+                    self._tl.entry[6] = round(took, 2)
+            finally:
+                st["done_at"] = time.time()
+                with lock:
+                    st["pending"] -= 1
+                    waiting.discard(key)
         while True:
             try:
                 data, addr = sock.recvfrom(4096)
             except OSError:
                 return
-            pool.submit(work, data, addr, time.time())
+            key = (addr, data[1:2], data[4:20])
+            with lock:
+                if key in waiting:
+                    st["dup"] += 1
+                    continue
+                waiting.add(key)
+                st["pending"] += 1
+            pool.submit(work, data, addr, time.time(), key)
+
+    def stuck(self):
+        """Des demandes attendent mais plus rien n'est traité depuis 60 s : le programme est coincé."""
+        now = time.time()
+        return any(f["pending"] > 0 and now - f["done_at"] > 60 for f in self.flow.values())
+
+    def _write(self, fn, *args):
+        """Écritures faites à côté (après la réponse au routeur), par un seul fil, dans l'ordre.
+        Avant : un nouveau fil par connexion, des milliers en cas d'afflux, tous en attente de la base."""
+        if self._writes.qsize() > 5000:
+            return  # afflux énorme : on garde la mémoire (la réservation en mémoire protège déjà)
+        self._writes.put((fn, args))
+
+    def _writer(self):
+        while True:
+            fn, args = self._writes.get()
+            try:
+                fn(*args)
+            except Exception as e:
+                self.log(f"ADER Roaming : écriture non faite ({e!r})")
 
 
 def _mac(m):

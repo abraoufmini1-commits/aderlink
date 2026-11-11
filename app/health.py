@@ -16,7 +16,7 @@ from .radiusd import CHILD_STATE, _read_json
 EVERY = 60
 LIVE_PATHS = ("/check", "/test")
 LABELS = {"releves-secours": "programme des relevés", "releves": "relevés des routeurs",
-          "roaming": "programme ADER Roaming", "lent": "vitesse de l'application", "disque": "place sur le disque"}  # boutons qui attendent les routeurs en direct : lenteur normale
+          "roaming": "programme ADER Roaming", "roaming-charge": "charge d'ADER Roaming", "lent": "vitesse de l'application", "disque": "place sur le disque"}  # boutons qui attendent les routeurs en direct : lenteur normale
 
 
 class Health:
@@ -32,6 +32,13 @@ class Health:
         self.alerted = {}   # problème -> message envoyé
         self._roam_restarts = []  # heures des relances du programme Roaming
         self._last_restarts = 0
+
+    def _roam_overload(self, child):
+        """Plus de 20 demandes abandonnées (trop vieilles) depuis la dernière vérification."""
+        total = sum((f or {}).get("dropped", 0) for f in (child.get("flow") or {}).values())
+        prev, self._dropped_total = getattr(self, "_dropped_total", None), total
+        self._dropped_last = total - prev if prev is not None and total >= prev else 0
+        return self._dropped_last > 20
 
     def start(self):
         threading.Thread(target=self._loop, daemon=True, name="health").start()
@@ -91,6 +98,9 @@ class Health:
             if up > 120 and now - (child.get("at") or 0) > 120:
                 out["roaming"] = (True, "le programme ADER Roaming ne répond plus : les tickets Roaming "
                                         "peuvent être refusés.")
+            elif self._roam_overload(child):
+                out["roaming-charge"] = (False, f"ADER Roaming surchargé : {self._dropped_last} demandes de connexion "
+                                                "trop anciennes abandonnées en 1 minute (les clients doivent réessayer).")
             elif len(self._roam_restarts) >= 3:
                 out["roaming"] = (True, f"le programme ADER Roaming s'est arrêté {len(self._roam_restarts)} fois "
                                         "en 10 minutes.")

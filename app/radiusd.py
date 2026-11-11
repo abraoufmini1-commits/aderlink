@@ -103,12 +103,16 @@ def run(config_path, data_dir, load_config):
                         roaming._forget_cache()
                 except Exception as e:
                     print(f"ADER Roaming : configuration non relue ({e})", flush=True)
+            # coincé (des demandes attendent, rien n'est traité depuis 60 s) : on s'arrête, le principal relance aussitôt
+            if roaming.stuck():
+                print("ADER Roaming : programme coincé (aucune demande traitée depuis 60 s) : redémarrage", flush=True)
+                os._exit(4)
             # ce que nous disons au programme principal
             try:
                 _write_json(data_dir / CHILD_STATE, {
                     "at": int(time.time()), "pid": os.getpid(), "listening": roaming.listening,
                     "seen": roaming.seen, "ignored": {k: list(v) for k, v in roaming.ignored.items()},
-                    "journal": [list(x) for x in roaming.journal]})
+                    "journal": [list(x) for x in roaming.journal], "flow": roaming.flow})
             except OSError as e:
                 print(f"ADER Roaming : état non écrit ({e})", flush=True)
 
