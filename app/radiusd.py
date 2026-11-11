@@ -66,6 +66,7 @@ def run(config_path, data_dir, load_config):
     else:
         raise RuntimeError("base de données occupée depuis plus de 2 minutes au démarrage")
     tickets.roaming = roaming
+    roaming.async_writes = True  # la réponse aux routeurs n'attend jamais la base
 
     def kick(zid, code):
         z = next((z for z in cfg.get("zones", []) if z["id"] == zid), None)
@@ -145,9 +146,9 @@ def run(config_path, data_dir, load_config):
                     top = f
                     while f and "/app/" not in f.f_code.co_filename:
                         f = f.f_back
-                    if f is None or (top.f_code.co_name in idle and f.f_code.co_name in ("_loop", "_writer", "loop", "sync", "_worker")):
+                    if f is None or (top.f_code.co_name in idle and f.f_code.co_name in ("_loop", "_writer", "_kicker_loop", "loop", "sync", "_worker")):
                         continue
-                    if top is f and f.f_code.co_name in ("_loop", "_writer", "loop", "sync", "sampler", "run"):
+                    if top is f and f.f_code.co_name in ("_loop", "_writer", "_kicker_loop", "loop", "sync", "sampler", "run"):
                         continue
                     hot["now"][f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name}:{f.f_lineno} ({top.f_code.co_name})"] += 1
                 if time.time() - hot["since"] > 60:

@@ -45,6 +45,8 @@ class Roaming:
         self.flow = {}  # file d'attente des demandes RADIUS (en attente, traitées, abandonnées)
         import queue
         self._writes = queue.Queue()
+        self.async_writes = False  # True dans le programme Roaming : écritures à côté, par lots
+        self.write_lost = 0
         threading.Thread(target=self._writer, daemon=True, name="roaming-writer").start()
         self._held, self._held_lock = {}, threading.Lock()  # réservations immédiates, en mémoire
         self.kicker_many = None  # fonction (zone_id, [noms]) : coupe plusieurs sessions avec une seule connexion
@@ -519,15 +521,9 @@ class Roaming:
             return False, ("Ticket deja connecte sur un autre routeur du reseau : deconnectez-le d'abord" if other
                            else "Ticket deja connecte sur un autre appareil"), {}
         if moved and zone_id:
-            def close_old(a):  # écrit à côté : la réponse au routeur n'attend pas la base
-                try:
-                    with self.store.lock:
-                        self.store.db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? "
-                                              "AND mac = ? AND nas_zone != ?", a)
-                        self.store.db.commit()
-                except Exception as e:
-                    self.log(f"ADER Roaming : ancienne session non fermée ({e!r})")
-            self._write(close_old, (t["home"], code, mac.upper(), zone_id))
+            a = (t["home"], code, mac.upper(), zone_id)
+            self._write(lambda db: db.execute("UPDATE roaming_sessions SET active = 0 WHERE home_zone = ? AND code = ? "
+                                              "AND mac = ? AND nas_zone != ?", a))
             if self.kicker:  # on ferme l'ancienne connexion là où il était
                 self._kick_zones(moved, [code, mac])
         # réservation : bloque un 2e appareil pendant que le routeur ouvre la session. Écrite à côté, APRÈS la
@@ -539,7 +535,7 @@ class Roaming:
                     self._held.clear()
                 self._held.setdefault((t["home"], code), []).append((zone_id, _mac(mac), now))
             args = (f"pending-{mac or 'x'}", zone_id, code, t["home"], now, now, _mac(mac))
-            self._write(self._reserve, args)
+            self._reserve(args)
         if f:
             rate = self.tickets._rate(f["down_mbps"], f["up_mbps"])
             if rate:
@@ -550,23 +546,19 @@ class Roaming:
 
     def _reserve(self, args):
         # args = (session_id, nas_zone, code, home, started, updated, mac)
-        try:
-            with self.store.lock:
-                # vérifié sous le même verrou que la confirmation du routeur : si elle est déjà passée,
-                # la réservation est devenue inutile et ne doit pas bloquer le ticket
-                with self._held_lock:
-                    if not any(h[0] == args[1] and h[2] == args[4] for h in self._held.get((args[3], args[2]), [])):
-                        return
-                self.store.db.execute(
-                    "INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
-                    "VALUES (?,?,?,?,?,?,?,1)", args)
-                self.store.db.commit()
-        except Exception as e:
-            self.log(f"ADER Roaming : réservation non écrite ({e!r})")
+        def job(db):
+            # vérifié sous le même verrou que la confirmation du routeur : si elle est déjà passée,
+            # la réservation est devenue inutile et ne doit pas bloquer le ticket
+            with self._held_lock:
+                if not any(h[0] == args[1] and h[2] == args[4] for h in self._held.get((args[3], args[2]), [])):
+                    return
+            db.execute("INSERT OR REPLACE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac, active) "
+                       "VALUES (?,?,?,?,?,?,?,1)", args)
+        self._write(job)
 
     def _expire(self, home, code, now):
-        self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ? AND expired_at IS NULL",
-                (now, home, code), commit=True)
+        self._write(lambda db: db.execute(
+            "UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ? AND expired_at IS NULL", (now, home, code)))
 
     def account(self, gid, zone, pkt, now=None):
         now = now or int(time.time())
@@ -586,25 +578,27 @@ class Roaming:
         secs = pkt.int(R.ACCT_SESSION_TIME)
         with self._held_lock:  # le routeur a confirmé : la base prend le relais de la réservation en mémoire
             self._held.pop((t["home"], code), None)
-        with self.store.lock:
-            db = self.store.db
+        mac = _mac(pkt.text(R.CALLING_STATION_ID))
+        nas, home = zone["id"], t["home"]
+
+        def job(db):
             db.execute("DELETE FROM roaming_sessions WHERE session_id LIKE 'pending-%' AND nas_zone = ? AND code = ?",
-                       (zone["id"], code))
+                       (nas, code))
             # Après un redémarrage, le routeur recommence ses numéros de session : un numéro déjà vu peut
             # appartenir à un AUTRE ticket. L'ancienne ligne est renommée (son historique reste compté pour
             # son ticket) au lieu de recevoir la consommation du nouveau ticket.
             db.execute("UPDATE roaming_sessions SET session_id = session_id || '-old-' || started, active = 0 "
-                       "WHERE session_id = ? AND nas_zone = ? AND code != ?", (sid, zone["id"], code))
+                       "WHERE session_id = ? AND nas_zone = ? AND code != ?", (sid, nas, code))
             db.execute("INSERT OR IGNORE INTO roaming_sessions (session_id, nas_zone, code, home_zone, started, updated, mac) "
-                       "VALUES (?,?,?,?,?,?,?)", (sid, zone["id"], code, t["home"], now, now, _mac(pkt.text(R.CALLING_STATION_ID))))
+                       "VALUES (?,?,?,?,?,?,?)", (sid, nas, code, home, now, now, mac))
             db.execute("UPDATE roaming_sessions SET updated = ?, bytes = MAX(bytes, ?), seconds = MAX(seconds, ?), active = ? "
-                       "WHERE session_id = ? AND nas_zone = ?", (now, total, secs, 0 if status == R.ACCT_STOP else 1, sid, zone["id"]))
+                       "WHERE session_id = ? AND nas_zone = ?", (now, total, secs, 0 if status == R.ACCT_STOP else 1, sid, nas))
             db.execute("UPDATE tickets SET bytes_used = (SELECT COALESCE(SUM(bytes), 0) FROM roaming_sessions WHERE home_zone = ? AND code = ?), "
                        "uptime_used = (SELECT COALESCE(SUM(seconds), 0) FROM roaming_sessions WHERE home_zone = ? AND code = ?), "
                        "first_used = CASE WHEN ? > 0 THEN COALESCE(first_used, ?) ELSE first_used END "
                        "WHERE zone_id = ? AND code = ?",
-                       (t["home"], code, t["home"], code, total, now, t["home"], code))
-            db.commit()
+                       (home, code, home, code, total, now, home, code))
+        self._write(job)  # réponse au routeur tout de suite ; consommation enregistrée juste après
         if status != R.ACCT_START and self.finished(gid, code, now):
             self.end_ticket(gid, code, t["home"], now)
 
@@ -876,20 +870,53 @@ class Roaming:
         now = time.time()
         return any(f["pending"] > 0 and now - f["done_at"] > 60 for f in self.flow.values())
 
-    def _write(self, fn, *args):
-        """Écritures faites à côté (après la réponse au routeur), par un seul fil, dans l'ordre.
-        Avant : un nouveau fil par connexion, des milliers en cas d'afflux, tous en attente de la base."""
-        if self._writes.qsize() > 5000:
-            return  # afflux énorme : on garde la mémoire (la réservation en mémoire protège déjà)
-        self._writes.put((fn, args))
+    def _write(self, job):
+        """Écriture job(db) faite à côté : la réponse au routeur n'attend jamais la base.
+        Dans les tests (async_writes = False) : tout de suite, comme avant."""
+        if not self.async_writes:
+            with self.store.lock:
+                job(self.store.db)
+                self.store.db.commit()
+            return
+        if self._writes.qsize() > 20000:
+            self.write_lost += 1  # afflux énorme : on protège la mémoire
+            return
+        self._writes.put(job)
 
     def _writer(self):
+        """Un seul fil écrit, jusqu'à 200 écritures en une seule fois : quand la base est occupée par un autre
+        programme, un seul moment libre suffit pour tout enregistrer (avant : une attente par écriture,
+        1 600 tâches bloquées à la porte de la base, réponses aux routeurs en retard de 3 minutes)."""
+        import queue as _queue
+        import sqlite3
         while True:
-            fn, args = self._writes.get()
-            try:
-                fn(*args)
-            except Exception as e:
-                self.log(f"ADER Roaming : écriture non faite ({e!r})")
+            batch = [self._writes.get()]
+            while len(batch) < 200:
+                try:
+                    batch.append(self._writes.get_nowait())
+                except _queue.Empty:
+                    break
+            for attempt in range(6):
+                try:
+                    with self.store.lock:
+                        for job in batch:
+                            try:
+                                job(self.store.db)
+                            except sqlite3.OperationalError:
+                                raise
+                            except Exception as e:  # une écriture bizarre ne doit pas faire perdre les autres
+                                self.log(f"ADER Roaming : écriture non faite ({e!r})")
+                        self.store.db.commit()
+                    break
+                except sqlite3.OperationalError as e:  # base occupée : on recommence le lot un peu plus tard
+                    try:
+                        self.store.db.rollback()
+                    except sqlite3.Error:
+                        pass
+                    time.sleep(1 + attempt)
+            else:
+                self.write_lost += len(batch)
+                self.log(f"ADER Roaming : {len(batch)} écritures perdues (base occupée trop longtemps)")
 
 
 def _is_mac_login(data):
