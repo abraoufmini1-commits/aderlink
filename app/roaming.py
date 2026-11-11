@@ -377,6 +377,14 @@ class Roaming:
 
     CHECK_S = 600  # toutes les 10 minutes : l'autre système de tickets peut remettre sa configuration
 
+    def needs_ensure(self, zone):
+        """Le réglage ADER Roaming de ce routeur est-il à faire ou à revérifier (toutes les 10 min) ?"""
+        g = self.group_of_zone(zone["id"])
+        if not g:
+            return False
+        st = self.setup.get(zone["id"])
+        return not (st and st.get("gid") == g["id"] and time.time() - st.get("checked", st["ts"]) < self.CHECK_S)
+
     def ensure(self, zone, api):
         """Appelé à chaque relevé : règle le routeur, puis vérifie toutes les 10 minutes que le réglage
         ADER Roaming est toujours là et passe toujours en premier (sinon on le remet aussitôt)."""

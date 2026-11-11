@@ -8,6 +8,7 @@
 import random
 import secrets
 import sqlite3
+import threading
 import time
 
 from .routeros import RouterOS, RouterOSError
@@ -49,6 +50,11 @@ class Tickets:
         par le programme principal : avant, les 3 le faisaient en même temps, la base était occupée et le
         programme des relevés s'arrêtait (« database is locked »)."""
         self.config = config
+        # entretien des routeurs à côté du relevé (programmes réels) ; dans les tests : tout de suite, en ligne
+        from concurrent.futures import ThreadPoolExecutor
+        self.background = False
+        self._maint_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="entretien")
+        self._maint_lock, self._maint_running = threading.Lock(), set()
         self.store = store
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
@@ -623,11 +629,52 @@ class Tickets:
                     self.store.add_event(now, zid, "offline", f"Ticket {code} non désactivé : {e}")
                     continue
             self._q("UPDATE tickets SET expired_at = ? WHERE zone_id = ? AND code = ?", (now, zid, code), commit=True)
+        if api is None:
+            return
+        if self.background and not self.demo:
+            self._maintain_later(zone, now)  # à côté : le relevé des routeurs n'attend jamais ce travail
+        else:
+            self._maintain(zone, api, now)
+
+    def _maintain_later(self, zone, now):
+        """Entretien d'un routeur (scripts, ménage des vieux tickets, réglage ADER Roaming) fait par un fil à part,
+        avec sa propre connexion. Avant, le relevé des 78 routeurs attendait la fin de cet entretien :
+        un seul routeur lent pendant un ménage bloquait tout (« aucun relevé depuis 6 minutes »)."""
+        zid = zone["id"]
+        if not self._maintenance_due(zone, now):
+            return
+        with self._maint_lock:
+            if zid in self._maint_running:
+                return
+            self._maint_running.add(zid)
+
+        def job():
+            try:
+                with open_router(zone, timeout=10) as api:
+                    self._maintain(zone, api, int(time.time()))
+            except Exception as e:
+                self.store.add_event(int(time.time()), zid, "offline", f"Ticket : entretien du routeur impossible : {e}")
+            finally:
+                with self._maint_lock:
+                    self._maint_running.discard(zid)
+        self._maint_pool.submit(job)
+
+    def _maintenance_due(self, zone, now):
+        zid = zone["id"]
+        last = self._synced.get(zid)
+        if not self.demo and last != "ok" and now - (last or 0) > 3600:
+            return True
+        if self._purge_due(zid, now):
+            return True
+        return bool(self.roaming and not self.demo and self.roaming.needs_ensure(zone))
+
+    def _maintain(self, zone, api, now):
+        zid = zone["id"]
         last = self._synced.get(zid)
         # après un redémarrage : 3 routeurs au plus par minute (sinon tous en même temps chargent le serveur)
         recent = [t for t in self._sync_times if now - t < 60]
         self._sync_times[:] = recent
-        if api is not None and not self.demo and last != "ok" and now - (last or 0) > 3600 and len(recent) < 3:
+        if not self.demo and last != "ok" and now - (last or 0) > 3600 and len(recent) < 3:
             self._sync_times.append(now)
             try:
                 self.sync_router(api)
@@ -635,9 +682,8 @@ class Tickets:
             except RouterOSError as e:
                 self._synced[zid] = now  # on réessaiera dans 1 heure
                 self.store.add_event(now, zid, "offline", f"Ticket : mise à jour des scripts du routeur impossible : {e}")
-        if api is not None:
-            self._purge(zid, api, now)
-        if api is not None and not self.demo and self.roaming:
+        self._purge(zid, api, now)
+        if not self.demo and self.roaming:
             try:
                 self.roaming.ensure(zone, api)  # ADER Roaming réglé tout seul sur ce routeur
             except Exception as e:  # ne doit jamais bloquer le relevé
@@ -684,18 +730,21 @@ class Tickets:
 
     PURGE_EVERY = 6 * 3600  # toutes les 6 heures par routeur (liste complète des tickets du routeur : lourd)
 
+    def _purge_due(self, zid, now):
+        if zid not in self._purged_at:
+            # 1re fois depuis le démarrage : pas tous les routeurs d'un coup. Chaque routeur reçoit une heure
+            # au hasard dans les 30 prochaines minutes.
+            import random
+            self._purged_at[zid] = now - self.PURGE_EVERY + random.randint(60, 1800)
+        return now - self._purged_at[zid] >= self.PURGE_EVERY
+
     def _purge(self, zid, api, now):
         """Filet de sécurité : un ticket fini depuis 7 jours est supprimé du routeur
         (le routeur le fait lui-même ; ceci rattrape un routeur resté éteint ce jour-là).
         Toutes les 6 heures par routeur, et en 2 demandes au routeur (avant : 2 à 4 demandes PAR ticket,
         jusqu'à 200 tickets à chaque relevé — le relevé des routeurs prenait plus de 2 minutes)."""
         from .mikrotik import KEEP_DAYS
-        if zid not in self._purged_at:
-            # 1re fois depuis le démarrage : pas tous les routeurs d'un coup (le 1er relevé durait plusieurs
-            # minutes). Chaque routeur reçoit une heure au hasard dans les 30 prochaines minutes.
-            import random
-            self._purged_at[zid] = now - self.PURGE_EVERY + random.randint(60, 1800)
-        if now - self._purged_at[zid] < self.PURGE_EVERY:
+        if not self._purge_due(zid, now):
             return
         self._purged_at[zid] = now
         old, _ = self._q(

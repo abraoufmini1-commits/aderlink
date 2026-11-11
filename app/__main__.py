@@ -229,6 +229,7 @@ def cmd_serve(args):
     if separate:
         def local_collector():  # secours : relevés dans le programme principal si le séparé ne tient pas
             c = Collector(cfg, store)
+            tickets.background = True
             c.ticket_hook = tickets.on_poll
             return c
         collector.fallback = local_collector
@@ -268,6 +269,8 @@ def cmd_serve(args):
         _demo_users(cfg, users, tickets)
         _demo_samples(cfg, store)
     roaming_proc = None
+    if not separate and not args.demo:
+        tickets.background = True  # relevés dans ce programme : entretien des routeurs à côté
     if not separate:
         collector.poll_all()  # premier état avant d'ouvrir le tableau de bord
     collector.start()

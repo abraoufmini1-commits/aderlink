@@ -46,6 +46,7 @@ def run(config_path, data_dir, load_config):
             store = Store(str(data_dir / "aderlink.db"))
             collector = Collector(cfg, store)
             tickets = Tickets(cfg, store, maintenance=False)
+            tickets.background = True  # entretien des routeurs à côté du relevé
             roaming = Roaming(cfg, store, tickets, collector, log=log)  # seulement pour le réglage des routeurs
             break
         except sqlite3.OperationalError as e:
