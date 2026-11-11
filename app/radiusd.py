@@ -150,7 +150,13 @@ def run(config_path, data_dir, load_config):
                         continue
                     if top is f and f.f_code.co_name in ("_loop", "_writer", "_kicker_loop", "loop", "sync", "sampler", "run"):
                         continue
-                    hot["now"][f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name}:{f.f_lineno} ({top.f_code.co_name})"] += 1
+                    # chemin complet (3 étapes du programme) : qui appelle qui, pour savoir QUI attend
+                    chain, g = [], f
+                    while g and len(chain) < 3:
+                        if "/app/" in g.f_code.co_filename:
+                            chain.append(f"{g.f_code.co_filename.rsplit('/', 1)[-1].replace('.py', '')}:{g.f_code.co_name}:{g.f_lineno}")
+                        g = g.f_back
+                    hot["now"][" < ".join(chain) + f" ({top.f_code.co_name}) [{threading._active.get(tid).name if threading._active.get(tid) else '?'}]"] += 1
                 if time.time() - hot["since"] > 60:
                     hot["prev"], hot["now"], hot["since"] = hot["now"], collections.Counter(), time.time()
             except Exception:
