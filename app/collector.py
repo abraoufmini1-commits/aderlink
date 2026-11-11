@@ -355,6 +355,7 @@ class Collector:
         self._stop = threading.Event()
         self.last_cycle = None   # (heure, durée en s) du dernier relevé complet
         self._agg = {}  # zone_id -> mesure des 5 minutes en cours (pas encore écrite)
+        self._pool, self._inflight = None, {}  # relevés en cours (un routeur lent finit à côté)
         self._pending_samples = None  # pendant un relevé complet : les mesures, écrites d'un coup à la fin
         self._mass = 0           # relevés de suite où presque tout est injoignable (coupure côté serveur)
         self.ticket_hook = None  # fonction (zone, api, sessions) branchée par le module Tickets
@@ -402,16 +403,37 @@ class Collector:
         if not zones:
             return
         t0 = time.time()
-        # beaucoup de routeurs : plus de relevés en parallèle, pour qu'un routeur éteint (8 s d'attente) ne ralentisse pas les autres
-        # 16 relevés en parallèle : assez pour 70+ routeurs, sans étouffer les réponses Roaming (même programme)
-        with ThreadPoolExecutor(max_workers=min(16, len(zones))) as pool:
-            snaps = dict(zip((z["id"] for z in zones), pool.map(self._poll_zone, zones)))
-            # Un routeur qui était en ligne et ne répond pas : on réessaie une fois, quelques secondes après,
-            # avant de le dire hors ligne (une petite perte de paquets ne doit pas donner une fausse coupure).
-            retry = [z for z in zones if self._failed(z, snaps[z["id"]])]
-            if retry and not self._stop.wait(3):
-                for z, snap in zip(retry, pool.map(self._poll_zone, retry)):
-                    snaps[z["id"]] = snap
+        # Relevés en parallèle, avec un TEMPS MAXIMUM : un routeur qui met plus de 40 s (ligne très lente, beaucoup de
+        # tickets à désactiver…) est laissé de côté pour ce tour, avec son dernier état connu, et finit tout seul
+        # à côté. Avant, le tour entier l'attendait et les 78 routeurs restaient sans relevé (jusqu'à 30 minutes).
+        from concurrent.futures import wait as _wait
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=32, thread_name_prefix="releve")
+        for zid in [k for k, f in self._inflight.items() if f.done()]:
+            del self._inflight[zid]
+        todo = [z for z in zones if z["id"] not in self._inflight]
+        futs = {z["id"]: self._pool.submit(self._poll_zone, z) for z in todo}
+        _wait(list(futs.values()), timeout=self.ZONE_BUDGET)
+        snaps = {}
+        for z in todo:
+            f = futs[z["id"]]
+            if f.done():
+                snaps[z["id"]] = f.result()
+            else:
+                self._inflight[z["id"]] = f  # encore en cours : on n'attend pas, il finira à côté
+        # Un routeur qui était en ligne et ne répond pas : on réessaie une fois, quelques secondes après,
+        # avant de le dire hors ligne (une petite perte de paquets ne doit pas donner une fausse coupure).
+        retry = [z for z in todo if z["id"] in snaps and self._failed(z, snaps[z["id"]])]
+        if retry and not self._stop.wait(3):
+            rf = {z["id"]: self._pool.submit(self._poll_zone, z) for z in retry}
+            _wait(list(rf.values()), timeout=self.ZONE_BUDGET / 2)
+            for zid, f in rf.items():
+                if f.done():
+                    snaps[zid] = f.result()
+        slow = [z["name"] for z in zones if z["id"] in self._inflight]
+        if slow:
+            print(f"[collecte] {len(slow)} routeur(s) trop lents, laissés pour ce tour : {', '.join(slow[:5])}", flush=True)
+        zones = [z for z in zones if z["id"] in snaps]  # ce tour : seulement les routeurs qui ont répondu à temps
         failed = [z for z in zones if self._failed(z, snaps[z["id"]])]
         watched = [z for z in zones if (z.get("router") or {}).get("host")]
         # Beaucoup de routeurs coupés à la même seconde : la coupure vient du serveur ou d'Internet, pas des routeurs.
@@ -444,6 +466,8 @@ class Collector:
         self.last_cycle = (int(time.time()), round(took, 1))
         if took > self.poll_seconds:
             print(f"[collecte] relevé lent : {took:.0f} s pour {len(zones)} routeurs", flush=True)
+
+    ZONE_BUDGET = 40  # secondes au plus pour un routeur dans un tour de relevés
 
     SAMPLE_STEP = 300  # une mesure par routeur toutes les 5 minutes dans la base (le direct reste en mémoire)
 
