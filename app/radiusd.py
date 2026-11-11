@@ -97,6 +97,21 @@ def run(config_path, data_dir, load_config):
         while True:
             time.sleep(2)
             n += 1
+            try:  # ce fil ne doit JAMAIS s'arrêter : il donne signe de vie et surveille le reste
+                sync_once(n)
+            except Exception as e:
+                print(f"ADER Roaming : suivi {e!r}", flush=True)
+
+    def copy(fn, fallback):
+        for _ in range(5):  # un autre fil peut modifier la liste pendant la copie : on réessaie
+            try:
+                return fn()
+            except RuntimeError:
+                time.sleep(0.01)
+        return fallback
+
+    def sync_once(n):
+        if True:
             if os.getppid() != parent:  # le programme principal s'est arrêté : on s'arrête aussi
                 os._exit(0)
             # ce que le programme principal nous dit
@@ -124,10 +139,12 @@ def run(config_path, data_dir, load_config):
             try:
                 _write_json(data_dir / CHILD_STATE, {
                     "at": int(time.time()), "pid": os.getpid(), "listening": roaming.listening,
-                    "seen": roaming.seen, "ignored": {k: list(v) for k, v in roaming.ignored.items()},
-                    "journal": [list(x) for x in roaming.journal], "flow": roaming.flow,
-                    "hot": (hot["now"] + hot["prev"]).most_common(8), "threads": threading.active_count(),
-                    "writes": roaming._writes.qsize()})
+                    "seen": copy(lambda: dict(roaming.seen), {}),
+                    "ignored": copy(lambda: {k: list(v) for k, v in list(roaming.ignored.items())}, {}),
+                    "journal": copy(lambda: [list(x) for x in list(roaming.journal)], []),
+                    "flow": copy(lambda: {k: dict(v) for k, v in list(roaming.flow.items())}, {}),
+                    "hot": copy(lambda: (collections.Counter(dict(hot["now"])) + collections.Counter(dict(hot["prev"]))).most_common(8), []),
+                    "threads": threading.active_count(), "writes": roaming._writes.qsize()})
             except OSError as e:
                 print(f"ADER Roaming : état non écrit ({e})", flush=True)
 
@@ -185,6 +202,7 @@ class RoamingProcess:
     def _spawn(self):
         env = dict(os.environ)
         root = Path(__file__).resolve().parent.parent
+        self._started = time.time()
         self.proc = subprocess.Popen([sys.executable, "-m", "app", "radius"], cwd=str(root), env=env)
         self.log(f"ADER Roaming : programme séparé lancé (n° {self.proc.pid})")
 
@@ -195,6 +213,15 @@ class RoamingProcess:
     def _watch(self):
         while True:
             time.sleep(2)
+            # vivant mais muet depuis 90 s (bloqué) : arrêté, puis relancé juste en dessous
+            child_at = (_read_json(self.data_dir / CHILD_STATE) or {}).get("at") or 0
+            if self.proc and self.proc.poll() is None and time.time() - self._started > 90 and time.time() - child_at > 90:
+                self.log("ADER Roaming : programme muet depuis 90 s : relancé")
+                self.proc.kill()
+                try:
+                    self.proc.wait(10)
+                except Exception:
+                    pass
             if self.proc and self.proc.poll() is not None:
                 self.restarts += 1
                 self.log(f"ADER Roaming : programme séparé arrêté (code {self.proc.returncode}), relancé")
