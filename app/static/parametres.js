@@ -59,6 +59,10 @@
         row("Attente base de données", Math.round(d.lock_wait_s * 1000) + " ms", d.lock_wait_s > 0.5) +
         row("Base de données", d.db_mb == null ? "–" : d.db_mb + " Mo" + (d.wal_mb ? " (journal " + d.wal_mb + " Mo)" : "")) +
         row("En marche depuis", new Date(d.started * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) +
+        (d.roaming ? "<div class='dg-slow'><b>ADER Roaming :</b> " + (d.roaming.age > 30 ? "<b class='bad'>pas de nouvelles depuis " + d.roaming.age + " s</b>" :
+            "en file " + d.roaming.pending + " · réponse " + String(d.roaming.lag).replace(".", ",") + " s · abandonnées (trop vieilles) " + d.roaming.dropped +
+            " · écritures en attente " + d.roaming.writes + " · fils " + d.roaming.threads) +
+          ((d.roaming.hot || []).length ? "<br><b>Roaming travaille sur :</b>" + d.roaming.hot.map(function (x) { return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") : "") + "</div>" : "") +
         ((d.hot || []).length ? "<div class='dg-slow'><b>Le serveur travaille sur :</b>" + d.hot.map(function (x) {
           return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") + "</div>" : "") +
         ((d.lock_long || []).length ? "<div class='dg-slow'><b>Base bloquée longtemps par :</b>" + d.lock_long.map(function (x) {

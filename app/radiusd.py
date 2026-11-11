@@ -112,11 +112,39 @@ def run(config_path, data_dir, load_config):
                 _write_json(data_dir / CHILD_STATE, {
                     "at": int(time.time()), "pid": os.getpid(), "listening": roaming.listening,
                     "seen": roaming.seen, "ignored": {k: list(v) for k, v in roaming.ignored.items()},
-                    "journal": [list(x) for x in roaming.journal], "flow": roaming.flow})
+                    "journal": [list(x) for x in roaming.journal], "flow": roaming.flow,
+                    "hot": (hot["now"] + hot["prev"]).most_common(8), "threads": threading.active_count(),
+                    "writes": roaming._writes.qsize()})
             except OSError as e:
                 print(f"ADER Roaming : état non écrit ({e})", flush=True)
 
+    hot = {"now": collections.Counter(), "prev": collections.Counter(), "since": time.time()}
+
+    def sampler():
+        """Où le programme Roaming passe son temps (affiché dans « État du serveur ») : 2 coups d'œil par seconde."""
+        idle = ("recvfrom", "sleep", "get", "_worker", "wait", "select")
+        me = threading.get_ident()
+        while True:
+            time.sleep(0.5)
+            try:
+                for tid, f in sys._current_frames().items():
+                    if tid == me:
+                        continue
+                    top = f
+                    while f and "/app/" not in f.f_code.co_filename:
+                        f = f.f_back
+                    if f is None or (top.f_code.co_name in idle and f.f_code.co_name in ("_loop", "_writer", "loop", "sync", "_worker")):
+                        continue
+                    if top is f and f.f_code.co_name in ("_loop", "_writer", "loop", "sync", "sampler", "run"):
+                        continue
+                    hot["now"][f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name}:{f.f_lineno} ({top.f_code.co_name})"] += 1
+                if time.time() - hot["since"] > 60:
+                    hot["prev"], hot["now"], hot["since"] = hot["now"], collections.Counter(), time.time()
+            except Exception:
+                pass
+
     roaming.start()
+    threading.Thread(target=sampler, daemon=True, name="roaming-sampler").start()
     print("ADER Roaming : programme séparé démarré", flush=True)
     threading.Thread(target=sync, daemon=True, name="roaming-sync").start()
     while True:

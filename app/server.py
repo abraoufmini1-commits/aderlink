@@ -211,7 +211,18 @@ class App:
                 spots[f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name} ({top.f_code.co_name})"] += 1
             # fils qui attendent un routeur (réseau) : comptés à part, ce n'est pas du travail du processeur
             time.sleep(0.1)
-        return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus,
+        roam = None
+        if self.paths.get("db"):
+            from .radiusd import CHILD_STATE, _read_json
+            c = _read_json(Path(self.paths["db"]).parent / CHILD_STATE)
+            if c:
+                fl = c.get("flow") or {}
+                roam = {"age": int(time.time() - (c.get("at") or 0)), "threads": c.get("threads"), "writes": c.get("writes"),
+                        "pending": sum(f.get("pending", 0) for f in fl.values()),
+                        "dropped": sum(f.get("dropped", 0) for f in fl.values()),
+                        "lag": max([f.get("lag", 0) for f in fl.values()] or [0]),
+                        "hot": [{"where": w, "n": n} for w, n in (c.get("hot") or [])]}
+        return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus, "roaming": roam,
                 "memory": mem, "db_mb": db_mb, "wal_mb": wal_mb, "lock_wait_s": lock_wait,
                 "hot": [{"where": k, "n": v} for k, v in spots.most_common(6)],
                 "lock_long": [{"at": a, "seconds": b, "where": c} for a, b, c in reversed(getattr(self.store.lock, "long", []))][:6],

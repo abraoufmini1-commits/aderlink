@@ -782,6 +782,9 @@ class Roaming:
         # plusieurs paquets traités en même temps : une demande de connexion n'attend jamais derrière les autres
         from concurrent.futures import ThreadPoolExecutor
         pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix=f"radius-{kind}")
+        # connexions automatiques par adresse MAC (très nombreuses : chaque téléphone qui capte le Wi-Fi) :
+        # dans leur propre file, pour qu'un code tapé par un client ne passe jamais derrière elles
+        pool_mac = ThreadPoolExecutor(max_workers=4, thread_name_prefix=f"radius-{kind}-mac") if kind == "auth" else pool
         st = self.flow.setdefault(kind, {"pending": 0, "done_at": time.time(), "dropped": 0, "dup": 0, "lag": 0.0})
         waiting = set()  # demandes en file (adresse, n°, signature) : une copie renvoyée par le routeur est ignorée
         lock = threading.Lock()
@@ -820,7 +823,7 @@ class Roaming:
                     continue
                 waiting.add(key)
                 st["pending"] += 1
-            pool.submit(work, data, addr, time.time(), key)
+            (pool_mac if kind == "auth" and _is_mac_login(data) else pool).submit(work, data, addr, time.time(), key)
 
     def stuck(self):
         """Des demandes attendent mais plus rien n'est traité depuis 60 s : le programme est coincé."""
@@ -841,6 +844,15 @@ class Roaming:
                 fn(*args)
             except Exception as e:
                 self.log(f"ADER Roaming : écriture non faite ({e!r})")
+
+
+def _is_mac_login(data):
+    """La demande porte-t-elle une adresse MAC comme nom (connexion automatique) ? Lecture rapide du paquet."""
+    try:
+        pkt = R.Packet.parse(data)
+        return bool(MAC_RE.match(pkt.text(R.USER_NAME) or ""))
+    except Exception:
+        return False
 
 
 def _mac(m):
