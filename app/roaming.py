@@ -47,6 +47,9 @@ class Roaming:
         self._writes = queue.Queue()
         threading.Thread(target=self._writer, daemon=True, name="roaming-writer").start()
         self._held, self._held_lock = {}, threading.Lock()  # réservations immédiates, en mémoire
+        self.kicker_many = None  # fonction (zone_id, [noms]) : coupe plusieurs sessions avec une seule connexion
+        self._kicks, self._kick_lock, self._ended, self._kicked_at = queue.Queue(), threading.Lock(), {}, {}
+        threading.Thread(target=self._kicker_loop, daemon=True, name="roaming-kicker").start()
         self.journal = collections.deque(maxlen=80)  # dernières demandes de connexion (heure, routeur, code, résultat)
         with store.lock:
             store.db.executescript(
@@ -518,7 +521,7 @@ class Roaming:
                     self.log(f"ADER Roaming : ancienne session non fermée ({e!r})")
             self._write(close_old, (t["home"], code, mac.upper(), zone_id))
             if self.kicker:  # on ferme l'ancienne connexion là où il était
-                threading.Thread(target=self._kick_zones, args=(moved, [code, mac]), daemon=True).start()
+                self._kick_zones(moved, [code, mac])
         # réservation : bloque un 2e appareil pendant que le routeur ouvre la session. Écrite à côté, APRÈS la
         # réponse : si l'application principale écrit au même moment, la base peut faire attendre jusqu'à 5 s,
         # et c'était autant de secondes d'attente pour le client devant la page de connexion.
@@ -610,22 +613,57 @@ class Roaming:
         return bool(t["data_mb"] and (t["bytes_used"] or 0) >= t["data_mb"] * 1024 * 1024)
 
     def end_ticket(self, gid, code, home, now=None):
-        """Ticket fini : refusé partout, et coupé sur TOUS les routeurs du réseau où il serait encore connecté."""
-        self._expire(home, code, now or int(time.time()))
-        if self.kicker:
-            threading.Thread(target=self._kick_all, args=(gid, code), daemon=True).start()
+        """Ticket fini : refusé partout, et coupé là où il est encore connecté.
+        Une seule fois (puis au plus toutes les 5 minutes s'il reste connecté) : avant, CHAQUE paquet de
+        consommation d'un ticket fini relançait des connexions vers TOUS les routeurs du réseau, des centaines
+        par minute, et le programme Roaming n'avait plus le temps de répondre aux clients."""
+        now = now or int(time.time())
+        self._expire(home, code, now)
+        if not self.kicker:
+            return
+        key = (gid, code)
+        with self._kick_lock:
+            if now - self._ended.get(key, 0) < 300:
+                return
+            if len(self._ended) > 20000:
+                self._ended.clear()
+            self._ended[key] = now
+        self._kick_all(gid, code)
 
     def _kick_all(self, gid, code):
-        rows, _ = self._q("SELECT DISTINCT mac FROM roaming_sessions WHERE code = ? AND mac IS NOT NULL", (code,))
-        self._kick_zones(self.member_zones(gid), [code] + [r[0] for r in rows if r[0]])
+        """Coupe le ticket sur les routeurs où il a une session en cours (sinon : tout le réseau, une fois)."""
+        rows, _ = self._q("SELECT nas_zone, mac, active, updated FROM roaming_sessions WHERE code = ?", (code,))
+        members = set(self.member_zones(gid))
+        now = int(time.time())
+        live = {z for z, m, a, u in rows if a and u >= now - ACTIVE_S and z in members}
+        names = [code] + sorted({m for z, m, a, u in rows if m})
+        self._kick_zones(live or members, names)
 
     def _kick_zones(self, zones, names):
+        """Mis en file : un seul fil fait les coupures, une connexion par routeur pour tous les noms."""
         for zid in zones:
-            for name in names:  # la session porte le code, ou l'adresse MAC si le téléphone est entré tout seul
-                try:
-                    self.kicker(zid, name)
-                except Exception as e:  # routeur injoignable : la limite envoyée au routeur coupe quand même
-                    self.log(f"ADER Roaming : coupure de {name} sur {zid} impossible ({e})")
+            self._kicks.put((zid, tuple(names)))
+
+    def _kicker_loop(self):
+        while True:
+            zid, names = self._kicks.get()
+            now = time.time()
+            with self._kick_lock:  # déjà coupé il y a moins de 2 minutes : inutile de recommencer
+                names = [n for n in names if now - self._kicked_at.get((zid, n), 0) > 120]
+                for n in names:
+                    self._kicked_at[(zid, n)] = now
+                if len(self._kicked_at) > 50000:
+                    self._kicked_at.clear()
+            if not names:
+                continue
+            try:
+                if self.kicker_many:
+                    self.kicker_many(zid, names)  # une seule connexion au routeur
+                else:
+                    for name in names:  # la session porte le code, ou l'adresse MAC si le téléphone est entré tout seul
+                        self.kicker(zid, name)
+            except Exception as e:  # routeur injoignable : la limite envoyée au routeur coupe quand même
+                self.log(f"ADER Roaming : coupure sur {zid} impossible ({e})")
 
     def code_for_mac(self, gid, mac):
         """Le ticket Roaming en cours de ce téléphone sur ce réseau (le plus récent), s'il y en a un."""

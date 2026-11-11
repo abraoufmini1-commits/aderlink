@@ -76,6 +76,18 @@ def run(config_path, data_dir, load_config):
                 api.query("/ip/hotspot/active/remove", f"=.id={a['.id']}")
     roaming.kicker = kick
 
+    def kick_many(zid, names):
+        """Une seule connexion au routeur, une seule liste des connectés, pour couper tous les noms donnés."""
+        z = next((z for z in cfg.get("zones", []) if z["id"] == zid), None)
+        if not z or not (z.get("router") or {}).get("host"):
+            return
+        want = {str(n).upper() for n in names}
+        with open_router(z, timeout=6) as api:
+            for a in api.query("/ip/hotspot/active/print", "=.proplist=.id,user"):
+                if str(a.get("user", "")).upper() in want:
+                    api.query("/ip/hotspot/active/remove", f"=.id={a['.id']}")
+    roaming.kicker_many = kick_many
+
     parent = os.getppid()
     mtime = [Path(config_path).stat().st_mtime if Path(config_path).exists() else 0]
 
