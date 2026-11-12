@@ -83,7 +83,14 @@ class TrackedLock:
             self.owner = threading.get_ident()
         return ok
 
+    on_release = None  # appelé juste avant de rendre le verrou (Store : ferme toute écriture restée ouverte)
+
     def release(self):
+        if self.on_release:
+            try:
+                self.on_release()
+            except Exception:
+                pass
         self.owner = None
         held = time.time() - self._t
         if held > 0.5:
@@ -113,6 +120,7 @@ class Store:
 
     def __init__(self, path):
         self.lock = TrackedLock()
+        self.lock.on_release = self._close_open_write
         self.path = path
         self._radius_local = threading.local()
         self._readers = queue.LifoQueue()  # quelques connexions en lecture, partagées (pas une par fil)
@@ -245,6 +253,20 @@ class Store:
         with self.lock:
             self.db.execute("INSERT INTO events VALUES (?,?,?,?)", (ts, zone_id, kind, message))
             self.db.commit()
+
+    def _close_open_write(self):
+        """Une écriture qui a échoué (doublon, erreur…) laissait la base « en cours d'écriture » : les autres
+        programmes attendaient alors sans fin (« database is locked », ventes du jour à 0, routeurs sans
+        relevé). Au moment de rendre le verrou, toute écriture encore ouverte est enregistrée et fermée."""
+        db = getattr(self, "db", None)
+        if db is not None and db.in_transaction:
+            try:
+                db.commit()
+            except sqlite3.Error:
+                try:
+                    db.rollback()
+                except sqlite3.Error:
+                    pass
 
     def compact_once(self, marker):
         """Une seule fois (au démarrage, avant tout le reste) : fin de l'allègement de l'historique, puis
@@ -463,7 +485,8 @@ class Collector:
             rows, self._pending_samples = self._pending_samples, None
             self._aggregate(rows)
         took = time.time() - t0
-        self.last_cycle = (int(time.time()), round(took, 1))
+        if zones:  # au moins un routeur relevé : sinon ce n'est pas un vrai tour (la surveillance doit le voir)
+            self.last_cycle = (int(time.time()), round(took, 1))
         if took > self.poll_seconds:
             print(f"[collecte] relevé lent : {took:.0f} s pour {len(zones)} routeurs", flush=True)
 

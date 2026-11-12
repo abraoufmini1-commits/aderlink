@@ -23,7 +23,9 @@ CHILD_STATE = "roaming-child.json"
 
 
 def _write_json(path, data):
-    tmp = Path(str(path) + ".tmp")
+    # nom provisoire propre à chaque tâche : deux tâches qui écrivent en même temps ne se gênent plus
+    import threading
+    tmp = Path(f"{path}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(data))
     os.replace(tmp, path)
 
