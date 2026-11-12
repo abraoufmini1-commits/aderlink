@@ -1321,3 +1321,41 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(set(zf.namelist()), {"config.json", "aderlink.db", "LISEZMOI.txt"})
         with self.assertRaises(GuardError):
             g.set_token("pas un jeton")
+
+
+class RecoverUsedTest(unittest.TestCase):
+    """Rattrapage des ventes : tickets utilisés pendant une panne d'ADER LINK, comptés au bon moment."""
+
+    def test_recover_from_router_schedulers(self):
+        import calendar
+        from app.tickets import Tickets, _router_time
+        store = Store(":memory:")
+        t = Tickets({"zones": [{"id": "z1", "name": "Zone"}]}, store)
+        now = calendar.timegm((2026, 11, 12, 10, 20, 0, 0, 0, 0))  # 11:20 au Niger (UTC+1)
+        with store.lock:
+            store.db.execute("INSERT INTO batches (id, zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, removed) "
+                             "VALUES (1, 'z1', ?, 3, 'p', 100, 0, 0, 86400, 0)", (now - 5 * 86400,))
+            for c in ("1111", "2222", "3333"):
+                store.db.execute("INSERT INTO tickets (code, zone_id, batch_id, removed) VALUES (?, 'z1', 1, 0)", (c,))
+            store.db.commit()
+
+        class Api:
+            def query(self, cmd, *a):
+                if cmd == "/system/clock/print":
+                    return [{"date": "nov/12/2026", "time": "11:20:00"}]
+                if cmd == "/system/scheduler/print":
+                    return [{"name": "AL-EXP-1111", "start-date": "nov/12/2026", "start-time": "08:15:00", "comment": ""},
+                            {"name": "AL-EXP-2222", "start-date": "2026-11-11", "start-time": "21:00:00",
+                             "comment": "ADER LINK : a supprimer"},
+                            {"name": "ADER LINK", "start-date": "nov/01/2026", "start-time": "startup"}]
+                return []
+        t._recovered_at["z1"] = 0  # rattrapage dû (en vrai : quelques minutes après le démarrage)
+        self.assertEqual(t.recover_used({"id": "z1"}, Api(), now), 2)
+        got = {c: (fu, ex) for c, fu, ex in store.db.execute("SELECT code, first_used, expired_at FROM tickets")}
+        self.assertEqual(got["1111"][0], calendar.timegm((2026, 11, 12, 7, 15, 0, 0, 0, 0)))  # 8 h 15 heure du Niger
+        self.assertIsNone(got["1111"][1])
+        self.assertEqual(got["2222"][0], calendar.timegm((2026, 11, 10, 20, 0, 0, 0, 0, 0)))  # fin le 11 à 21 h - 24 h
+        self.assertIsNotNone(got["2222"][1])  # déjà fini sur le routeur : marqué fini aussi
+        self.assertIsNone(got["3333"][0])     # jamais utilisé : pas compté
+        self.assertEqual(t.recover_used({"id": "z1"}, Api(), now + 60), 0)  # pas avant 30 minutes
+        self.assertEqual(_router_time("2026-11-12", "08:15:00"), _router_time("nov/12/2026", "08:15:00"))

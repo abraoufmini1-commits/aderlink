@@ -59,6 +59,7 @@ class Tickets:
         self.demo = demo
         self.roaming = None  # ADER Roaming, branché au démarrage
         self._purged_at = {}   # zone_id -> heure du dernier nettoyage des anciens tickets
+        self._recovered_at = {}  # zone_id -> heure du dernier rattrapage des tickets utilisés non comptés
         self._seen_used = {}   # zone_id -> codes déjà marqués « utilisés » (pour ne pas les réécrire)
         self._sync_times = []  # quand les dernières mises à jour de scripts ont commencé
         self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
@@ -661,6 +662,8 @@ class Tickets:
 
     def _maintenance_due(self, zone, now):
         zid = zone["id"]
+        if self._recover_due(zid, now):
+            return True
         last = self._synced.get(zid)
         if not self.demo and last != "ok" and now - (last or 0) > 3600:
             return True
@@ -683,6 +686,10 @@ class Tickets:
                 self._synced[zid] = now  # on réessaiera dans 1 heure
                 self.store.add_event(now, zid, "offline", f"Ticket : mise à jour des scripts du routeur impossible : {e}")
         self._purge(zid, api, now)
+        try:
+            self.recover_used(zone, api, now)
+        except Exception as e:  # ne doit jamais gêner l'entretien
+            self.store.add_event(now, zid, "offline", f"Rattrapage des ventes impossible : {e}")
         if not self.demo and self.roaming:
             try:
                 self.roaming.ensure(zone, api)  # ADER Roaming réglé tout seul sur ce routeur
@@ -729,6 +736,64 @@ class Tickets:
             api.pipeline(cmds)
 
     PURGE_EVERY = 6 * 3600  # toutes les 6 heures par routeur (liste complète des tickets du routeur : lourd)
+
+    RECOVER_EVERY = 30 * 60
+
+    def _recover_due(self, zid, now):
+        if zid not in self._recovered_at:  # après un démarrage : dans les 5 minutes, routeurs étalés
+            import random
+            self._recovered_at[zid] = now - self.RECOVER_EVERY + random.randint(30, 300)
+        return now - self._recovered_at[zid] >= self.RECOVER_EVERY
+
+    def recover_used(self, zone, api, now=None):
+        """Rattrapage des ventes : un ticket de routeur simple est compté vendu quand ADER LINK le voit connecté.
+        S'il a servi pendant une panne d'ADER LINK puis s'est déconnecté, il n'était jamais compté.
+        Ici : le routeur garde, pour chaque ticket utilisé, la tâche « AL-EXP-code » créée à sa 1re connexion
+        (date et heure exactes). Le ticket est compté vendu CE jour-là (pas aujourd'hui)."""
+        now = now or int(time.time())
+        zid = zone["id"]
+        if not self._recover_due(zid, now):
+            return 0
+        self._recovered_at[zid] = now
+        rows, _ = self._q(
+            "SELECT t.code, b.validity_s, b.created_at FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "WHERE t.zone_id = ? AND t.first_used IS NULL AND t.removed = 0 AND b.removed = 0 "
+            "AND b.roaming_id IS NULL LIMIT 20000", (zid,))
+        if not rows:
+            return 0
+        waiting = {c: (v or 0, ca or 0) for c, v, ca in rows}
+        clock = (api.query("/system/clock/print") or [{}])[0]
+        router_now = _router_time(clock.get("date"), clock.get("time"))
+        if router_now is None:
+            return 0
+        offset = round((router_now - now) / 900) * 900  # fuseau du routeur, au quart d'heure près
+        found = {}
+        for j in api.query("/system/scheduler/print", "=.proplist=name,start-date,start-time,comment"):
+            name = str(j.get("name", ""))
+            if not name.startswith("AL-EXP-"):
+                continue
+            code = name[7:]
+            if code not in waiting:
+                continue
+            start = _router_time(j.get("start-date"), j.get("start-time"))
+            if start is None:
+                continue
+            start -= offset
+            validity, created = waiting[code]
+            if "supprimer" in str(j.get("comment", "")):  # tâche reprogrammée à la fin : début = fin - validité
+                start -= validity
+            found[code] = max(created, min(start, now))
+        if not found:
+            return 0
+        with self.store.lock:
+            for code, fu in found.items():
+                validity = waiting[code][0]
+                ended = fu + validity if validity and fu + validity <= now else None  # déjà fini sur le routeur
+                self.store.db.execute("UPDATE tickets SET first_used = ?, expired_at = COALESCE(expired_at, ?) "
+                                      "WHERE zone_id = ? AND code = ? AND first_used IS NULL", (fu, ended, zid, code))
+            self.store.db.commit()
+        self.store.add_event(now, zid, "info", f"Rattrapage : {len(found)} ticket(s) utilisés comptés comme vendus")
+        return len(found)
 
     def _purge_due(self, zid, now):
         if zid not in self._purged_at:
@@ -954,3 +1019,22 @@ class Tickets:
             "SELECT b.zone_id, COUNT(*), SUM(b.price) FROM tickets t JOIN batches b ON b.id = t.batch_id "
             "WHERE t.first_used >= ?" + sc + " GROUP BY b.zone_id", [since] + sp)
         return [{"zone_id": z, "tickets": n, "amount": a or 0} for z, n, a in rows]
+
+
+_MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+
+
+def _router_time(date, clock):
+    """Date et heure d'un MikroTik (« 2026-11-12 » ou « nov/12/2026 », « 10:15:03 ») en secondes (heure du routeur)."""
+    import calendar
+    try:
+        date, clock = str(date or "").strip(), str(clock or "").strip()
+        if "/" in date:
+            mon, day, year = date.split("/")
+            y, m, d = int(year), _MONTHS[mon.lower()[:3]], int(day)
+        else:
+            y, m, d = (int(x) for x in date.split("-"))
+        hh, mm, ss = (int(x) for x in clock.split(":")[:3])
+        return calendar.timegm((y, m, d, hh, mm, ss, 0, 0, 0))
+    except (ValueError, KeyError, TypeError):
+        return None
