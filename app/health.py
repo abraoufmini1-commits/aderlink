@@ -107,7 +107,7 @@ class Health:
         if up > 600 and self.app is not None:
             # sans les actions qui attendent un routeur (création de lot, Vérifier, Tester…) : lenteur normale
             slow = [s for s in list(self.app.slow) if now - s[0] < 600 and not s[1].endswith(LIVE_PATHS)
-                    and (len(s) < 4 or s[3] != "POST")]
+                    and not s[1].startswith("/install/") and (len(s) < 4 or s[3] != "POST")]
             if len(slow) >= 5:
                 worst = max(slow, key=lambda s: s[2])
                 out["lent"] = (False, f"application lente : {len(slow)} pages lentes en 10 minutes "

@@ -87,7 +87,7 @@ class Forbidden(Exception):
 
 def waits_router(path, method):
     """Actions qui attendent la réponse d'un routeur par internet : leur lenteur est normale."""
-    return method == "POST" or path.endswith(("/check", "/test"))
+    return method == "POST" or path.endswith(("/check", "/test")) or path.startswith("/install/")
 
 
 def slow_label(path, method):
@@ -101,6 +101,8 @@ def slow_label(path, method):
         if path.startswith("/api/forfaits"):
             return "Création ou modification d'un profil (sur le routeur)"
         return "Action : " + path
+    if path.startswith("/install/"):
+        return "Signe de vie d'un routeur (toutes les 5 minutes)"
     if path.endswith("/check"):
         return "Bouton « Vérifier les routeurs » (attend les routeurs)"
     if path.endswith("/test"):
@@ -724,8 +726,8 @@ def make_handler(app):
                 z = app.routers.by_token(p[len("/install/"):-3])
                 if not z:
                     return self.send(404, b"inconnu")
-                app.routers.installed(z, self.client_ip())
-                if app.collector and not app.demo:
+                if app.routers.installed(z, self.client_ip()) and app.collector and not app.demo:
+                    # nouveau routeur ou nouvelle adresse : relevé tout de suite ; sinon, simple signe de vie
                     threading.Thread(target=app.collector.poll_all, daemon=True).start()
                 return self.send(200, b"ok")
             if p == "/winbox/install.ps1":  # public : ne contient aucun secret

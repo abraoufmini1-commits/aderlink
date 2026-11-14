@@ -86,6 +86,8 @@ class Routers:
             self.store.db.commit()
             return rows, cur.lastrowid
 
+    last_ping = {}  # zone_id -> heure du dernier « je suis là » du routeur (en mémoire)
+
     def _persist(self):
         if not self.demo:
             self.save(self.config)
@@ -518,15 +520,23 @@ class Routers:
                 or local_ip_towards(z["router"].get("host") or "8.8.8.8") or "127.0.0.1")
 
     def installed(self, z, client_ip):
-        """Appelé par le routeur à la fin du script : on retient son adresse."""
+        """Appelé par le routeur à la fin de son installation ET toutes les 5 minutes (« aderlink-ping »).
+        Rien de changé : on note juste l'heure du contact, en mémoire. Avant, CHAQUE appel réécrivait tout le
+        fichier des réglages et lançait un tour complet des routeurs : avec 81 routeurs, jusqu'à 16 tours de plus
+        par minute, qui ralentissaient tout. Retourne True si le routeur est nouveau ou a changé d'adresse."""
         r = z["router"]
+        now = int(time.time())
         with self.lock:
+            changed = (not r.get("host") or (r.get("auto_host") and r["host"] != client_ip)
+                       or z.get("last_ip") != client_ip)
             if not r.get("host") or r.get("auto_host"):
                 r["host"], r["auto_host"] = client_ip, True
             z["last_ip"] = client_ip  # ADER Roaming reconnaît le routeur à cette adresse
-            z["installed_at"] = int(time.time())
-            self._persist()
-        return r["host"]
+            self.last_ping[z["id"]] = now
+            if changed or now - (z.get("installed_at") or 0) > 86400:  # au plus une fois par jour sinon
+                z["installed_at"] = now
+                self._persist()
+        return changed
 
     # --- logo ------------------------------------------------------------------------------
     def logo(self, zone_id):

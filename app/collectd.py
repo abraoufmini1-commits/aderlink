@@ -89,12 +89,18 @@ def run(config_path, data_dir, load_config):
             "last_cycle": list(collector.last_cycle) if collector.last_cycle else None,
             "shared": copy(lambda: dict(roaming.shared), {})})
 
+    polling = threading.Lock()
+
     def poll_now():
+        if not polling.acquire(blocking=False):
+            return  # un relevé demandé est déjà en cours : inutile d'en lancer un deuxième
         try:
             collector.poll_all()
             write_state()
         except Exception as e:
             log(f"[collecte] relevé demandé : {e!r}")
+        finally:
+            polling.release()
 
     def sync():
         last = None
