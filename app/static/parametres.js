@@ -162,11 +162,11 @@
     var t = s.telegram, box = $("tgBox");
     if (t.linked) {
       box.innerHTML = "<div class='sub-state sub-ok'>" + ic("check") + "<div><strong>Relié à Telegram" + (t.who ? " (" + esc(t.who) + ")" : "") + "</strong>" +
-        "<span>Vous recevez : routeur hors ligne depuis 12 heures et de retour, " + (s.summary_hour === 0 ? "ventes de la journée à minuit" : "ventes du jour à " + s.summary_hour + " h") + ", sauvegarde de la nuit.</span></div></div>" +
+        "<span>Vous recevez : routeur hors ligne depuis 12 heures et de retour, " + (s.summary_hour === 0 ? "ventes de la journée à minuit" : s.summary_hour < 6 ? "ventes de la journée d'hier à " + s.summary_hour + " h du matin" : "ventes du jour à " + s.summary_hour + " h") + ", sauvegarde de la nuit.</span></div></div>" +
         "<div class='bk-actions'><button class='btn btn-outline' type='button' id='tgTest'>Envoyer un message de test</button>" +
         "<button class='btn-prev' type='button' id='tgOff'>Délier</button></div>" +
         "<div class='tg-people'><strong>Autres personnes</strong>" +
-        "<span class='pane-sub'>Elles reçoivent le rapport des ventes de minuit, et les alertes des routeurs si c'est coché. " +
+        "<span class='pane-sub'>Elles reçoivent le rapport des ventes (à 1 h du matin), et les alertes des routeurs si c'est coché. " +
         "Jamais la sauvegarde : elle contient les mots de passe de vos routeurs.</span>" +
         "<ul class='tg-list'>" + (t.people || []).map(function (p) {
           return "<li><span class='tg-who'>" + esc(p.who) + "</span>" +

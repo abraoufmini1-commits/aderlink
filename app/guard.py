@@ -3,7 +3,7 @@
 - Chaque nuit (3 h, heure locale) : une sauvegarde complète dans data/backups, 14 jours gardés,
   et une copie envoyée sur Telegram si c'est relié (copie hors du serveur).
 - Alertes Telegram : routeur hors ligne (après 12 heures, pour ignorer les petites coupures),
-  routeur de retour, et à minuit le résumé des ventes de la journée qui vient de finir.
+  routeur de retour, et à 1 h du matin le résumé des ventes de la journée qui vient de finir.
 """
 import io
 import json
@@ -20,7 +20,7 @@ from pathlib import Path
 
 KEEP_DAYS = 14
 OFFLINE_DELAY = 12 * 3600   # une alerte seulement si le routeur reste coupé 12 heures (pas de messages pour les petites coupures)
-BACKUP_HOUR, SUMMARY_HOUR = 3, 0  # résumé à minuit : la journée entière
+BACKUP_HOUR, SUMMARY_HOUR = 3, 1  # résumé à 1 h du matin : la journée entière d'hier (0 h → 24 h)
 NAME_RE = re.compile(r"aderlink-auto-\d{4}-\d{2}-\d{2}\.zip")
 
 
@@ -158,7 +158,7 @@ class Guard:
         self.tg()["who"] = " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x)
         self.save(self.config)
         self.send("✅ <b>ADER LINK est relié à ce Telegram.</b>\nVous recevrez ici les alertes de vos routeurs, "
-                  "le résumé des ventes de la journée à minuit et la sauvegarde de chaque nuit.")
+                  "le résumé des ventes de la journée (à 1 h du matin) et la sauvegarde de chaque nuit.")
         return self.status()
 
     def unlink(self):
@@ -294,12 +294,13 @@ class Guard:
               "octobre", "novembre", "décembre")
 
     def summary(self, now=None):
-        """Résumé de la journée, envoyé à minuit, sur la journée qui vient de finir (0 h → 24 h) :
+        """Résumé de la journée, envoyé à 1 h du matin, sur la journée qui vient de finir (0 h → 24 h) :
         pour chaque point de vente, les tickets par forfait, le total du jour et le total du mois."""
         now = now or int(time.time())
         off = self.offset()
         midnight = (now + off) // 86400 * 86400 - off
-        start, end = (midnight - 86400, midnight) if SUMMARY_HOUR == 0 else (midnight, now)
+        # envoyé tôt le matin (avant 6 h) : la journée d'hier en entier ; sinon : aujourd'hui jusqu'à maintenant
+        start, end = (midnight - 86400, midnight) if SUMMARY_HOUR < 6 else (midnight, now)
         day = time.gmtime(start + off)
         month_start = int(time.mktime((day.tm_year, day.tm_mon, 1, 0, 0, 0, 0, 0, 0)) - time.timezone) - off
         nf = lambda x: f"{int(x):,}".replace(",", " ")
@@ -406,7 +407,7 @@ class Guard:
         try:
             self._api("sendMessage", {"chat_id": c["id"], "parse_mode": "HTML",
                                       "text": "✅ <b>Vous recevrez ici les messages d'ADER LINK</b> : le rapport des ventes chaque nuit "
-                                              "à minuit, et les alertes des routeurs."})
+                                              "à 1 h du matin, et les alertes des routeurs."})
         except GuardError:
             pass
         return self.status()
