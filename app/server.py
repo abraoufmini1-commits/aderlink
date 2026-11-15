@@ -136,6 +136,11 @@ class App:
     def offset(self):
         return int(float(self.config.get("utc_offset_hours", 1)) * 3600)  # Niger : UTC+1
 
+    def sales_offset(self):
+        """Pour les ventes, la journée va de 1 h du matin à 1 h du matin (une vente à 0 h 30 compte pour la
+        veille). Même calcul qu'à minuit, avec l'heure décalée d'autant."""
+        return self.offset() - int(float(self.config.get("day_start_hour", 1)) * 3600)
+
     def zones_for(self, who):
         return [z for z in self.config.get("zones", []) if who.can_zone(z["id"])]
 
@@ -267,8 +272,8 @@ class App:
                 "rx_bps": s.get("rx_bps", 0), "tx_bps": s.get("tx_bps", 0),
             })
         online = [z for z in zones if z["status"] == "online"]
-        off = self.offset()
-        midnight = (int(time.time()) + off) // 86400 * 86400 - off
+        off = self.sales_offset()
+        midnight = (int(time.time()) + off) // 86400 * 86400 - off  # début de la journée de vente (1 h)
         zone_ids, mine = self.sales_scope(who)
         sales = self.tickets.sales(midnight, zone_ids, mine) if self.tickets else []
         keep = None if who.zones is None else set(who.zones)
@@ -382,7 +387,7 @@ class App:
     def report(self, q, who):
         """Période en jours locaux : ?from=AAAA-MM-JJ&to=AAAA-MM-JJ (inclus)."""
         import datetime as dt
-        off = self.offset()
+        off = self.sales_offset()  # journées de vente de 1 h à 1 h
         today = (int(time.time()) + off) // 86400
 
         def day(key, default):
@@ -869,7 +874,7 @@ def make_handler(app):
                 except ValueError:
                     days = 30
                 zone_ids, mine = app.sales_scope(who)
-                return app.tickets.sales_history(days, app.offset(), zone_ids, mine)
+                return app.tickets.sales_history(days, app.sales_offset(), zone_ids, mine)
             if app.tickets and p == "/api/analytique":
                 from .analytics import analytics
                 try:
@@ -879,7 +884,7 @@ def make_handler(app):
                 days = days if days in (7, 30, 90) else 30
                 zone_ids, mine = app.sales_scope(who)
                 out = dict(app._cached(("analytique", days, tuple(zone_ids or ()), mine),
-                                       lambda: analytics(app.store, app.tickets, days, app.offset(), zone_ids, mine), ttl=300))
+                                       lambda: analytics(app.store, app.tickets, days, app.sales_offset(), zone_ids, mine), ttl=300))
                 out.update(demo=app.demo, me=who.public())
                 return out
             if app.tickets and p == "/api/report":
@@ -890,7 +895,7 @@ def make_handler(app):
                 return {"results": app.tickets.status(res)}
             if app.users and p == "/api/users":
                 self.need(who.can("team"))
-                off = app.offset()
+                off = app.sales_offset()  # mois de vente : du 1er à 1 h au 1er du mois suivant à 1 h
                 month = time.localtime(time.time() + off - time.timezone)
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
                 mine = None if who.is_admin else who.username

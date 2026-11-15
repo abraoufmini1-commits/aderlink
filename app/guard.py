@@ -82,6 +82,10 @@ class Guard:
     def offset(self):
         return int(float(self.config.get("utc_offset_hours", 1)) * 3600)
 
+    def sales_offset(self):
+        """Journée de vente : de 1 h du matin à 1 h du matin (comme dans l'application)."""
+        return self.offset() - int(float(self.config.get("day_start_hour", 1)) * 3600)
+
     def today(self, now=None):
         return time.strftime("%Y-%m-%d", time.gmtime((now or time.time()) + self.offset()))
 
@@ -297,7 +301,7 @@ class Guard:
         """Résumé de la journée, envoyé à 1 h du matin, sur la journée qui vient de finir (0 h → 24 h) :
         pour chaque point de vente, les tickets par forfait, le total du jour et le total du mois."""
         now = now or int(time.time())
-        off = self.offset()
+        off = self.sales_offset()  # journée de vente de 1 h à 1 h
         midnight = (now + off) // 86400 * 86400 - off
         # envoyé tôt le matin (avant 6 h) : la journée d'hier en entier ; sinon : aujourd'hui jusqu'à maintenant
         start, end = (midnight - 86400, midnight) if SUMMARY_HOUR < 6 else (midnight, now)
