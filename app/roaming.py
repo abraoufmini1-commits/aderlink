@@ -244,6 +244,25 @@ class Roaming:
             return True, f"Réglé (serveur {srv}), avec l'autre système de tickets du routeur"
         return True, f"Réglé (serveur {srv})"
 
+    def fix_use_radius(self, zone, api):
+        """« Use RADIUS » décoché sur un profil hotspot (par quelqu'un ou par l'autre système de tickets) :
+        sans lui, le routeur ne demande plus rien à ADER Roaming et les tickets Roaming n'y marchent plus.
+        On le recoche. Retourne les noms des profils réparés."""
+        fixed = []
+        for prof in api.query("/ip/hotspot/profile/print", "=.proplist=.id,name,use-radius"):
+            if prof.get("use-radius") not in ("true", "yes"):
+                api.query("/ip/hotspot/profile/set", f"=.id={prof['.id']}", "=use-radius=yes",
+                          f"=radius-interim-update={INTERIM_S}s")
+                fixed.append(prof.get("name", "?"))
+        if fixed:
+            self.log(f"ADER Roaming : {zone.get('name')} : « Use RADIUS » décoché sur {', '.join(fixed)}, recoché")
+            try:
+                self.store.add_event(int(time.time()), zone["id"], "info",
+                                     f"ADER Roaming : « Use RADIUS » recoché sur {', '.join(fixed)}")
+            except Exception:
+                pass
+        return fixed
+
     def _timeout(self, zid=None):
         """Temps que le routeur attend ADER Roaming : 8 s, ou 3 s s'il a aussi un autre système de tickets
         (pour que ses clients à lui n'attendent pas trop quand le code n'est pas un ticket ADER LINK)."""
@@ -362,6 +381,10 @@ class Roaming:
                         except RouterOSError:
                             pass
                         d["radius"].append(e)
+                    try:
+                        d["use_radius_fixed"] = self.fix_use_radius(z, api)
+                    except RouterOSError:
+                        pass
                     for pr in api.query("/ip/hotspot/profile/print"):
                         d["profiles"].append({"name": pr.get("name", ""), "use_radius": pr.get("use-radius") in ("true", "yes")})
                     d["servers"] = [{"name": h.get("name", ""), "profile": h.get("profile", "")} for h in api.query("/ip/hotspot/print")]
@@ -408,6 +431,7 @@ class Roaming:
                         if e.get("comment") == "ADER Roaming" and (e.get("timeout") or "").replace("ms", "") not in (want, want[:-1] + "000"):
                             api.query("/radius/set", f"=.id={e['.id']}", f"=timeout={want}")
                     ok, msg = self.put_first(zone, api, self._our_fields(self.server_for(zone), g, zone["id"]))
+                    self.fix_use_radius(zone, api)  # « Use RADIUS » toujours coché sur les profils
                     st["checked"] = now
                     if ok:
                         return

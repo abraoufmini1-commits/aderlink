@@ -199,7 +199,9 @@
               (r.order_error ? " — " + esc(r.order_error) : " (correction automatique en cours)") + "</li>");
         });
         r.profiles.forEach(function (p) {
-          lines.push("<li class='" + (p.use_radius ? "ok" : "bad") + "'>Profil " + esc(p.name) + " : Use RADIUS " + (p.use_radius ? "coché ✓" : "décoché") + "</li>");
+          var fixedNow = (r.use_radius_fixed || []).indexOf(p.name) >= 0;
+          lines.push("<li class='" + (p.use_radius ? "ok" : "bad") + "'>Profil " + esc(p.name) + " : Use RADIUS " +
+            (p.use_radius ? (fixedNow ? "était décoché : recoché automatiquement ✓" : "coché ✓") : "décoché") + "</li>");
         });
         lines.push("<li class='" + (r.seen_ago != null ? "ok" : "wait") + "'>" + (r.seen_ago != null ? "Dernier contact avec le serveur : " + ago(r.seen_ago) : "Aucun contact avec le serveur depuis le démarrage") + "</li>");
         return "<div class='ro-diag'><b>" + esc(r.name) + "</b><ul>" + lines.join("") + "</ul></div>";
