@@ -475,12 +475,14 @@
           : p.other_script ? "<span class='pill pill-pending'>● Script d'un autre système</span>" : "<span class='pill pill-unknown'>● Sans validité</span>";
         return "<div class='pv-row' style='flex-wrap:wrap;gap:8px'><div class='rc-main' style='min-width:140px'><div class='rc-name'>" + esc(p.name) + "</div>" +
           "<div class='rc-meta'>" + (p.tickets == null ? "" : nf.format(p.tickets) + " ticket" + (p.tickets > 1 ? "s" : "")) + "</div></div>" + state +
-          "<div style='display:flex;gap:6px;width:100%'><select data-old-dur='" + esc(p.name) + "' style='flex:1'>" +
-          DURS.map(function (x) { return "<option value='" + x[0] + "'>" + x[1] + "</option>"; }).join("") + "</select>" +
+          "<div style='display:flex;gap:6px;width:100%'>" +
+          "<input type='number' inputmode='numeric' min='1' max='999' placeholder='ex : 24' data-old-n='" + esc(p.name) + "' style='width:80px'>" +
+          "<select data-old-u='" + esc(p.name) + "' style='flex:1'><option value='60'>minutes</option><option value='3600' selected>heures</option>" +
+          "<option value='86400'>jours</option></select>" +
           "<button type='button' class='btn btn-sm' data-old-set='" + esc(p.name) + "'>Appliquer</button>" +
           (p.managed ? "<button type='button' class='row-del show' data-old-del='" + esc(p.name) + "'>Retirer</button>" : "") + "</div></div>";
       }).join("");
-      $("bsBody").innerHTML = "<p class='pane-sub'>Ces profils viennent d'un ancien système (Winbox, Mikhmon…). Choisissez une validité : " +
+      $("bsBody").innerHTML = "<p class='pane-sub'>Ces profils viennent d'un ancien système (Winbox, Mikhmon…). Tapez la validité (un nombre, puis minutes, heures ou jours) : " +
         "à la <strong>1re connexion</strong> d'un ticket, le compte à rebours démarre ; à la fin, ou quand ses Go / son temps sont consommés, " +
         "le ticket est <strong>désactivé puis supprimé 7 jours après</strong>. Ces tickets ne vont pas dans les rapports.</p>" +
         (d.ready ? "" : "<div class='info-box'>Ce routeur n'a pas encore les scripts d'ADER LINK : touchez <strong>Installer</strong> et recollez la ligne d'installation d'abord.</div>") +
@@ -495,9 +497,11 @@
       var name = (set || del).getAttribute(set ? "data-old-set" : "data-old-del");
       var body = { profile: name };
       if (set) {
-        var sel = $("bsBody").querySelector("[data-old-dur='" + name.replace(/'/g, "\\'") + "']");
-        if (!sel || !sel.value) { msg("err", "Choisissez d'abord une validité pour " + esc(name)); return; }
-        body.validity_s = +sel.value;
+        var key = name.replace(/'/g, "\\'");
+        var n = $("bsBody").querySelector("[data-old-n='" + key + "']"), u = $("bsBody").querySelector("[data-old-u='" + key + "']");
+        var secs = Math.round(+(n && n.value) * +(u && u.value));
+        if (!secs || secs < 600) { msg("err", "Tapez la validité pour « " + esc(name) + " » (10 minutes au moins), ex : 24 heures ou 7 jours"); return; }
+        body.validity_s = secs;
       } else body.remove = true;
       (set || del).disabled = true;
       api(url, body).then(function (d) { show(d); msg("ok", set ? "Validité appliquée sur « " + esc(name) + " »" : "Validité retirée de « " + esc(name) + " »"); })
