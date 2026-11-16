@@ -72,7 +72,7 @@
         st + "</div>" +
         (r.owner_name ? "<div class='rc-meta rc-owner'>" + ic("user") + " Client : <strong>" + esc(r.owner_name) + "</strong></div>" : "") +
         "<div class='act-grid" + (S.canWrite ? "" : " act-grid-4") + "'>" + act("details", "Détails", "info") + (S.canWrite ? act("edit", "Modifier", "pencil") : "") + act("forfaits", "Profils", "ticket") +
-        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", r.remote ? "À distance" : "Winbox", "winbox") : "") + "</div></article>";
+        (S.canWrite ? act("pv", "Points de vente", "store") : "") + act("sessions", "Connectés", "wifi") + (S.canWrite ? act("install", "Installer", "terminal") + act("winbox", r.remote ? "À distance" : "Winbox", "winbox") + act("old", "Anciens tickets", "clock") : "") + "</div></article>";
     }).join("") : "<div class='card empty'>" + (S.routers.length ? "Aucun routeur ne correspond." : "Aucun routeur. Cliquez sur <strong>+ Ajouter</strong> pour enregistrer votre premier MikroTik.") + "</div>";
   }
   $("search").addEventListener("input", render);
@@ -80,7 +80,7 @@
     var b = e.target.closest("[data-act]");
     if (!b) return;
     var r = byId(b.dataset.id);
-    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install, winbox: winbox })[b.dataset.act](r, b);
+    ({ details: details, edit: edit, forfaits: forfaits, pv: pointsVente, sessions: sessions, install: install, winbox: winbox, old: oldTickets })[b.dataset.act](r, b);
   });
   $("addBtn").addEventListener("click", function () {
     if (S.quota && S.quota.used >= S.quota.max) {
@@ -453,6 +453,56 @@
   function forfaits(r) {
     try { localStorage.setItem("aderlink-zone", r.id); localStorage.removeItem("aderlink-roam"); } catch (e) { /* ignoré */ }
     location.href = "/tickets#forfait";
+  }
+
+  // --- anciens tickets (non créés par ADER LINK) : validité et expiration seulement -------------
+  var DURS = [["", "Choisir…"], [3600, "1 heure"], [3 * 3600, "3 heures"], [6 * 3600, "6 heures"], [12 * 3600, "12 heures"],
+    [86400, "24 heures"], [2 * 86400, "2 jours"], [3 * 86400, "3 jours"], [7 * 86400, "7 jours"], [15 * 86400, "15 jours"], [30 * 86400, "30 jours"]];
+  function durTxt(v) {  // « 1d00:00:00 » -> « 24 heures », « 7d00:00:00 » -> « 7 jours », « 12:00:00 » -> « 12 heures »
+    var m = /^(?:(\d+)d)?(\d+):(\d+):(\d+)$/.exec(v || "");
+    if (!m) return v;
+    var s = (+(m[1] || 0)) * 86400 + (+m[2]) * 3600 + (+m[3]) * 60;
+    for (var i = DURS.length - 1; i > 0; i--) if (DURS[i][0] === s) return DURS[i][1];
+    return s % 86400 === 0 ? s / 86400 + " jours" : s % 3600 === 0 ? s / 3600 + " heures" : Math.round(s / 60) + " minutes";
+  }
+  function oldTickets(r) {
+    sheet("Anciens tickets — " + r.name, "clock", "<p class='pane-sub'>Lecture des profils du routeur…</p><div class='notice' id='bsMsg' role='status'></div>",
+      "<button class='btn-prev' type='button' data-close>Fermer</button>");
+    var url = "/api/routers/" + encodeURIComponent(r.id) + "/old-profiles";
+    function show(d) {
+      var rows = d.profiles.map(function (p) {
+        var state = p.managed ? "<span class='pill pill-online'>● Validité " + esc(durTxt(p.validity)) + "</span>"
+          : p.other_script ? "<span class='pill pill-pending'>● Script d'un autre système</span>" : "<span class='pill pill-unknown'>● Sans validité</span>";
+        return "<div class='pv-row' style='flex-wrap:wrap;gap:8px'><div class='rc-main' style='min-width:140px'><div class='rc-name'>" + esc(p.name) + "</div>" +
+          "<div class='rc-meta'>" + (p.tickets == null ? "" : nf.format(p.tickets) + " ticket" + (p.tickets > 1 ? "s" : "")) + "</div></div>" + state +
+          "<div style='display:flex;gap:6px;width:100%'><select data-old-dur='" + esc(p.name) + "' style='flex:1'>" +
+          DURS.map(function (x) { return "<option value='" + x[0] + "'>" + x[1] + "</option>"; }).join("") + "</select>" +
+          "<button type='button' class='btn btn-sm' data-old-set='" + esc(p.name) + "'>Appliquer</button>" +
+          (p.managed ? "<button type='button' class='row-del show' data-old-del='" + esc(p.name) + "'>Retirer</button>" : "") + "</div></div>";
+      }).join("");
+      $("bsBody").innerHTML = "<p class='pane-sub'>Ces profils viennent d'un ancien système (Winbox, Mikhmon…). Choisissez une validité : " +
+        "à la <strong>1re connexion</strong> d'un ticket, le compte à rebours démarre ; à la fin, ou quand ses Go / son temps sont consommés, " +
+        "le ticket est <strong>désactivé puis supprimé 7 jours après</strong>. Ces tickets ne vont pas dans les rapports.</p>" +
+        (d.ready ? "" : "<div class='info-box'>Ce routeur n'a pas encore les scripts d'ADER LINK : touchez <strong>Installer</strong> et recollez la ligne d'installation d'abord.</div>") +
+        (rows ? "<div class='pv-list'>" + rows + "</div>" : "<p class='pane-sub'>Aucun ancien profil sur ce routeur.</p>") +
+        "<p class='pane-sub small'>« Script d'un autre système » : il sera remplacé par celui d'ADER LINK. Un ticket déjà utilisé avant démarre son compte à rebours à sa prochaine connexion.</p>" +
+        "<div class='notice' id='bsMsg' role='status'></div>";
+    }
+    api(url).then(show).catch(function (err) { $("bsBody").innerHTML = "<div class='notice err show'>" + esc(err.message) + "</div>"; });
+    $("bsBody").onclick = function (e) {
+      var set = e.target.closest("[data-old-set]"), del = e.target.closest("[data-old-del]");
+      if (!set && !del) return;
+      var name = (set || del).getAttribute(set ? "data-old-set" : "data-old-del");
+      var body = { profile: name };
+      if (set) {
+        var sel = $("bsBody").querySelector("[data-old-dur='" + name.replace(/'/g, "\\'") + "']");
+        if (!sel || !sel.value) { msg("err", "Choisissez d'abord une validité pour " + esc(name)); return; }
+        body.validity_s = +sel.value;
+      } else body.remove = true;
+      (set || del).disabled = true;
+      api(url, body).then(function (d) { show(d); msg("ok", set ? "Validité appliquée sur « " + esc(name) + " »" : "Validité retirée de « " + esc(name) + " »"); })
+        .catch(function (err) { (set || del).disabled = false; msg("err", esc(err.message)); });
+    };
   }
 
   // --- points de vente -------------------------------------------------------------------------

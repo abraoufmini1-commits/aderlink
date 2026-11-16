@@ -291,6 +291,64 @@ class Routers:
         login = z.get("winbox_login") or {}
         return {"user": login.get("user", ""), "password": login.get("password", "")}
 
+    # --- anciens profils (tickets non créés par ADER LINK) : validité et expiration seulement ----------------
+    def old_profiles(self, zone_id):
+        """Profils de tickets du routeur qui ne viennent pas d'ADER LINK (pas « AL-… »), avec leur validité
+        ADER LINK si elle est déjà mise, et s'ils ont un script d'un autre système."""
+        z = self.zone(zone_id)
+        try:
+            return self._old_profiles(z)
+        except (RouterOSError, OSError) as e:
+            raise RouterError(f"Routeur injoignable ou refus du routeur : {e}")
+
+    def _old_profiles(self, z):
+        import re
+        with self._api_for(z) as api:
+            ready = bool(api.query("/system/script/print", "?name=aderlink-start", "=.proplist=name"))
+            out = []
+            for p in api.query("/ip/hotspot/user/profile/print", "=.proplist=.id,name,on-login,on-logout"):
+                name = p.get("name", "")
+                if name.startswith("AL-"):
+                    continue
+                login = p.get("on-login", "") or ""
+                m = re.search(r'aderlink-start.*v="([^"]+)"', login)
+                try:
+                    count = int((api.query("/ip/hotspot/user/print", "=count-only=", f"?profile={name}") or [{}])[0].get("ret", 0))
+                except Exception:
+                    count = None
+                out.append({"name": name, "tickets": count, "validity": m.group(1) if m else "",
+                            "managed": bool(m), "other_script": bool(login.strip()) and not m})
+        return {"ready": ready, "profiles": out}
+
+    def set_old_profile(self, zone_id, body):
+        """Met (ou retire) la validité et l'expiration d'ADER LINK sur un ancien profil du routeur :
+        à la 1re connexion d'un ticket, compte à rebours ; à la fin (ou Go / temps consommés), ticket
+        désactivé puis supprimé 7 jours après. Les tickets restent hors des rapports."""
+        z = self.zone(zone_id)
+        name = str(body.get("profile", "")).strip()
+        if not name or name.startswith("AL-"):
+            raise RouterError("Choisissez un ancien profil du routeur")
+        validity = int(body.get("validity_s") or 0)
+        remove = bool(body.get("remove"))
+        if not remove and validity < 600:
+            raise RouterError("Choisissez une validité (10 minutes au moins)")
+        try:
+            self._set_old_profile(z, name, validity, remove)
+        except (RouterOSError, OSError) as e:
+            raise RouterError(f"Routeur injoignable ou refus du routeur : {e}")
+        return self.old_profiles(zone_id)
+
+    def _set_old_profile(self, z, name, validity, remove):
+        from .mikrotik import ON_LOGOUT, on_login
+        with self._api_for(z) as api:
+            if not remove and not api.query("/system/script/print", "?name=aderlink-start", "=.proplist=name"):
+                raise RouterError("Ce routeur n'a pas encore les scripts d'ADER LINK : recollez d'abord la ligne d'installation")
+            found = api.query("/ip/hotspot/user/profile/print", f"?name={name}", "=.proplist=.id")
+            if not found:
+                raise RouterError("Profil introuvable sur le routeur")
+            api.query("/ip/hotspot/user/profile/set", f"=.id={found[0]['.id']}",
+                      f"=on-login={'' if remove else on_login(validity)}", f"=on-logout={'' if remove else ON_LOGOUT}")
+
     def _api_for(self, z):
         r = z["router"]
         return RouterOS(r["host"], r["username"], r["password"], port=r.get("port", 8729 if r.get("ssl") else 8728),

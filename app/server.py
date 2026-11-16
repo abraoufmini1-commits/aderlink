@@ -822,6 +822,9 @@ def make_handler(app):
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "login":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 return app.routers.get_login(parts[3])
+            if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "old-profiles":
+                self.need(who.can("routers_write") and who.can_zone(parts[3]))
+                return app.routers.old_profiles(parts[3])
             if app.routers and len(parts) == 5 and parts[2] == "routers" and parts[4] == "scan":
                 self.need(who.can("routers_write") and who.can_zone(parts[3]))
                 self.need_feature(who, "antennas")
@@ -1052,7 +1055,8 @@ def make_handler(app):
                         "pv": lambda: R.create_pv(zid, body),
                         "winbox": lambda: R.open_winbox(zid, self.client_ip() in ("127.0.0.1", "::1")),
                         "devices": lambda: R.add_device(zid, body),
-                        "login": lambda: R.set_login(zid, body, who.can_zone)}
+                        "login": lambda: R.set_login(zid, body, who.can_zone),
+                        "old-profiles": lambda: R.set_old_profile(zid, body)}
                 if action in acts:
                     return acts[action]()
             if R and len(parts) == 7 and parts[2] == "routers" and parts[4] == "devices" and parts[6] == "delete" and parts[5].isdigit():
