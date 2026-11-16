@@ -316,8 +316,10 @@ class Routers:
                     count = int((api.query("/ip/hotspot/user/print", "=count-only=", f"?profile={name}") or [{}])[0].get("ret", 0))
                 except Exception:
                     count = None
+                c = (z.get("old_profiles") or {}).get(name) or {}
                 out.append({"name": name, "tickets": count, "validity": m.group(1) if m else "",
-                            "managed": bool(m), "other_script": bool(login.strip()) and not m})
+                            "managed": bool(m), "other_script": bool(login.strip()) and not m,
+                            "price": c.get("price") or 0, "pos_id": c.get("pos_id")})
         return {"ready": ready, "profiles": out}
 
     def set_old_profile(self, zone_id, body):
@@ -332,10 +334,22 @@ class Routers:
         remove = bool(body.get("remove"))
         if not remove and validity < 600:
             raise RouterError("Choisissez une validité (10 minutes au moins)")
+        price = int(body.get("price") or 0)
+        if price < 0 or price > 1_000_000:
+            raise RouterError("Prix invalide")
         try:
             self._set_old_profile(z, name, validity, remove)
         except (RouterOSError, OSError) as e:
             raise RouterError(f"Routeur injoignable ou refus du routeur : {e}")
+        with self.lock:  # retenu pour la lecture automatique des nouveaux tickets (toutes les 15 min)
+            olds = z.setdefault("old_profiles", {})
+            if remove:
+                olds.pop(name, None)
+            else:
+                prev = olds.get(name) or {}
+                olds[name] = {"validity_s": validity, "price": price, "pos_id": body.get("pos_id") or prev.get("pos_id"),
+                              "enabled_at": prev.get("enabled_at") if prev.get("price") else (int(time.time()) if price else None)}
+            self._persist()
         return self.old_profiles(zone_id)
 
     def _set_old_profile(self, z, name, validity, remove):

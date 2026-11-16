@@ -1359,3 +1359,55 @@ class RecoverUsedTest(unittest.TestCase):
         self.assertIsNone(got["3333"][0])     # jamais utilisé : pas compté
         self.assertEqual(t.recover_used({"id": "z1"}, Api(), now + 60), 0)  # pas avant 30 minutes
         self.assertEqual(_router_time("2026-11-12", "08:15:00"), _router_time("nov/12/2026", "08:15:00"))
+
+
+class OldSystemImportTest(unittest.TestCase):
+    """Tickets créés avec l'ancien système (Mikhmon, Winbox) : comptés dans les rapports sans double compte."""
+
+    def test_import_old_profile_tickets(self):
+        import calendar
+        from app.tickets import Tickets
+        store = Store(":memory:")
+        enabled = calendar.timegm((2026, 11, 16, 13, 0, 0, 0, 0, 0))  # profil géré par ADER LINK depuis 14 h (Niger)
+        zone = {"id": "z1", "name": "Zone", "old_profiles": {"1JOUR": {"validity_s": 86400, "price": 100, "pos_id": None,
+                                                                         "enabled_at": enabled}}}
+        t = Tickets({"zones": [zone]}, store)
+        users = [{"name": "111111", "uptime": "0s"},                       # neuf
+                 {"name": "222222", "uptime": "3h10m", "bytes-in": "500"},  # vendu AVANT par l'ancien système
+                 {"name": "333333", "uptime": "20m", "bytes-in": "900"}]     # créé et vendu APRÈS (tâche AL-EXP récente)
+        scripted = []
+
+        class Api:
+            def query(self, cmd, *a):
+                if cmd == "/system/clock/print":
+                    return [{"date": "nov/16/2026", "time": "15:00:00"}]
+                if cmd == "/system/scheduler/print":
+                    return [{"name": "AL-EXP-222222", "start-date": "nov/15/2026", "start-time": "09:00:00"},
+                            {"name": "AL-EXP-333333", "start-date": "nov/16/2026", "start-time": "14:30:00"}]
+                if cmd == "/ip/hotspot/user/profile/print":
+                    return [{".id": "*1", "name": "1JOUR", "on-login": ":put mikhmon"}]
+                if cmd == "/ip/hotspot/user/profile/set":
+                    scripted.append(a)
+                    return []
+                if cmd == "/ip/hotspot/user/print":
+                    return users
+                return []
+        now = calendar.timegm((2026, 11, 16, 14, 0, 0, 0, 0, 0))
+        self.assertEqual(t.import_old(zone, Api(), now), 2)
+        codes = {c for (c,) in store.db.execute("SELECT code FROM tickets")}
+        self.assertEqual(codes, {"111111", "333333"})
+        self.assertEqual([c for (c,) in store.db.execute("SELECT code FROM old_skip")], ["222222"])
+        self.assertTrue(scripted)  # script de l'ancien système remplacé par la validité ADER LINK
+        b = store.db.execute("SELECT count, price, profile, created_by FROM batches").fetchone()
+        self.assertEqual(b, (2, 100, "1JOUR", "ancien système"))
+        # nouveau ticket créé dans l'ancien système : pris au tour suivant, les autres pas en double
+        users.append({"name": "444444", "uptime": "0s"})
+        t._imported_at["z1"] = 0
+        self.assertEqual(t.import_old(zone, Api(), now + 1000), 1)
+        self.assertEqual(store.db.execute("SELECT COUNT(*) FROM tickets").fetchone()[0], 3)
+        # le ticket vendu après est compté à son heure de 1re connexion (14 h 30, Niger)
+        t._recovered_at["z1"] = 0
+        t.recover_used(zone, Api(), now)  # même heure que l'horloge du faux routeur
+        fu = store.db.execute("SELECT first_used FROM tickets WHERE code = '333333'").fetchone()[0]
+        self.assertEqual(fu, calendar.timegm((2026, 11, 16, 13, 30, 0, 0, 0, 0)))
+        self.assertIsNone(store.db.execute("SELECT first_used FROM tickets WHERE code = '111111'").fetchone()[0])

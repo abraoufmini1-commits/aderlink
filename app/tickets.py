@@ -60,6 +60,7 @@ class Tickets:
         self.roaming = None  # ADER Roaming, branché au démarrage
         self._purged_at = {}   # zone_id -> heure du dernier nettoyage des anciens tickets
         self._recovered_at = {}  # zone_id -> heure du dernier rattrapage des tickets utilisés non comptés
+        self._imported_at = {}   # zone_id -> heure de la dernière lecture des tickets de l'ancien système
         self._seen_used = {}   # zone_id -> codes déjà marqués « utilisés » (pour ne pas les réécrire)
         self._sync_times = []  # quand les dernières mises à jour de scripts ont commencé
         self._synced = {}  # routeurs dont les scripts ont été mis à jour depuis le démarrage
@@ -79,6 +80,7 @@ class Tickets:
                 CREATE INDEX IF NOT EXISTS idx_tickets_batch ON tickets(batch_id);
                 CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
                 CREATE INDEX IF NOT EXISTS idx_tickets_used ON tickets(first_used);
+                CREATE TABLE IF NOT EXISTS old_skip (zone_id TEXT, code TEXT, PRIMARY KEY (zone_id, code));
                 CREATE TABLE IF NOT EXISTS forfaits (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     zone_id TEXT, name TEXT, router_profile TEXT, price INTEGER,
@@ -664,6 +666,8 @@ class Tickets:
         zid = zone["id"]
         if self._recover_due(zid, now):
             return True
+        if self._import_due(zone, now):
+            return True
         last = self._synced.get(zid)
         if not self.demo and last != "ok" and now - (last or 0) > 3600:
             return True
@@ -686,6 +690,11 @@ class Tickets:
                 self._synced[zid] = now  # on réessaiera dans 1 heure
                 self.store.add_event(now, zid, "offline", f"Ticket : mise à jour des scripts du routeur impossible : {e}")
         self._purge(zid, api, now)
+        try:
+            if self._import_due(zone, now):
+                self.import_old(zone, api, now)
+        except Exception as e:  # ne doit jamais gêner l'entretien
+            self.store.add_event(now, zid, "offline", f"Anciens tickets : lecture impossible : {e}")
         try:
             self.recover_used(zone, api, now)
         except Exception as e:  # ne doit jamais gêner l'entretien
@@ -737,6 +746,87 @@ class Tickets:
 
     PURGE_EVERY = 6 * 3600  # toutes les 6 heures par routeur (liste complète des tickets du routeur : lourd)
 
+    IMPORT_EVERY = 15 * 60
+
+    def _import_due(self, zone, now):
+        priced = [1 for v in (zone.get("old_profiles") or {}).values() if (v or {}).get("price")]
+        return bool(priced) and now - self._imported_at.get(zone["id"], 0) >= self.IMPORT_EVERY
+
+    def import_old(self, zone, api, now=None, only=None):
+        """Tickets créés avec l'ANCIEN système (Mikhmon, Winbox) sur un ancien profil où un prix est mis :
+        enregistrés dans ADER LINK pour les rapports (lot « Anciens tickets … » du jour).
+        - jamais utilisé : enregistré, compté vendu à sa 1re connexion (comme les autres) ;
+        - déjà utilisé AVANT que ce profil soit géré par ADER LINK : déjà vendu par l'ancien système,
+          noté pour ne jamais être compté (sinon la vente compterait deux fois) ;
+        - créé et utilisé APRÈS (tâche AL-EXP plus récente) : enregistré, compté à sa 1re connexion.
+        Le script de validité est remis s'il a été effacé (l'ancien système peut réécrire le profil)."""
+        from .mikrotik import ON_LOGOUT, on_login
+        now = now or int(time.time())
+        zid = zone["id"]
+        self._imported_at[zid] = now
+        conf = {k: v for k, v in (zone.get("old_profiles") or {}).items() if (v or {}).get("price") and (not only or k == only)}
+        if not conf:
+            return 0
+        rows, _ = self._q("SELECT code FROM tickets WHERE zone_id = ?", (zid,))
+        known = {r[0] for r in rows}
+        rows, _ = self._q("SELECT code FROM old_skip WHERE zone_id = ?", (zid,))
+        known |= {r[0] for r in rows}
+        clock = (api.query("/system/clock/print") or [{}])[0]
+        router_now = _router_time(clock.get("date"), clock.get("time"))
+        offset = round(((router_now or now) - now) / 900) * 900
+        starts = {}
+        for j in api.query("/system/scheduler/print", "=.proplist=name,start-date,start-time"):
+            if str(j.get("name", "")).startswith("AL-EXP-"):
+                t = _router_time(j.get("start-date"), j.get("start-time"))
+                if t is not None:
+                    starts[j["name"][7:]] = t - offset
+        added = 0
+        for name, c in conf.items():
+            prof = api.query("/ip/hotspot/user/profile/print", f"?name={name}", "=.proplist=.id,on-login")
+            if prof and "aderlink-start" not in (prof[0].get("on-login") or "") and c.get("validity_s"):
+                api.query("/ip/hotspot/user/profile/set", f"=.id={prof[0]['.id']}",
+                          f"=on-login={on_login(int(c['validity_s']))}", f"=on-logout={ON_LOGOUT}")
+            enabled = int(c.get("enabled_at") or now)
+            fresh, skip = [], []
+            for u in api.query("/ip/hotspot/user/print", f"?profile={name}", "=.proplist=name,uptime,bytes-in,bytes-out"):
+                code = str(u.get("name", ""))
+                if not code or code in known or code.startswith("T-") or ":" in code:
+                    continue
+                used = str(u.get("uptime", "0s")) not in ("", "0s") or int(u.get("bytes-in") or 0) + int(u.get("bytes-out") or 0) > 0
+                if not used or starts.get(code, 0) >= enabled - 60:
+                    fresh.append(code)   # neuf, ou vendu depuis qu'ADER LINK gère ce profil
+                else:
+                    skip.append(code)    # déjà vendu avant par l'ancien système
+            with self.store.lock:
+                if skip:
+                    self.store.db.executemany("INSERT OR IGNORE INTO old_skip (zone_id, code) VALUES (?, ?)",
+                                              [(zid, x) for x in skip])
+                if fresh:
+                    day = time.strftime("%d/%m", time.gmtime(now + 3600))
+                    note = f"Anciens tickets {name} ({day})"[:80]
+                    row = self.store.db.execute("SELECT id FROM batches WHERE zone_id = ? AND note = ? AND removed = 0",
+                                                (zid, note)).fetchone()
+                    if row:
+                        bid = row[0]
+                    else:
+                        bid = self.store.db.execute(
+                            "INSERT INTO batches (zone_id, created_at, count, profile, price, uptime_s, data_mb, validity_s, note, "
+                            "pos_id, created_by, zone_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,"
+                            "(SELECT COALESCE(MAX(zone_seq), 0) + 1 FROM batches WHERE zone_id = ?))",
+                            (zid, now, 0, name, int(c["price"]), 0, 0, int(c.get("validity_s") or 0), note,
+                             c.get("pos_id"), "ancien système", zid)).lastrowid
+                    self.store.db.executemany("INSERT OR IGNORE INTO tickets (code, zone_id, batch_id, removed) VALUES (?, ?, ?, 0)",
+                                              [(x, zid, bid) for x in fresh])
+                    self.store.db.execute("UPDATE batches SET count = (SELECT COUNT(*) FROM tickets WHERE batch_id = ?) WHERE id = ?",
+                                          (bid, bid))
+                self.store.db.commit()
+            known |= set(fresh) | set(skip)
+            added += len(fresh)
+        if added:
+            self._recovered_at[zid] = 0  # ceux déjà utilisés : comptés à leur vraie heure au prochain rattrapage
+            self._seen_used.pop(zid, None)
+        return added
+
     RECOVER_EVERY = 30 * 60
 
     def _recover_due(self, zid, now):
@@ -756,9 +846,10 @@ class Tickets:
             return 0
         self._recovered_at[zid] = now
         rows, _ = self._q(
-            "SELECT t.code, b.validity_s, b.created_at FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "SELECT t.code, b.validity_s, CASE WHEN b.created_by = 'ancien système' THEN 0 ELSE b.created_at END "
+            "FROM tickets t JOIN batches b ON b.id = t.batch_id "
             "WHERE t.zone_id = ? AND t.first_used IS NULL AND t.removed = 0 AND b.removed = 0 "
-            "AND b.roaming_id IS NULL LIMIT 20000", (zid,))
+            "AND b.roaming_id IS NULL LIMIT 20000", (zid,))  # ancien système : le ticket existait avant son lot
         if not rows:
             return 0
         waiting = {c: (v or 0, ca or 0) for c, v, ca in rows}

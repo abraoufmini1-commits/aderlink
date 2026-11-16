@@ -1463,3 +1463,11 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 #lotsSearch { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface, #fff); color: inherit; font: inherit; }
 #lotsSearch[hidden] { display: none; }
 #routerList { margin-top: 12px; }
+
+/* Anciens tickets (profils de l'ancien système) */
+.old-row { border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin: 10px 0; }
+.old-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.old-state { margin: 6px 0 8px; }
+.old-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.old-grid .f { margin-bottom: 8px; }
+.old-acts { display: flex; justify-content: flex-end; align-items: center; gap: 10px; }

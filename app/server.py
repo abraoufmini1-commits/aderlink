@@ -136,6 +136,21 @@ class App:
     def offset(self):
         return int(float(self.config.get("utc_offset_hours", 1)) * 3600)  # Niger : UTC+1
 
+    def old_profile(self, zid, body):
+        """Applique validité / expiration (et prix) sur un ancien profil ; avec un prix, ses tickets sont lus tout
+        de suite (les déjà utilisés sont notés comme déjà vendus avant, pour ne jamais compter deux fois)."""
+        res = self.routers.set_old_profile(zid, body)
+        name = str(body.get("profile", "")).strip()
+        if self.tickets and not body.get("remove") and int(body.get("price") or 0) > 0:
+            from .tickets import open_router
+            z = self.tickets.zone(zid)
+            try:
+                with open_router(z, timeout=10) as api:
+                    res["imported"] = self.tickets.import_old(z, api, only=name)
+            except Exception as e:
+                res["import_error"] = str(e)
+        return res
+
     def sales_offset(self):
         """Pour les ventes, la journée va de 1 h du matin à 1 h du matin (une vente à 0 h 30 compte pour la
         veille). Même calcul qu'à minuit, avec l'heure décalée d'autant."""
@@ -1056,7 +1071,7 @@ def make_handler(app):
                         "winbox": lambda: R.open_winbox(zid, self.client_ip() in ("127.0.0.1", "::1")),
                         "devices": lambda: R.add_device(zid, body),
                         "login": lambda: R.set_login(zid, body, who.can_zone),
-                        "old-profiles": lambda: R.set_old_profile(zid, body)}
+                        "old-profiles": lambda: app.old_profile(zid, body)}
                 if action in acts:
                     return acts[action]()
             if R and len(parts) == 7 and parts[2] == "routers" and parts[4] == "devices" and parts[6] == "delete" and parts[5].isdigit():

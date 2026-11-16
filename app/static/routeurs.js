@@ -471,20 +471,29 @@
     var url = "/api/routers/" + encodeURIComponent(r.id) + "/old-profiles";
     function show(d) {
       var rows = d.profiles.map(function (p) {
-        var state = p.managed ? "<span class='pill pill-online'>● Validité " + esc(durTxt(p.validity)) + "</span>"
+        var state = p.managed ? "<span class='pill pill-online'>● Validité " + esc(durTxt(p.validity)) + (p.price ? " · " + nf.format(p.price) + " F, dans les rapports" : "") + "</span>"
           : p.other_script ? "<span class='pill pill-pending'>● Script d'un autre système</span>" : "<span class='pill pill-unknown'>● Sans validité</span>";
-        return "<div class='pv-row' style='flex-wrap:wrap;gap:8px'><div class='rc-main' style='min-width:140px'><div class='rc-name'>" + esc(p.name) + "</div>" +
-          "<div class='rc-meta'>" + (p.tickets == null ? "" : nf.format(p.tickets) + " ticket" + (p.tickets > 1 ? "s" : "")) + "</div></div>" + state +
-          "<div style='display:flex;gap:6px;width:100%'>" +
-          "<input type='number' inputmode='numeric' min='1' max='999' placeholder='ex : 24' data-old-n='" + esc(p.name) + "' style='width:80px'>" +
-          "<select data-old-u='" + esc(p.name) + "' style='flex:1'><option value='60'>minutes</option><option value='3600' selected>heures</option>" +
-          "<option value='86400'>jours</option></select>" +
-          "<button type='button' class='btn btn-sm' data-old-set='" + esc(p.name) + "'>Appliquer</button>" +
-          (p.managed ? "<button type='button' class='row-del show' data-old-del='" + esc(p.name) + "'>Retirer</button>" : "") + "</div></div>";
+        var k = esc(p.name);
+        var cur = /^(?:(\d+)d)?(\d+):(\d+):(\d+)$/.exec(p.validity || ""), sec = cur ? (+(cur[1] || 0)) * 86400 + (+cur[2]) * 3600 + (+cur[3]) * 60 : 0;
+        var unit = sec && sec % 86400 === 0 ? 86400 : sec && sec % 3600 === 0 ? 3600 : 60, num = sec ? sec / unit : "";
+        return "<div class='old-row'>" +
+          "<div class='old-head'><div class='rc-name'>" + k + "</div><div class='rc-meta'>" + (p.tickets == null ? "" : nf.format(p.tickets) + " ticket" + (p.tickets > 1 ? "s" : "")) + "</div></div>" +
+          "<div class='old-state'>" + state + "</div>" +
+          "<div class='old-grid'>" +
+          "<div class='f'><label>Validité</label><input type='number' inputmode='numeric' min='1' max='999' placeholder='ex : 24' data-old-n='" + k + "' value='" + num + "'></div>" +
+          "<div class='f'><label>&nbsp;</label><select data-old-u='" + k + "'>" + [[60, "minutes"], [3600, "heures"], [86400, "jours"]].map(function (o) {
+            return "<option value='" + o[0] + "'" + (o[0] === (sec ? unit : 3600) ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div>" +
+          "<div class='f'><label>Prix (F)</label><input type='number' inputmode='numeric' min='0' placeholder='vide = sans rapport' data-old-p='" + k + "' value='" + (p.price || "") + "'></div>" +
+          "<div class='f'><label>Point de vente</label><select data-old-pv='" + k + "'>" + (r.points_vente || []).map(function (v) {
+            return "<option value='" + v.id + "'" + (v.id === p.pos_id ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("") + "</select></div>" +
+          "</div><div class='old-acts'>" + (p.managed ? "<button type='button' class='row-del show' data-old-del='" + k + "'>Retirer</button>" : "") +
+          "<button type='button' class='btn btn-sm' data-old-set='" + k + "'>Appliquer</button></div></div>";
       }).join("");
       $("bsBody").innerHTML = "<p class='pane-sub'>Ces profils viennent d'un ancien système (Winbox, Mikhmon…). Tapez la validité (un nombre, puis minutes, heures ou jours) : " +
         "à la <strong>1re connexion</strong> d'un ticket, le compte à rebours démarre ; à la fin, ou quand ses Go / son temps sont consommés, " +
-        "le ticket est <strong>désactivé puis supprimé 7 jours après</strong>. Ces tickets ne vont pas dans les rapports.</p>" +
+        "le ticket est <strong>désactivé puis supprimé 7 jours après</strong>. <strong>Avec un prix</strong>, ses tickets vont aussi dans les rapports " +
+        "(vendus à leur 1re connexion), même ceux que vous continuez de créer dans l'ancien système : ADER LINK les prend toutes les 15 minutes. " +
+        "Les tickets déjà utilisés avant ne sont pas comptés (déjà vendus par l'ancien système).</p>" +
         (d.ready ? "" : "<div class='info-box'>Ce routeur n'a pas encore les scripts d'ADER LINK : touchez <strong>Installer</strong> et recollez la ligne d'installation d'abord.</div>") +
         (rows ? "<div class='pv-list'>" + rows + "</div>" : "<p class='pane-sub'>Aucun ancien profil sur ce routeur.</p>") +
         "<p class='pane-sub small'>« Script d'un autre système » : il sera remplacé par celui d'ADER LINK. Un ticket déjà utilisé avant démarre son compte à rebours à sa prochaine connexion.</p>" +
@@ -502,9 +511,17 @@
         var secs = Math.round(+(n && n.value) * +(u && u.value));
         if (!secs || secs < 600) { msg("err", "Tapez la validité pour « " + esc(name) + " » (10 minutes au moins), ex : 24 heures ou 7 jours"); return; }
         body.validity_s = secs;
+        var pr = $("bsBody").querySelector("[data-old-p='" + key + "']"), pv = $("bsBody").querySelector("[data-old-pv='" + key + "']");
+        body.price = pr && pr.value ? +pr.value : 0;
+        if (pv && pv.value) body.pos_id = +pv.value;
       } else body.remove = true;
       (set || del).disabled = true;
-      api(url, body).then(function (d) { show(d); msg("ok", set ? "Validité appliquée sur « " + esc(name) + " »" : "Validité retirée de « " + esc(name) + " »"); })
+      api(url, body).then(function (d) {
+        show(d);
+        msg(d.import_error ? "err" : "ok", !set ? "Validité retirée de « " + esc(name) + " »" :
+          "Validité appliquée sur « " + esc(name) + " »" + (body.price ? (d.import_error ? " — lecture des tickets impossible pour l'instant (" + esc(d.import_error) + "), réessayée toute seule dans 15 min"
+            : " — " + nf.format(d.imported || 0) + " ticket(s) neufs enregistrés pour les rapports ; les nouveaux seront pris toutes les 15 min") : ""));
+      })
         .catch(function (err) { (set || del).disabled = false; msg("err", esc(err.message)); });
     };
   }
