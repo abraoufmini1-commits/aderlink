@@ -146,6 +146,7 @@ def run(config_path, data_dir, load_config):
                     "journal": copy(lambda: [list(x) for x in list(roaming.journal)], []),
                     "flow": copy(lambda: {k: dict(v) for k, v in list(roaming.flow.items())}, {}),
                     "hot": copy(lambda: (collections.Counter(dict(hot["now"])) + collections.Counter(dict(hot["prev"]))).most_common(8), []),
+                    "reads": copy(lambda: dict(getattr(roaming, "reads", {}) or {}), {}),
                     "threads": threading.active_count(), "writes": roaming._writes.qsize()})
             except OSError as e:
                 print(f"ADER Roaming : état non écrit ({e})", flush=True)

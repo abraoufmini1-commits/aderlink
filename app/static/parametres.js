@@ -43,6 +43,7 @@
     api("/api/diag").then(function (d) {
       var ms = Math.max(0, Date.now() - t0 - 1000);  // moins la seconde d'observation du serveur
       var row = function (k, v, bad) { return "<div class='dg-row" + (bad ? " dg-bad" : "") + "'><span>" + k + "</span><b>" + v + "</b></div>"; };
+      var fmtc = function (x) { return String(x == null ? 0 : x).replace(".", ","); };
       var c = d.cycle, mem = d.memory || {};
       var load = d.load ? d.load[0] + " (" + d.cpus + " cœurs)" : "–";
       box.innerHTML =
@@ -54,6 +55,8 @@
           (d.collect.restarts ? " · relancé " + d.collect.restarts + " fois" : ""), d.collect.age == null || d.collect.age > 60)) +
           (d.collect.error ? "<p class='muted small' style='word-break:break-all'><b>Erreur du programme des relevés :</b> " + esc(d.collect.error) + "</p>" : "") : "") +
         row("Charge du processeur", load, d.load && d.cpus && d.load[0] > d.cpus) +
+        (d.cpu ? row("Processeur utilisé par", "pages " + fmtc(d.cpu.pages) + " · relevés " + fmtc(d.cpu.releves) + " · Roaming " + fmtc(d.cpu.roaming) +
+            " · autres " + fmtc(d.cpu.autres) + " · hébergeur " + fmtc(d.cpu.vol) + " · libre " + fmtc(d.cpu.libre), d.cpu.vol > 0.5 || d.cpu.libre < 0.3) : "") +
         row("Mémoire utilisée", mem.used_pct != null ? mem.used_pct + " % de " + Math.round(mem.total_mb / 1024) + " Go" : "–", mem.used_pct > 90) +
         row("Fichiers ouverts", d.open_files == null ? "–" : d.open_files, d.open_files > 3000) +
         row("Attente base de données", Math.round(d.lock_wait_s * 1000) + " ms", d.lock_wait_s > 0.5) +
@@ -61,7 +64,9 @@
         row("En marche depuis", new Date(d.started * 1000).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) +
         (d.roaming ? "<div class='dg-slow'><b>ADER Roaming :</b> " + (d.roaming.age > 30 ? "<b class='bad'>pas de nouvelles depuis " + d.roaming.age + " s</b>" :
             "en file " + d.roaming.pending + " · réponse " + String(d.roaming.lag).replace(".", ",") + " s · abandonnées (trop vieilles) " + d.roaming.dropped +
-            " · écritures en attente " + d.roaming.writes + " · fils " + d.roaming.threads) +
+            " · écritures en attente " + d.roaming.writes + " · fils " + d.roaming.threads +
+            (d.roaming.reads ? "<br>lecture d'un ticket : " + String(d.roaming.reads.avg_ms).replace(".", ",") + " ms en moyenne, pire " +
+              d.roaming.reads.max_ms + " ms (" + d.roaming.reads.n + " en 1 min)" : "")) +
           ((d.roaming.hot || []).length ? "<br><b>Roaming travaille sur :</b>" + d.roaming.hot.map(function (x) { return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") : "") + "</div>" : "") +
         ((d.hot || []).length ? "<div class='dg-slow'><b>Le serveur travaille sur :</b>" + d.hot.map(function (x) {
           return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") + "</div>" : "") +

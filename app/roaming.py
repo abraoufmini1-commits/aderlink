@@ -483,17 +483,30 @@ class Roaming:
         return None
 
     def _ticket(self, gid, code):
+        # CROSS JOIN : SQLite cherche d'abord le ticket par son code (index), jamais l'inverse (tous les lots)
+        t0 = time.monotonic()
         rows, _ = self.tickets._q(
             "SELECT t.zone_id, t.first_used, t.expired_at, t.bytes_used, t.uptime_used, "
             "b.validity_s, b.uptime_s, b.data_mb, b.forfait_id, b.id "
-            "FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "FROM tickets t CROSS JOIN batches b ON b.id = t.batch_id "
             "WHERE t.code = ? AND b.roaming_id = ? AND t.removed = 0 AND b.removed = 0 ORDER BY b.id DESC LIMIT 1",
             (code, gid))
+        self._note_read(time.monotonic() - t0)
         if not rows:
             return None
         k = ("home", "first_used", "expired_at", "bytes_used", "uptime_used", "validity_s", "uptime_s", "data_mb",
              "forfait_id", "batch_id")
         return dict(zip(k, rows[0]))
+
+    def _note_read(self, dt):
+        """Durée des lectures de ticket (affichée dans « État du serveur ») : pour voir si la base ralentit Roaming."""
+        r = self.__dict__.setdefault("reads", {"n": 0, "sum": 0.0, "max": 0.0, "since": time.time()})
+        if time.time() - r["since"] > 60:
+            self.reads = r = {"n": 0, "sum": 0.0, "max": 0.0, "since": time.time(), "prev": {k: r[k] for k in ("n", "sum", "max")}}
+        r["n"] += 1
+        r["sum"] += dt
+        if dt > r["max"]:
+            r["max"] = dt
 
     def authorize(self, gid, code, now=None, zone_id=None, mac=None):
         """Décide d'un Access-Request. Renvoie (accepté, message, attributs)."""
@@ -623,13 +636,17 @@ class Roaming:
                        "WHERE zone_id = ? AND code = ?",
                        (home, code, home, code, total, now, home, code))
         self._write(job)  # réponse au routeur tout de suite ; consommation enregistrée juste après
-        if status != R.ACCT_START and self.finished(gid, code, now):
+        # écritures à côté (programme Roaming) : la lecture du début sert aussi ici (une seule lecture par paquet),
+        # avec au moins la consommation que ce paquet annonce ; sinon (écriture déjà faite) : relue
+        seen = dict(t, bytes_used=max(t["bytes_used"] or 0, total), uptime_used=max(t["uptime_used"] or 0, secs),
+                    first_used=t["first_used"] or (now if total > 0 else None)) if self.async_writes else None
+        if status != R.ACCT_START and self.finished(gid, code, now, t=seen):
             self.end_ticket(gid, code, t["home"], now)
 
-    def finished(self, gid, code, now=None):
+    def finished(self, gid, code, now=None, t=None):
         """Vrai si le ticket n'a plus de temps ni de données (compté sur tout le réseau)."""
         now = now or int(time.time())
-        t = self._ticket(gid, code)
+        t = t or self._ticket(gid, code)
         if not t:
             return False
         if t["validity_s"] and t["first_used"] and t["first_used"] + t["validity_s"] <= now:

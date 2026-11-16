@@ -210,6 +210,7 @@ class App:
             wal_mb = round(w.stat().st_size / 1048576, 1) if w and w.exists() else 0
         except OSError:
             pass
+        cpu0 = _cpu_snapshot()
         # où les fils du programme passent leur temps : 10 coups d'œil en 1 seconde
         import sys
         import collections
@@ -233,6 +234,7 @@ class App:
                 spots[f"{f.f_code.co_filename.rsplit('/', 1)[-1]}:{f.f_code.co_name} ({top.f_code.co_name})"] += 1
             # fils qui attendent un routeur (réseau) : comptés à part, ce n'est pas du travail du processeur
             time.sleep(0.1)
+        cpu = _cpu_split(cpu0, _cpu_snapshot())
         roam = None
         if self.paths.get("db"):
             from .radiusd import CHILD_STATE, _read_json
@@ -243,8 +245,10 @@ class App:
                         "pending": sum(f.get("pending", 0) for f in fl.values()),
                         "dropped": sum(f.get("dropped", 0) for f in fl.values()),
                         "lag": max([f.get("lag", 0) for f in fl.values()] or [0]),
+                        "reads": _read_stats(c.get("reads") or {}),
                         "hot": [{"where": w, "n": n} for w, n in (c.get("hot") or [])]}
         return {"open_files": open_files(), "threads": threading.active_count(), "load": load, "cpus": cpus, "roaming": roam,
+                "cpu": cpu,
                 "memory": mem, "db_mb": db_mb, "wal_mb": wal_mb, "lock_wait_s": lock_wait,
                 "hot": [{"where": k, "n": v} for k, v in spots.most_common(6)],
                 "lock_long": [{"at": a, "seconds": b, "where": c} for a, b, c in reversed(getattr(self.store.lock, "long", []))][:6],
@@ -1194,3 +1198,59 @@ def serve(app, host, port):
         pass
     finally:
         httpd.server_close()
+
+
+def _cpu_snapshot():
+    """Temps processeur (en tics) : toute la machine (dont le « vol » de l'hébergeur) et chaque programme d'ADER LINK."""
+    import os
+    snap = {"t": time.time(), "procs": {}}
+    try:
+        f = open("/proc/stat").readline().split()[1:]
+        v = [int(x) for x in f]
+        snap["total"] = sum(v[:8])
+        snap["idle"] = v[3] + (v[4] if len(v) > 4 else 0)
+        snap["steal"] = v[7] if len(v) > 7 else 0
+        me = os.getpid()
+        kinds = {me: "pages"}
+        for d in os.listdir("/proc"):
+            if not d.isdigit():
+                continue
+            try:
+                st = open(f"/proc/{d}/stat").read()
+                rest = st[st.rindex(")") + 2:].split()
+                if int(d) != me and int(rest[1]) != me:
+                    continue
+                cmd = open(f"/proc/{d}/cmdline", "rb").read().replace(b"\0", b" ").decode(errors="ignore")
+                kind = kinds.get(int(d)) or ("releves" if " collect" in cmd else "roaming" if " radius" in cmd else None)
+                if kind:
+                    snap["procs"][kind] = snap["procs"].get(kind, 0) + int(rest[11]) + int(rest[12])
+            except (OSError, ValueError, IndexError):
+                continue
+    except (OSError, ValueError, IndexError):
+        return None
+    return snap
+
+
+def _cpu_split(a, b):
+    """Qui utilise le processeur, en cœurs (1,0 = un cœur plein) : pages, relevés, Roaming, autres, hébergeur."""
+    import os
+    if not a or not b or "total" not in a or "total" not in b:
+        return None
+    hz = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+    dt = max(0.2, b["t"] - a["t"])
+    cores = lambda ticks: round(max(0, ticks) / hz / dt, 2)
+    out = {k: cores(b["procs"].get(k, 0) - a["procs"].get(k, 0)) for k in ("pages", "releves", "roaming")}
+    busy = (b["total"] - b["idle"] - b["steal"]) - (a["total"] - a["idle"] - a["steal"])
+    out["autres"] = max(0, round(cores(busy) - sum(out.values()), 2))
+    out["vol"] = cores(b["steal"] - a["steal"])
+    out["libre"] = cores(b["idle"] - a["idle"])
+    return out
+
+
+def _read_stats(r):
+    """Lectures de ticket de Roaming sur la dernière minute : nombre, moyenne et pire durée (ms)."""
+    src = r if r.get("n") else (r.get("prev") or {})
+    n = src.get("n") or 0
+    if not n:
+        return None
+    return {"n": n, "avg_ms": round(src.get("sum", 0) / n * 1000, 1), "max_ms": round(src.get("max", 0) * 1000)}
