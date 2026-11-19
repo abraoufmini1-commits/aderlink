@@ -1471,3 +1471,16 @@ button.add-row { width: 100%; font: inherit; cursor: pointer; background: transp
 .old-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
 .old-grid .f { margin-bottom: 8px; }
 .old-acts { display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+
+.sub-mode { display: flex; width: 100%; margin: 14px 0 10px; }
+.sub-mode button { flex: 1; }
+.u-lock { max-width: 440px; margin: 24px auto; padding: 28px 22px; text-align: center; }
+.u-lock h2 { font-size: 19px; margin: 10px 0 6px; }
+.u-lock form { text-align: left; margin-top: 16px; }
+.u-lock-ico { width: 56px; height: 56px; margin: 0 auto; border-radius: 16px; display: grid; place-items: center; background: var(--blue-100); color: var(--blue-600); }
+.u-lock-ico svg { width: 28px; height: 28px; }
+.lock-acts { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: -4px 0 14px; }
+.lock-acts .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.lock-acts svg { width: 16px; height: 16px; }
+main.u-locked > :not(.page-head):not(#uLock) { display: none !important; }
+main.u-locked #addBtn { display: none; }

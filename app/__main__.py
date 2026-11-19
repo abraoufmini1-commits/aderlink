@@ -156,6 +156,14 @@ def cmd_password(_args):
     print("Mot de passe modifié. Les sessions ouvertes sont déconnectées.")
 
 
+def cmd_users_lock(_args):
+    """Mot de passe de la partie Utilisateurs oublié : il est effacé, l'administrateur en crée un nouveau dans l'application."""
+    cfg = load_config()
+    cfg.pop("users_lock", None)
+    save_config(cfg)
+    print("Mot de passe de la partie Utilisateurs effacé. Ouvrez Utilisateurs dans l'application pour en créer un nouveau.")
+
+
 def cmd_test(_args):
     cfg = load_config()
     ok = True
@@ -386,6 +394,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("setup").set_defaults(func=cmd_setup)
     sub.add_parser("password").set_defaults(func=cmd_password)
+    sub.add_parser("users-lock-reset").set_defaults(func=cmd_users_lock)
     sub.add_parser("init-vps").set_defaults(func=cmd_init_vps)
     w = sub.add_parser("wg-setup")
     w.add_argument("--endpoint", required=True)

@@ -352,6 +352,7 @@ class Users:
         """Gère l'abonnement d'un compte.
 
         action = add   : ajoute n heures / jours / mois / ans (à partir de la fin actuelle, ou de maintenant si terminé)
+        action = remove : retire n heures / jours / mois / ans à la fin actuelle (doit rester dans le futur)
         action = set   : fixe la date de fin (horodatage « until »)
         action = stop  : termine l'abonnement tout de suite
         action = unlimited : plus de date de fin
@@ -375,6 +376,27 @@ class Users:
                 raise UserError(f"Nombre entre 1 et {limits[unit]} pour cette unité")
             start = old if old and old > now else now
             new, label = self.extend(start, n, unit), "+ " + self.label(n, unit)
+        elif action == "remove":
+            # retirer du temps (ex : 9 mois donnés par erreur, on en retire 3) : à partir de la fin actuelle
+            try:
+                n = int(str(data.get("n", "")).strip())
+            except ValueError:
+                raise UserError("Indiquez un nombre entier (ex : 1, 3, 16)")
+            unit = data.get("unit")
+            if unit not in UNITS:
+                raise UserError("Choisissez l'unité : heures, jours, mois ou ans")
+            limits = {"heure": 24 * 366 * 10, "jour": 366 * 10, "mois": 120, "an": 10}
+            if not 1 <= n <= limits[unit]:
+                raise UserError(f"Nombre entre 1 et {limits[unit]} pour cette unité")
+            if old is None:
+                raise UserError("Abonnement sans limite : fixez d'abord une date de fin (Autres réglages)")
+            if old <= now:
+                raise UserError("L'abonnement est déjà terminé : il n'y a pas de temps à retirer")
+            new = self.extend(old, -n, unit)
+            if new <= now:
+                raise UserError("Il ne reste pas autant de temps. Pour terminer l'abonnement tout de suite, "
+                                "utilisez « Arrêter maintenant » (Autres réglages)")
+            label = "− " + self.label(n, unit)
         elif action == "set":
             try:
                 new = int(data.get("until"))

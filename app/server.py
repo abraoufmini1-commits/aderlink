@@ -52,6 +52,29 @@ def read_token(secret, token):
     return username
 
 
+ULOCK_COOKIE = "aderlink_ul"
+ULOCK_MINUTES = 30
+ULOCK_MSG = "Partie Utilisateurs verrouillée : entrez son mot de passe"
+
+
+def make_ulock(secret, username):
+    """Jeton « partie Utilisateurs ouverte » : 30 minutes, lié au compte et au mot de passe du moment."""
+    payload = f"{username}|{int(time.time()) + ULOCK_MINUTES * 60}"
+    sig = hmac.new((secret + "|ulock").encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode()
+
+
+def read_ulock(secret, token):
+    try:
+        username, expires, sig = base64.urlsafe_b64decode(token.encode()).decode().split("|")
+    except Exception:
+        return None
+    expected = hmac.new((secret + "|ulock").encode(), f"{username}|{expires}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected) or int(expires) < time.time():
+        return None
+    return username
+
+
 def FEATURE_LABEL():
     from .plans import FEATURE_LABEL as L
     return L
@@ -132,6 +155,7 @@ class App:
         self.roaming = roaming
         self.guard = guard
         self.throttle = LoginThrottle()
+        self.ulock_throttle = LoginThrottle()  # essais du mot de passe de la partie Utilisateurs
 
     def offset(self):
         return int(float(self.config.get("utc_offset_hours", 1)) * 3600)  # Niger : UTC+1
@@ -561,6 +585,61 @@ def make_handler(app):
             from .users import Principal
             return Principal(username, "Administrateur", "admin") if username == app.config["admin"]["username"] else None
 
+        # --- mot de passe de la partie Utilisateurs (en plus de la connexion) ---------------------
+        def users_unlocked(self, who):
+            """Vrai si ce compte peut voir la partie Utilisateurs maintenant : soit il n'est pas concerné
+            (un client qui gère seulement son équipe), soit il a donné le mot de passe il y a moins de 30 minutes."""
+            if not who or not who.can("users"):
+                return True
+            morsel = SimpleCookie(self.headers.get("Cookie", "")).get(ULOCK_COOKIE)
+            return bool(morsel) and read_ulock(secret, morsel.value) == who.username
+
+        def need_users_unlocked(self, who):
+            if not self.users_unlocked(who):
+                raise Forbidden(ULOCK_MSG)
+
+        def ulock_cookie(self, value, age):
+            return (f"{ULOCK_COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}"
+                    + ("; Secure" if secure or self.https() else ""))
+
+        def users_lock_post(self, p, body, who):
+            """/api/users-lock/… : ouvrir, créer, changer ou refermer le mot de passe de la partie Utilisateurs."""
+            self.need(who.can("users"))
+            lock = app.config.get("users_lock") or ""
+            act = p.rsplit("/", 1)[-1]
+            ip = self.client_ip()
+            if act == "close":
+                return {"ok": True, "_cookie": self.ulock_cookie("", 0)}
+            if act in ("open", "change") and app.ulock_throttle.blocked(ip):
+                raise Forbidden("Trop d'essais. Réessayez dans 15 minutes.")
+            if act == "create" or act == "change":
+                if act == "create":
+                    self.need(not lock, "Le mot de passe existe déjà")
+                    self.need(who.is_admin, "Seul l'administrateur crée ce mot de passe")
+                else:
+                    self.need(who.is_admin, "Seul l'administrateur change ce mot de passe")
+                    if not verify_password(str(body.get("old") or ""), lock):
+                        app.ulock_throttle.fail(ip)
+                        raise Forbidden("Ancien mot de passe incorrect")
+                new = str(body.get("password") or "")
+                if len(new) < 6:
+                    raise Forbidden("6 caractères au moins")
+                if new != str(body.get("confirm") or ""):
+                    raise Forbidden("Les deux mots de passe ne sont pas les mêmes")
+                app.config["users_lock"] = hash_password(new)
+                app.save_config(app.config)
+                app.ulock_throttle.reset(ip)
+                return {"ok": True, "_cookie": self.ulock_cookie(make_ulock(secret, who.username), ULOCK_MINUTES * 60)}
+            if act == "open":
+                if not lock:
+                    raise Forbidden("Aucun mot de passe créé : l'administrateur doit le créer d'abord")
+                if not verify_password(str(body.get("password") or ""), lock):
+                    app.ulock_throttle.fail(ip)
+                    raise Forbidden("Mot de passe incorrect")
+                app.ulock_throttle.reset(ip)
+                return {"ok": True, "_cookie": self.ulock_cookie(make_ulock(secret, who.username), ULOCK_MINUTES * 60)}
+            raise Forbidden("Action inconnue")
+
         def send(self, status, body=b"", ctype="text/plain; charset=utf-8", headers=None):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
@@ -622,6 +701,9 @@ def make_handler(app):
                 out = fn()
                 if out is None:  # réponse déjà envoyée (image)
                     return None
+                cookie = out.pop("_cookie", None) if isinstance(out, dict) else None
+                if cookie is not None:
+                    return self.send(status, json.dumps(out).encode(), "application/json; charset=utf-8", {"Set-Cookie": cookie})
                 return self.json(out, status)
             except Forbidden as e:
                 return self.json({"error": str(e) or "Accès refusé"}, 403)
@@ -915,8 +997,12 @@ def make_handler(app):
                 code = q.get("code", [""])[0].strip()[:20]
                 res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]
                 return {"results": app.tickets.status(res)}
+            if app.users and p == "/api/users-lock":
+                return {"concerned": who.can("users"), "set": bool(app.config.get("users_lock")),
+                        "unlocked": self.users_unlocked(who), "admin": who.is_admin}
             if app.users and p == "/api/users":
                 self.need(who.can("team"))
+                self.need_users_unlocked(who)
                 off = app.sales_offset()  # mois de vente : du 1er à 1 h au 1er du mois suivant à 1 h
                 month = time.localtime(time.time() + off - time.timezone)
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
@@ -925,6 +1011,7 @@ def make_handler(app):
                         "zones": [{"id": z["id"], "name": z["name"], "owner": z.get("owner")}
                                   for z in app.config.get("zones", []) if who.can_zone(z["id"])]}
             if app.users and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit() and parts[4] == "history":
+                self.need_users_unlocked(who)
                 self.need(who.can("users") or self.my_team(who, int(parts[3])))
                 return {"history": app.users.history(int(parts[3]))}
             if p == "/api/backup":
@@ -1093,8 +1180,11 @@ def make_handler(app):
             # utilisateurs
             if U and p == "/api/me/password":
                 return U.change_own_password(who, body, lambda: app.save_config(app.config))
+            if U and p.startswith("/api/users-lock/"):
+                return self.users_lock_post(p, body, who)
             if U and p == "/api/users":
                 self.need(who.can("team"))
+                self.need_users_unlocked(who)
                 return U.create(body, parent=None if who.is_admin else who.username)
             if U and p == "/api/plans":
                 self.need(who.can("settings"))
@@ -1112,6 +1202,7 @@ def make_handler(app):
                 return U.plans.archive(int(parts[3]))
             if U and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit():
                 uid, action = int(parts[3]), parts[4]
+                self.need_users_unlocked(who)
                 # le client ne gère que son équipe, et pas l'abonnement ni les routeurs autorisés
                 self.need(who.can("users") or (self.my_team(who, uid) and action not in ("subscription", "routers", "plan")))
                 acts = {"update": lambda: U.update(uid, body), "password": lambda: U.reset_password(uid, body),

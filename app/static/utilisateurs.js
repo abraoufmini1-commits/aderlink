@@ -20,7 +20,11 @@
     return fetch(path, opt).then(function (r) {
       if (r.status === 401) { location.href = "/login"; throw new Error("Non connecté"); }
       return r.json().catch(function () { throw new Error("Redémarrez ADER LINK (ancienne version en cours)"); })
-        .then(function (d) { if (!r.ok) throw new Error(d.error || "Erreur " + r.status); return d; });
+        .then(function (d) {
+          if (r.status === 403 && /^Partie Utilisateurs verrouillée/.test(d.error || "")) { close(); showLock({ set: true }); }
+          if (!r.ok) throw new Error(d.error || "Erreur " + r.status);
+          return d;
+        });
     });
   }
   function money(n) { return nf.format(Math.round(n || 0)) + " F"; }
@@ -379,10 +383,11 @@
 
   // --- abonnement --------------------------------------------------------------------------
   var UNIT_S = { heure: 3600, jour: 86400 };
-  function previewEnd(u, n, unit) {
+  function previewEnd(u, n, unit, minus) {
     var now = Math.floor(Date.now() / 1000);
     var start = u.expires_at && u.expires_at > now ? u.expires_at : now;
     if (!(n >= 1)) return null;
+    if (minus) { if (!u.expires_at || u.expires_at <= now) return null; n = -n; }
     if (UNIT_S[unit]) return start + n * UNIT_S[unit];
     var d = new Date(start * 1000), months = unit === "an" ? 12 * n : n;
     var day = d.getDate();
@@ -399,7 +404,8 @@
     var x = sub(u);
     var body =
       "<div class='sub-state " + x.cls + "'>" + ic("clock") + "<div><strong>" + esc(x.title) + "</strong><span>" + esc(x.text) + "</span></div></div>" +
-      "<form id='sForm' autocomplete='off' novalidate><h3 class='sub-h'>Ajouter du temps</h3>" +
+      "<form id='sForm' autocomplete='off' novalidate><div class='seg sub-mode' id='sMode'><button type='button' data-m='add' aria-pressed='true'>Ajouter du temps</button>" +
+      "<button type='button' data-m='remove' aria-pressed='false'>Retirer du temps</button></div>" +
       "<div class='f'><div class='sub-add'><input id='sN' type='number' min='1' step='1' inputmode='numeric' placeholder='Nombre' aria-label='Nombre'>" +
       "<select id='sU' aria-label='Unité'><option value='heure'>heure(s)</option><option value='jour' selected>jour(s)</option><option value='mois'>mois</option><option value='an'>an(s)</option></select></div></div>" +
       "<div class='chips' id='sChips'><button type='button' data-n='1' data-u='jour'>+1 jour</button><button type='button' data-n='7' data-u='jour'>+7 jours</button>" +
@@ -417,12 +423,30 @@
     sheet("Abonnement de " + u.name, "clock", body);
     var now = Math.floor(Date.now() / 1000);
     $("sUntil").value = localInput(u.expires_at && u.expires_at > now ? u.expires_at : now + 30 * 86400);
+    var mode = "add";
     function update() {
-      var end = previewEnd(u, +$("sN").value, $("sU").value);
-      $("sAdd").disabled = !end || +$("sN").value % 1 !== 0;
-      $("sPrev").innerHTML = end ? "Nouvelle fin : <strong>" + esc(fullWhen(end)) + "</strong>" : "Saisissez un nombre pour voir la nouvelle date de fin.";
-      $("sAdd").textContent = end ? "Ajouter " + $("sN").value + " " + $("sU").selectedOptions[0].textContent : "Ajouter";
+      var minus = mode === "remove", nowS = Math.floor(Date.now() / 1000);
+      var end = previewEnd(u, +$("sN").value, $("sU").value, minus);
+      var tooMuch = minus && end && end <= nowS;
+      $("sAdd").disabled = !end || tooMuch || +$("sN").value % 1 !== 0;
+      $("sAdd").className = "btn btn-big btn-block" + (minus ? " btn-danger" : "");
+      var verb = minus ? "Retirer" : "Ajouter";
+      if (minus && !u.expires_at) $("sPrev").innerHTML = "Abonnement sans limite : fixez d'abord une date de fin (Autres réglages).";
+      else if (minus && u.expires_at <= nowS) $("sPrev").innerHTML = "L'abonnement est déjà terminé : il n'y a pas de temps à retirer.";
+      else if (tooMuch) $("sPrev").innerHTML = "<b class='bad'>Il ne reste pas autant de temps.</b> Pour terminer tout de suite : « Arrêter maintenant » (Autres réglages).";
+      else $("sPrev").innerHTML = end ? "Nouvelle fin : <strong>" + esc(fullWhen(end)) + "</strong>" : "Saisissez un nombre pour voir la nouvelle date de fin.";
+      $("sAdd").textContent = end && !tooMuch ? verb + " " + $("sN").value + " " + $("sU").selectedOptions[0].textContent : verb;
+      [].forEach.call($("sChips").querySelectorAll("[data-n]"), function (c) {
+        c.textContent = (minus ? "−" : "+") + c.textContent.replace(/^[+−]/, "");
+      });
     }
+    $("sMode").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-m]");
+      if (!b) return;
+      mode = b.dataset.m;
+      [].forEach.call($("sMode").children, function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+      update();
+    });
     $("sN").addEventListener("input", update);
     $("sU").addEventListener("change", update);
     $("sChips").addEventListener("click", function (e) {
@@ -442,7 +466,7 @@
     }
     $("sForm").addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!$("sAdd").disabled) send({ action: "add", n: $("sN").value, unit: $("sU").value }, $("sAdd"));
+      if (!$("sAdd").disabled) send({ action: mode, n: $("sN").value, unit: $("sU").value }, $("sAdd"));
     });
     $("sSet").addEventListener("click", function () {
       var t = new Date($("sUntil").value);
@@ -559,5 +583,87 @@
     sheet("Impossible", "info", "<p class='pane-sub'>" + esc(text) + "</p>");
   }
 
-  load();
+  // --- mot de passe de la partie Utilisateurs ---------------------------------------------------
+  function lockBox() {
+    var box = $("uLock");
+    if (!box) {
+      box = document.createElement("section");
+      box.id = "uLock";
+      box.className = "card u-lock";
+      document.querySelector("main").appendChild(box);
+    }
+    return box;
+  }
+  function setLocked(on) {
+    document.querySelector("main").classList.toggle("u-locked", on);
+    if ($("lockActs")) $("lockActs").hidden = on;
+    lockBox().hidden = !on;
+  }
+  function showLock(st) {
+    var box = lockBox(), create = !st.set;
+    if (create && !st.admin) {
+      box.innerHTML = "<div class='u-lock-ico'>" + ic("lock") + "</div><h2>Partie protégée</h2>" +
+        "<p class='pane-sub'>L'administrateur doit d'abord créer le mot de passe de cette partie.</p>";
+      return setLocked(true);
+    }
+    box.innerHTML = "<div class='u-lock-ico'>" + ic("lock") + "</div>" +
+      "<h2>" + (create ? "Créer le mot de passe de la partie Utilisateurs" : "Partie Utilisateurs protégée") + "</h2>" +
+      "<p class='pane-sub'>" + (create ? "Seules les personnes qui connaissent ce mot de passe pourront ouvrir les gérants, les clients et les abonnements. Choisissez-le différent du mot de passe de connexion."
+        : "Entrez le mot de passe de cette partie. Elle reste ouverte 30 minutes.") + "</p>" +
+      "<form id='lkForm' autocomplete='off' novalidate>" +
+      "<div class='f'><label for='lkPw'>" + (create ? "Nouveau mot de passe (6 caractères au moins)" : "Mot de passe") + "</label>" +
+      "<input id='lkPw' type='password' autocomplete='" + (create ? "new-password" : "current-password") + "'></div>" +
+      (create ? "<div class='f'><label for='lkPw2'>Répétez le mot de passe</label><input id='lkPw2' type='password' autocomplete='new-password'></div>" : "") +
+      "<div class='notice' id='lkMsg' role='status'></div>" +
+      "<button class='btn btn-big btn-block' type='submit' id='lkGo'>" + (create ? "Créer et ouvrir" : "Ouvrir") + "</button></form>";
+    setLocked(true);
+    $("lkPw").focus();
+    $("lkForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var body = create ? { password: $("lkPw").value, confirm: $("lkPw2").value } : { password: $("lkPw").value };
+      $("lkGo").disabled = true;
+      api("/api/users-lock/" + (create ? "create" : "open"), body).then(function () {
+        setLocked(false);
+        lockActs();
+        load();
+      }).catch(function (err) {
+        $("lkMsg").className = "notice show notice-err"; $("lkMsg").textContent = err.message;
+        $("lkGo").disabled = false; $("lkPw").value = ""; $("lkPw").focus();
+      });
+    });
+  }
+  function lockActs() {
+    if ($("lockActs")) { $("lockActs").hidden = false; return; }
+    var d = document.createElement("div");
+    d.id = "lockActs";
+    d.className = "lock-acts";
+    d.innerHTML = "<button class='btn btn-outline' type='button' id='lkClose'>" + ic("lock") + " Verrouiller</button>" +
+      "<button class='link' type='button' id='lkChange'>Changer le mot de passe de cette partie</button>";
+    var head = document.querySelector(".page-head");
+    head.parentNode.insertBefore(d, head.nextSibling);
+    $("lkClose").addEventListener("click", function () {
+      api("/api/users-lock/close", {}).then(function () { showLock({ set: true }); });
+    });
+    $("lkChange").addEventListener("click", function () {
+      sheet("Mot de passe de la partie Utilisateurs", "lock",
+        "<form id='lcForm' autocomplete='off' novalidate>" +
+        "<div class='f'><label for='lcOld'>Mot de passe actuel</label><input id='lcOld' type='password' autocomplete='current-password'></div>" +
+        "<div class='f'><label for='lcNew'>Nouveau mot de passe (6 caractères au moins)</label><input id='lcNew' type='password' autocomplete='new-password'></div>" +
+        "<div class='f'><label for='lcNew2'>Répétez le nouveau mot de passe</label><input id='lcNew2' type='password' autocomplete='new-password'></div>" +
+        "<div class='notice' id='bsMsg' role='status'></div>" +
+        "<button class='btn btn-big btn-block' type='submit'>Changer</button></form>");
+      $("lcForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        api("/api/users-lock/change", { old: $("lcOld").value, password: $("lcNew").value, confirm: $("lcNew2").value })
+          .then(function () { msg("ok", "Mot de passe changé."); $("lcForm").reset(); })
+          .catch(function (err) { msg("err", esc(err.message)); });
+      });
+    });
+  }
+
+  api("/api/users-lock").then(function (st) {
+    if (st.concerned && !st.unlocked) return showLock(st);
+    if (st.concerned) lockActs();
+    load();
+  }).catch(function () { load(); });
 })();

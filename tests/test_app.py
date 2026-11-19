@@ -576,7 +576,34 @@ class UsersAndRolesTests(unittest.TestCase):
         jar = CookieJar()
         op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
         op.open(self.base + "/login", data=f"username={user}&password={pwd}".encode())
+        if user == "admin" and pwd == "admin-secret-1":  # partie Utilisateurs : ouverte avec son mot de passe
+            if self.post(op, "/api/users-lock/open", {"password": "partie-123"})[0] != 200:
+                self.post(op, "/api/users-lock/create", {"password": "partie-123", "confirm": "partie-123"})
         return op
+
+    def test_users_lock(self):
+        """La partie Utilisateurs demande son propre mot de passe (en plus de la connexion)."""
+        bare = self.login("admin", "x")  # pas connecté
+        jar = CookieJar()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        op.open(self.base + "/login", data=b"username=admin&password=admin-secret-1")
+        self.login("admin", "admin-secret-1")  # crée le mot de passe s'il n'existe pas
+        st = self.get(op, "/api/users-lock")
+        self.assertTrue(st["set"]) ; self.assertFalse(st["unlocked"])
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            op.open(self.base + "/api/users")
+        self.assertEqual(ctx.exception.code, 403)
+        code, r = self.post(op, "/api/users/1/subscription", {"action": "unlimited"})
+        self.assertEqual(code, 403)
+        self.assertIn("verrouillée", r["error"])
+        self.assertEqual(self.post(op, "/api/users-lock/open", {"password": "mauvais"})[0], 403)
+        self.assertEqual(self.post(op, "/api/users-lock/create", {"password": "autre-123", "confirm": "autre-123"})[0], 403)
+        self.assertEqual(self.post(op, "/api/users-lock/open", {"password": "partie-123"})[0], 200)
+        self.assertIn("users", self.get(op, "/api/users"))
+        self.assertEqual(self.post(op, "/api/users-lock/close", {})[0], 200)
+        with self.assertRaises(urllib.error.HTTPError):
+            op.open(self.base + "/api/users")
+        del bare
 
     def get(self, op, path):
         return json.loads(op.open(self.base + path).read())
@@ -747,6 +774,18 @@ class UsersAndRolesTests(unittest.TestCase):
         code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "add", "n": 16, "unit": "heure", "note": "payé"})
         self.assertEqual(r["expires_at"], first + 16 * 3600)
         self.assertEqual(r["history"][0]["label"], "+ 16 heures")
+        # retirer du temps : 9 mois donnés, 3 retirés -> 6 mois
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "add", "n": 9, "unit": "mois"})
+        nine = r["expires_at"]
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "remove", "n": 3, "unit": "mois"})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(r["expires_at"], add_months(nine, -3))
+        self.assertEqual(r["history"][0]["label"], "− 3 mois")
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "remove", "n": 2, "unit": "an"})
+        self.assertEqual(code, 400)  # plus que ce qui reste : refusé, rien ne change
+        self.assertIn("Arrêter maintenant", r["error"])
+        code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "remove", "n": 6, "unit": "mois"})
+        self.assertEqual(r["expires_at"], first + 16 * 3600)  # retour à la fin d'avant
         for bad in ({"action": "add", "n": 0, "unit": "jour"}, {"action": "add", "n": "x", "unit": "jour"},
                     {"action": "add", "n": 2, "unit": "semaine"}, {"action": "set", "until": 5}):
             self.assertEqual(self.post(admin, f"/api/users/{u['id']}/subscription", bad)[0], 400, bad)
@@ -773,7 +812,7 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertEqual(self.get(self.login("ali", "ali-123456"), "/api/me")["username"], "ali")
         code, r = self.post(admin, f"/api/users/{u['id']}/subscription", {"action": "unlimited"})
         self.assertIsNone(r["expires_at"])
-        self.assertEqual(len(self.get(admin, f"/api/users/{u['id']}/history")["history"]), 5)
+        self.assertEqual(len(self.get(admin, f"/api/users/{u['id']}/history")["history"]), 8)
         # contact affiché sur la page de connexion
         self.post(admin, "/api/settings/contact", {"name": "ADER TECHNOLOGIE", "phone": "+227 90 11 22 33"})
         pub = json.loads(urllib.request.urlopen(self.base + "/api/public").read())
