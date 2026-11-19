@@ -52,13 +52,12 @@ def read_token(secret, token):
     return username
 
 
-ULOCK_COOKIE = "aderlink_ul"
-ULOCK_MINUTES = 30
+ULOCK_MINUTES = 5  # sans signe de vie de la page pendant 5 minutes : refermée
 ULOCK_MSG = "Partie Utilisateurs verrouillée : entrez son mot de passe"
 
 
 def make_ulock(secret, username):
-    """Jeton « partie Utilisateurs ouverte » : 30 minutes, lié au compte et au mot de passe du moment."""
+    """Jeton « partie Utilisateurs ouverte » : 5 minutes (prolongé tant que la page est ouverte et visible), lié au compte et au mot de passe du moment."""
     payload = f"{username}|{int(time.time()) + ULOCK_MINUTES * 60}"
     sig = hmac.new((secret + "|ulock").encode(), payload.encode(), hashlib.sha256).hexdigest()
     return base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode()
@@ -588,19 +587,16 @@ def make_handler(app):
         # --- mot de passe de la partie Utilisateurs (en plus de la connexion) ---------------------
         def users_unlocked(self, who):
             """Vrai si ce compte peut voir la partie Utilisateurs maintenant : soit il n'est pas concerné
-            (un client qui gère seulement son équipe), soit il a donné le mot de passe il y a moins de 30 minutes."""
+            (un client qui gère seulement son équipe), soit il a donné le mot de passe et sa page est restée ouverte (signe de vie il y a moins de 5 minutes)."""
             if not who or not who.can("users"):
                 return True
-            morsel = SimpleCookie(self.headers.get("Cookie", "")).get(ULOCK_COOKIE)
-            return bool(morsel) and read_ulock(secret, morsel.value) == who.username
+            # clé gardée seulement dans la page ouverte (jamais en cookie) : quitter la page = clé perdue
+            key = self.headers.get("X-Users-Key") or ""
+            return bool(key) and read_ulock(secret, key) == who.username
 
         def need_users_unlocked(self, who):
             if not self.users_unlocked(who):
                 raise Forbidden(ULOCK_MSG)
-
-        def ulock_cookie(self, value, age):
-            return (f"{ULOCK_COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}"
-                    + ("; Secure" if secure or self.https() else ""))
 
         def users_lock_post(self, p, body, who):
             """/api/users-lock/… : ouvrir, créer, changer ou refermer le mot de passe de la partie Utilisateurs."""
@@ -609,7 +605,10 @@ def make_handler(app):
             act = p.rsplit("/", 1)[-1]
             ip = self.client_ip()
             if act == "close":
-                return {"ok": True, "_cookie": self.ulock_cookie("", 0)}
+                return {"ok": True}
+            if act == "touch":  # la page est toujours ouverte et visible : encore 5 minutes
+                self.need_users_unlocked(who)
+                return {"ok": True, "key": make_ulock(secret, who.username)}
             if act in ("open", "change") and app.ulock_throttle.blocked(ip):
                 raise Forbidden("Trop d'essais. Réessayez dans 15 minutes.")
             if act == "create" or act == "change":
@@ -629,7 +628,7 @@ def make_handler(app):
                 app.config["users_lock"] = hash_password(new)
                 app.save_config(app.config)
                 app.ulock_throttle.reset(ip)
-                return {"ok": True, "_cookie": self.ulock_cookie(make_ulock(secret, who.username), ULOCK_MINUTES * 60)}
+                return {"ok": True, "key": make_ulock(secret, who.username)}
             if act == "open":
                 if not lock:
                     raise Forbidden("Aucun mot de passe créé : l'administrateur doit le créer d'abord")
@@ -637,7 +636,7 @@ def make_handler(app):
                     app.ulock_throttle.fail(ip)
                     raise Forbidden("Mot de passe incorrect")
                 app.ulock_throttle.reset(ip)
-                return {"ok": True, "_cookie": self.ulock_cookie(make_ulock(secret, who.username), ULOCK_MINUTES * 60)}
+                return {"ok": True, "key": make_ulock(secret, who.username)}
             raise Forbidden("Action inconnue")
 
         def send(self, status, body=b"", ctype="text/plain; charset=utf-8", headers=None):

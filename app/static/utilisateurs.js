@@ -11,8 +11,10 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  var ukey = "";  // clé de la partie Utilisateurs : seulement dans cette page (perdue dès qu'on la quitte)
   function api(path, body) {
     var opt = { credentials: "same-origin", headers: {} };
+    if (ukey) opt.headers["X-Users-Key"] = ukey;
     if (body !== undefined) {
       opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.headers["X-AderLink"] = "1";
       opt.body = JSON.stringify(body);
@@ -609,7 +611,7 @@
     box.innerHTML = "<div class='u-lock-ico'>" + ic("lock") + "</div>" +
       "<h2>" + (create ? "Créer le mot de passe de la partie Utilisateurs" : "Partie Utilisateurs protégée") + "</h2>" +
       "<p class='pane-sub'>" + (create ? "Seules les personnes qui connaissent ce mot de passe pourront ouvrir les gérants, les clients et les abonnements. Choisissez-le différent du mot de passe de connexion."
-        : "Entrez le mot de passe de cette partie. Elle reste ouverte 30 minutes.") + "</p>" +
+        : "Entrez le mot de passe de cette partie. Elle se referme dès que vous la quittez.") + "</p>" +
       "<form id='lkForm' autocomplete='off' novalidate>" +
       "<div class='f'><label for='lkPw'>" + (create ? "Nouveau mot de passe (6 caractères au moins)" : "Mot de passe") + "</label>" +
       "<input id='lkPw' type='password' autocomplete='" + (create ? "new-password" : "current-password") + "'></div>" +
@@ -622,7 +624,8 @@
       e.preventDefault();
       var body = create ? { password: $("lkPw").value, confirm: $("lkPw2").value } : { password: $("lkPw").value };
       $("lkGo").disabled = true;
-      api("/api/users-lock/" + (create ? "create" : "open"), body).then(function () {
+      api("/api/users-lock/" + (create ? "create" : "open"), body).then(function (r) {
+        ukey = r.key;
         setLocked(false);
         lockActs();
         load();
@@ -642,7 +645,7 @@
     var head = document.querySelector(".page-head");
     head.parentNode.insertBefore(d, head.nextSibling);
     $("lkClose").addEventListener("click", function () {
-      api("/api/users-lock/close", {}).then(function () { showLock({ set: true }); });
+      ukey = ""; close(); showLock({ set: true });
     });
     $("lkChange").addEventListener("click", function () {
       sheet("Mot de passe de la partie Utilisateurs", "lock",
@@ -655,13 +658,34 @@
       $("lcForm").addEventListener("submit", function (e) {
         e.preventDefault();
         api("/api/users-lock/change", { old: $("lcOld").value, password: $("lcNew").value, confirm: $("lcNew2").value })
-          .then(function () { msg("ok", "Mot de passe changé."); $("lcForm").reset(); })
+          .then(function (r) { ukey = r.key; msg("ok", "Mot de passe changé."); $("lcForm").reset(); })
           .catch(function (err) { msg("err", esc(err.message)); });
       });
     });
   }
 
+  // Refermée dès qu'on quitte la page ; écran éteint ou autre application : refermée après 5 minutes
+  var guarded = false;
+  function locked() { return document.querySelector("main").classList.contains("u-locked"); }
+  function guard() {
+    if (guarded) return;
+    guarded = true;
+    setInterval(function () {
+      if (document.visibilityState === "visible" && !locked()) api("/api/users-lock/touch", {}).then(function (r) { ukey = r.key; }).catch(function () {});
+    }, 60000);
+    function recheck(force) {
+      if (locked() && !force) return;
+      api("/api/users-lock").then(function (st) {
+        if (st.concerned && !st.unlocked) { close(); showLock(st); }
+        else if (force) { setLocked(false); load(); }
+      }).catch(function () {});
+    }
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") recheck(); });
+    window.addEventListener("pageshow", function (e) { if (e.persisted) recheck(true); });
+    window.addEventListener("pagehide", function () { ukey = ""; });  // page quittée : la clé disparaît
+  }
   api("/api/users-lock").then(function (st) {
+    if (st.concerned) guard();
     if (st.concerned && !st.unlocked) return showLock(st);
     if (st.concerned) lockActs();
     load();

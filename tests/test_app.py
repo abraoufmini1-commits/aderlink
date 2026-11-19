@@ -577,8 +577,10 @@ class UsersAndRolesTests(unittest.TestCase):
         op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
         op.open(self.base + "/login", data=f"username={user}&password={pwd}".encode())
         if user == "admin" and pwd == "admin-secret-1":  # partie Utilisateurs : ouverte avec son mot de passe
-            if self.post(op, "/api/users-lock/open", {"password": "partie-123"})[0] != 200:
-                self.post(op, "/api/users-lock/create", {"password": "partie-123", "confirm": "partie-123"})
+            code, r = self.post(op, "/api/users-lock/open", {"password": "partie-123"})
+            if code != 200:
+                code, r = self.post(op, "/api/users-lock/create", {"password": "partie-123", "confirm": "partie-123"})
+            op.addheaders.append(("X-Users-Key", r["key"]))
         return op
 
     def test_users_lock(self):
@@ -598,11 +600,27 @@ class UsersAndRolesTests(unittest.TestCase):
         self.assertIn("verrouillée", r["error"])
         self.assertEqual(self.post(op, "/api/users-lock/open", {"password": "mauvais"})[0], 403)
         self.assertEqual(self.post(op, "/api/users-lock/create", {"password": "autre-123", "confirm": "autre-123"})[0], 403)
-        self.assertEqual(self.post(op, "/api/users-lock/open", {"password": "partie-123"})[0], 200)
+        code, r = self.post(op, "/api/users-lock/open", {"password": "partie-123"})
+        self.assertEqual(code, 200)
+        op.addheaders.append(("X-Users-Key", r["key"]))  # la clé : seulement dans la page ouverte
         self.assertIn("users", self.get(op, "/api/users"))
-        self.assertEqual(self.post(op, "/api/users-lock/close", {})[0], 200)
+        code, r = self.post(op, "/api/users-lock/touch", {})  # page ouverte : prolongée
+        self.assertEqual(code, 200)
+        self.assertTrue(r["key"])
+        op.addheaders.pop()  # page quittée : plus de clé, refermée
+        self.assertEqual(self.post(op, "/api/users-lock/touch", {})[0], 403)
         with self.assertRaises(urllib.error.HTTPError):
             op.open(self.base + "/api/users")
+        # clé périmée (plus de 5 minutes sans signe de vie) : refusée
+        from app.server import read_ulock
+        import app.server as srv
+        real = time.time
+        try:
+            srv.time.time = lambda: real() - 400
+            old_key = srv.make_ulock(self.config["secret_key"], "admin")
+        finally:
+            srv.time.time = real
+        self.assertIsNone(read_ulock(self.config["secret_key"], old_key))
         del bare
 
     def get(self, op, path):
