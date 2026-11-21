@@ -52,6 +52,7 @@ def read_token(secret, token):
     return username
 
 
+USERS_LOCK_ON = False  # mot de passe de la partie Utilisateurs retiré à la demande de l'administrateur (21/11)
 ULOCK_MINUTES = 5  # sans signe de vie de la page pendant 5 minutes : refermée
 ULOCK_MSG = "Partie Utilisateurs verrouillée : entrez son mot de passe"
 
@@ -617,7 +618,7 @@ def make_handler(app):
         def users_unlocked(self, who):
             """Vrai si ce compte peut voir la partie Utilisateurs maintenant : soit il n'est pas concerné
             (un client qui gère seulement son équipe), soit il a donné le mot de passe et sa page est restée ouverte (signe de vie il y a moins de 5 minutes)."""
-            if not who or not who.can("users"):
+            if not who or not who.can("users") or not USERS_LOCK_ON:
                 return True
             # clé gardée seulement dans la page ouverte (jamais en cookie) : quitter la page = clé perdue
             key = self.headers.get("X-Users-Key") or ""
@@ -1035,7 +1036,7 @@ def make_handler(app):
                 res = [r for r in app.tickets.find(code) if app.batch_visible(r["batch"], who)]
                 return {"results": app.tickets.status(res)}
             if app.users and p == "/api/users-lock":
-                return {"concerned": who.can("users"), "set": bool(app.config.get("users_lock")),
+                return {"concerned": who.can("users") and USERS_LOCK_ON, "set": bool(app.config.get("users_lock")),
                         "unlocked": self.users_unlocked(who), "admin": who.is_admin}
             if app.users and p == "/api/users":
                 self.need(who.can("team"))

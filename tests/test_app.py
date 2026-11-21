@@ -583,6 +583,15 @@ class UsersAndRolesTests(unittest.TestCase):
             op.addheaders.append(("X-Users-Key", r["key"]))
         return op
 
+    def test_users_lock_removed(self):
+        """Mot de passe de la partie Utilisateurs retiré : la connexion suffit."""
+        jar = CookieJar()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        op.open(self.base + "/login", data=b"username=admin&password=admin-secret-1")
+        self.assertFalse(self.get(op, "/api/users-lock")["concerned"])
+        self.assertIn("users", self.get(op, "/api/users"))
+
+    @unittest.skipUnless(__import__("app.server").server.USERS_LOCK_ON, "mot de passe de la partie Utilisateurs retiré")
     def test_users_lock(self):
         """La partie Utilisateurs demande son propre mot de passe (en plus de la connexion)."""
         bare = self.login("admin", "x")  # pas connecté
