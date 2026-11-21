@@ -74,6 +74,11 @@ class Roaming:
             # chaque paquet de consommation efface la réservation « pending » du routeur : par index (avant : toute la table)
             store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_nas_code ON roaming_sessions(nas_zone, code)")
             store.db.execute("CREATE INDEX IF NOT EXISTS idx_rs_code_only ON roaming_sessions(code)")
+            # lots Roaming trouvés directement (avant : toute la table des tickets parcourue chaque minute)
+            try:
+                store.db.execute("CREATE INDEX IF NOT EXISTS idx_batches_roaming ON batches(roaming_id)")
+            except Exception:
+                pass
             store.db.commit()
 
     def _q(self, sql, params=(), commit=False):
@@ -102,7 +107,7 @@ class Roaming:
                     "zones": [{"id": z["id"], "name": z["name"]} for z in zones if z]}
         stats, _ = self._q(
             "SELECT COUNT(*), SUM(t.first_used IS NULL AND t.removed = 0), SUM(t.first_used IS NOT NULL) "
-            "FROM tickets t JOIN batches b ON b.id = t.batch_id WHERE b.roaming_id = ?", (gid,))
+            "FROM batches b CROSS JOIN tickets t ON t.batch_id = b.id WHERE b.roaming_id = ?", (gid,))
         total, left, used = stats[0]
         now = int(time.time())
         online, _ = self._q("SELECT COUNT(*) FROM roaming_sessions s JOIN roaming_members m ON m.zone_id = s.nas_zone "
@@ -679,8 +684,13 @@ class Roaming:
         members = set(self.member_zones(gid))
         now = int(time.time())
         live = {z for z, m, a, u in rows if a and u >= now - ACTIVE_S and z in members}
+        if not live:
+            # connecté nulle part : rien à couper (le routeur a reçu la durée restante et le refusera au prochain essai).
+            # Avant : connexion à TOUS les routeurs du réseau pour chaque ticket fini, le programme Roaming
+            # passait son temps à appeler des routeurs (parfois injoignables).
+            return
         names = [code] + sorted({m for z, m, a, u in rows if m})
-        self._kick_zones(live or members, names)
+        self._kick_zones(live, names)
 
     def _kick_zones(self, zones, names):
         """Mis en file : un seul fil fait les coupures, une connexion par routeur pour tous les noms."""
@@ -752,7 +762,7 @@ class Roaming:
         """Toutes les minutes : les tickets dont la validité est passée sont fermés sur tout le réseau."""
         now = now or int(time.time())
         rows, _ = self.tickets._q(
-            "SELECT b.roaming_id, t.code, t.zone_id FROM tickets t JOIN batches b ON b.id = t.batch_id "
+            "SELECT b.roaming_id, t.code, t.zone_id FROM batches b CROSS JOIN tickets t ON t.batch_id = b.id "
             "WHERE b.roaming_id IS NOT NULL AND t.expired_at IS NULL AND t.removed = 0 AND t.first_used IS NOT NULL "
             "AND b.validity_s > 0 AND t.first_used + b.validity_s <= ?", (now,))
         for gid, code, home in rows:

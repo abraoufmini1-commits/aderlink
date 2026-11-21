@@ -141,6 +141,7 @@ class App:
         self.collector = collector
         self.store = store
         self._cache, self._cache_lock, self._refreshing = {}, threading.Lock(), set()
+        self._warm = {}  # pages vues il y a moins de 10 min : recalculées à l'avance (clé -> (calcul, durée, dernière vue))
         import collections
         self.slow = collections.deque(maxlen=15)  # pages lentes (heure, adresse, secondes)
         self.started = int(time.time())
@@ -332,12 +333,14 @@ class App:
         return self._overview_result(zones, online, sales, history, events, who)
 
     # Les courbes et pics changent seulement à chaque passage du collecteur : on les garde 30 s
-    def _cached(self, key, fn, ttl=30):
+    def _cached(self, key, fn, ttl=30, warm=False):
         """Résultat gardé `ttl` secondes. Une fois périmé, l'ancien résultat est rendu TOUT DE SUITE et le
         nouveau est calculé à côté : seule la toute première ouverture attend le calcul (avant : un clic
         sur deux tombait sur le recalcul de l'historique des 72 routeurs, 2 à 3 s d'attente)."""
         now = time.time()
         with self._cache_lock:
+            if warm:  # tant que quelqu'un regarde cette page, elle est tenue prête à l'avance
+                self._warm[key] = (fn, ttl, now)
             hit = self._cache.get(key)
             if hit and now - hit[0] < ttl:
                 return hit[1]
@@ -347,6 +350,12 @@ class App:
                     threading.Thread(target=self._refresh_cache, args=(key, fn), daemon=True).start()
                 return hit[1]
         return self._refresh_cache(key, fn)
+
+    def forget_pages(self):
+        """Après une modification (lot créé, ticket supprimé…) : les pages Lots, ventes et Roaming sont recalculées."""
+        with self._cache_lock:
+            for k in [k for k in self._cache if isinstance(k, tuple) and k and k[0] in ("lots", "lots_sum", "sales", "roam")]:
+                self._cache.pop(k, None)
 
     def _refresh_cache(self, key, fn):
         try:
@@ -378,6 +387,26 @@ class App:
                 n += 1
                 time.sleep(25)
         threading.Thread(target=loop, daemon=True, name="pages-warm").start()
+
+        def warm_pages():
+            """Pages Lots, ventes, Roaming… vues il y a moins de 10 minutes : recalculées à côté avant d'être
+            périmées. Celui qui les ouvre a TOUJOURS la réponse tout de suite (jamais d'attente du calcul)."""
+            while True:
+                time.sleep(3)
+                now = time.time()
+                with self._cache_lock:
+                    for k in [k for k, (_, _, seen) in self._warm.items() if now - seen > 600]:
+                        self._warm.pop(k, None)
+                    todo = [(k, fn) for k, (fn, ttl, _) in self._warm.items()
+                            if k not in self._refreshing and now - self._cache.get(k, (0,))[0] > ttl * 0.8]
+                    for k, _ in todo:
+                        self._refreshing.add(k)
+                for k, fn in todo:
+                    try:
+                        self._refresh_cache(k, fn)
+                    except Exception as e:
+                        print(f"[pages] {k[0]} non préparée : {e!r}", flush=True)
+        threading.Thread(target=warm_pages, daemon=True, name="pages-ready").start()
 
     def _zone_history(self, since, bucket):
         """Une seule lecture de l'historique (tous les routeurs), gardée 30 s : sert aux pics ET aux courbes."""
@@ -934,9 +963,13 @@ def make_handler(app):
                 return app.routers.install_info(parts[3], self.headers.get("Host", ""))
             if p == "/api/roaming" and app.roaming:
                 self.need(who.can("routers_write"))
-                groups = app.roaming.groups(who.can_zone, who.username, who.role == "admin")
+                is_admin = who.role == "admin"
+                groups = [dict(g, zones=[dict(z) for z in g["zones"]]) for g in app._cached(
+                    ("roam", who.username, is_admin), lambda: app.roaming.groups(who.can_zone, who.username, is_admin), ttl=15, warm=True)]
                 for g in groups:
                     g.pop("secret", None)
+                    for z in g["zones"]:  # dernier contact : toujours à jour (en mémoire, sans la base)
+                        z.update(app.roaming.zone_status(z["id"]))
                 now = int(time.time())
                 ignored = [{"ip": ip, "ago": now - ts, "name": nm} for ip, (ts, nm) in app.roaming.ignored.items()
                            if now - ts < 3600] if who.role == "admin" else []
@@ -955,7 +988,8 @@ def make_handler(app):
                 return {"script": "\r\n".join(lines), "server": srv}
             if app.tickets and p == "/api/batches/summary":
                 zone_ids, mine = app.sales_scope(who)
-                summary = app.tickets.batch_summary(zone_ids, mine)
+                summary = app._cached(("lots_sum", tuple(zone_ids) if zone_ids is not None else None, mine),
+                                      lambda: app.tickets.batch_summary(zone_ids, mine), ttl=15, warm=True)
                 return {"zones": [dict(id=z["id"], name=z["name"], **summary.get(z["id"], {"lots": 0, "tickets": 0, "used": 0,
                                   "left": 0, "sold": 0, "left_value": 0, "last": None})) for z in app.zones_for(who)],
                         "demo": app.demo}
@@ -963,9 +997,11 @@ def make_handler(app):
                 zid = q.get("zone", [None])[0]
                 if zid:  # un seul routeur : tous ses lots
                     self.need(who.can_zone(zid), "Routeur introuvable")
-                    lots = [b for b in app.tickets.list_batches(limit=2000, zone_id=zid) if app.batch_visible(b, who)]
+                    raw = app._cached(("lots", zid), lambda: app.tickets.list_batches(limit=2000, zone_id=zid), ttl=15, warm=True)
+                    lots = [b for b in raw if app.batch_visible(b, who)]
                     return {"batches": lots, "demo": app.demo, "can_manage": who.can("lots_manage")}
-                lots = [b for b in app.tickets.list_batches(limit=300) if app.batch_visible(b, who)]
+                raw = app._cached(("lots", None), lambda: app.tickets.list_batches(limit=300), ttl=15, warm=True)
+                lots = [b for b in raw if app.batch_visible(b, who)]
                 return {"batches": lots[:150], "demo": app.demo, "can_manage": who.can("lots_manage")}
             if app.tickets and len(parts) == 4 and parts[2] == "batches" and parts[3].isdigit():
                 b = app.tickets.get_batch(int(parts[3]))
@@ -977,7 +1013,9 @@ def make_handler(app):
                 except ValueError:
                     days = 30
                 zone_ids, mine = app.sales_scope(who)
-                return app.tickets.sales_history(days, app.sales_offset(), zone_ids, mine)
+                off = app.sales_offset()
+                return app._cached(("sales", days, off, tuple(zone_ids) if zone_ids is not None else None, mine),
+                                   lambda: app.tickets.sales_history(days, off, zone_ids, mine), ttl=15, warm=True)
             if app.tickets and p == "/api/analytique":
                 from .analytics import analytics
                 try:
@@ -1052,7 +1090,11 @@ def make_handler(app):
             except ValueError:
                 return self.json({"error": "JSON invalide"}, 400)
             status = 201 if p in ("/api/batches", "/api/forfaits", "/api/routers", "/api/users") else 200
-            return self.call(lambda: self.api_post_do(p, body, who), status)
+            try:
+                return self.call(lambda: self.api_post_do(p, body, who), status)
+            finally:
+                if not (p.startswith("/api/users-lock/") or p.endswith(("/check", "/test"))):
+                    app.forget_pages()  # ce qui vient d'être modifié s'affiche tout de suite
 
         def api_post_do(self, p, body, who):
             parts = p.split("/")

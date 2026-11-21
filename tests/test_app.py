@@ -1173,14 +1173,15 @@ class RoamingTests(unittest.TestCase):
         p = self.auth("10.1.0.1", code)
         self.assertEqual(p.code, R.ACCESS_REJECT)
         self.assertIn(b"autre routeur", p.get(R.REPLY_MESSAGE))
-        # données épuisées
-        self.acct("41.0.0.9", code, "s2", R.ACCT_STOP, 400 * 1024)
+        # données épuisées pendant qu'il est connecté sur B
+        self.acct("41.0.0.9", code, "s2", R.ACCT_INTERIM, 400 * 1024)
         p = self.auth("10.2.0.1", code)
         self.assertEqual(p.code, R.ACCESS_REJECT)
         self.assertIn(b"epuisees", p.get(R.REPLY_MESSAGE))
         self.assertIsNotNone(self.t.find(code)[0]["expired_at"])   # fermé pour tout le réseau
         time.sleep(0.3)
-        self.assertEqual(sorted(self.kicked), [("a", code), ("b", code)])  # coupé sur les deux routeurs
+        # coupé là où il est connecté (B) ; sur A il n'est plus connecté : aucun appel inutile au routeur
+        self.assertEqual(sorted(self.kicked), [("b", code)])
 
     def test_no_simultaneous_use_on_two_routers(self):
         from app import radius as R
