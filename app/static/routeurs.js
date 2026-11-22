@@ -37,7 +37,7 @@
 
   // --- liste ---------------------------------------------------------------------------
   function load() {
-    return api("/api/routers").then(function (d) {
+    return AL.swr("/api/routers", api, load).then(function (d) {
       S.routers = d.routers; S.demo = d.demo; S.canWrite = d.can_write; S.quota = d.quota || null; S.role = d.role;
       $("demoBanner").hidden = !d.demo;
       $("addBtn").hidden = !S.canWrite;

@@ -539,6 +539,15 @@ def static_file(path):
     return body, tag
 
 
+def app_build():
+    """Empreinte de toute l'application (pages, scripts, styles) : change à chaque mise à jour."""
+    h = hashlib.sha1()
+    for f in sorted(STATIC.iterdir()):
+        if f.suffix in (".html", ".js", ".css") and f.name != "sw.js":
+            h.update(static_file(f)[1].encode())
+    return h.hexdigest()[:12]
+
+
 _ASSET = re.compile(rb'(["\'])/static/([A-Za-z0-9._-]+)\1')
 
 
@@ -825,8 +834,9 @@ def make_handler(app):
             q = parse_qs(url.query)
             if p == "/favicon.ico":
                 return self.static("favicon.ico")
-            if p == "/sw.js":  # application installable (téléphone, PC)
-                return self.static("sw.js")
+            if p == "/sw.js":  # application installable (téléphone, PC) ; pages gardées sur l'appareil
+                body = static_file(STATIC / "sw.js")[0].replace(b"__BUILD__", app_build().encode())
+                return self.send(200, body, "application/javascript; charset=utf-8", {"Cache-Control": "no-cache"})
             if p == "/api/version":
                 from .updater import local_version
                 return self.json({"version": app.updater.state["current"] if app.updater else local_version()})

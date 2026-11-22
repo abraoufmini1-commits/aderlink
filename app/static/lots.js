@@ -103,7 +103,8 @@
     var m = /^#lot-(\d+)$/.exec(location.hash);
     var find = m ? api("/api/batches/" + m[1]).then(function (b) { setZone(b.zone_id); }).catch(function () {}) : Promise.resolve();
     return find.then(function () {
-      return Promise.all([api("/api/batches/summary"), filter ? api("/api/batches?zone=" + encodeURIComponent(filter)) : Promise.resolve({ batches: [] })]);
+      return Promise.all([AL.swr("/api/batches/summary", api, load),
+                          filter ? AL.swr("/api/batches?zone=" + encodeURIComponent(filter), api, load) : Promise.resolve({ batches: [] })]);
     }).then(function (r) {
       $("demoBanner").hidden = !r[0].demo;
       summary = r[0].zones; zones = summary; all = r[1].batches;

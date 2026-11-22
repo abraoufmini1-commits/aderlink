@@ -259,3 +259,45 @@
     location.href = a.href;
   });
 })();
+// Ouverture instantanée : la page s'affiche tout de suite avec ses dernières données (gardées dans cet onglet),
+// puis les données fraîches arrivent et la page se met à jour toute seule si quelque chose a changé.
+(function () {
+  window.AL = window.AL || {};
+  var FRESH_MS = 5000, KEEP_MS = 30 * 60 * 1000;
+  function read(k) { try { return JSON.parse(sessionStorage.getItem(k) || "null"); } catch (e) { return null; } }
+  function write(k, d) { try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d: d })); } catch (e) { /* plein */ } }
+  AL.swr = function (path, fetcher, rerun) {
+    var k = "al:" + path, hit = read(k), age = hit ? Date.now() - hit.t : Infinity;
+    var fresh = function () { return fetcher(path).then(function (d) { write(k, d); return d; }); };
+    if (age < FRESH_MS) return Promise.resolve(hit.d);
+    if (age < KEEP_MS) {
+      fresh().then(function (d) {
+        if (rerun && JSON.stringify(d) !== JSON.stringify(hit.d)) rerun();
+      }).catch(function () {
+        try { sessionStorage.removeItem(k); } catch (e) { /* rien */ }
+        if (rerun) rerun();  // l'erreur (déconnecté, serveur…) s'affiche au tour suivant, sans données gardées
+      });
+      return Promise.resolve(hit.d);
+    }
+    return fresh();
+  };
+  // une modification (création, suppression…) : les données gardées sont oubliées, la page les relit
+  AL.forget = function () {
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf("al:") === 0) sessionStorage.removeItem(k);
+      }
+    } catch (e) { /* rien */ }
+  };
+  var realFetch = window.fetch;
+  if (realFetch) window.fetch = function (input, opt) {
+    if (opt && opt.method && opt.method !== "GET") AL.forget();
+    return realFetch.apply(this, arguments);
+  };
+  // déconnexion : rien ne reste dans l'onglet
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href='/logout']");
+    if (a) try { sessionStorage.clear(); } catch (err) { /* rien */ }
+  });
+})();

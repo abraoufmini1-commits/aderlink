@@ -25,7 +25,7 @@
   }
 
   function load() {
-    return api("/api/roaming").then(function (d) {
+    return AL.swr("/api/roaming", api, load).then(function (d) {
       S.groups = d.groups; S.zones = d.zones;
       var on = d.listening && d.listening.auth;
       var m = $("srvMsg");
