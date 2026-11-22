@@ -152,7 +152,7 @@ a.tb-btn { display: inline-flex; align-items: center; text-decoration: none; }
   font-size: 3.7mm; line-height: 4.4mm; letter-spacing: 0.1mm;
 }
 .bw .tk-code.tk-code-bw.long { font-size: 3mm; }
-.bw .tk-line { margin-top: 0.35mm; padding: 0 1mm; font-size: 1.45mm; line-height: 1.1; color: #000; }
+.bw .tk-line { margin-top: 0.3mm; padding: 0 0.8mm; font-size: 2.1mm; font-weight: 800; line-height: 1.05; color: #000; }  /* données et validité bien lisibles */
 
 @page { size: A4 portrait; margin: 0; }
 @media print {
