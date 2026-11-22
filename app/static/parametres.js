@@ -75,7 +75,8 @@
         (d.slow.length ? "<div class='dg-slow'><b>Pages lentes récentes :</b>" + d.slow.map(function (x) {
           var h = new Date(x.at * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
           return x.waits_router
-            ? "<div class='muted'>" + h + " · " + esc(x.label || x.path) + " · " + x.seconds + " s · <i>normal : attend le routeur</i></div>"
+            ? "<div class='muted'>" + h + " · " + esc(x.label || x.path) + " · " + x.seconds + " s · <i>normal : attend le routeur</i>" +
+              (x.detail ? "<br><small>" + esc(x.detail) + "</small>" : "") + "</div>"
             : "<div><b class='bad'>" + h + " · " + esc(x.label || x.path) + " · " + x.seconds + " s</b></div>";
         }).join("") + "</div>" : "<div class='dg-slow'>Aucune page lente récemment ✓</div>");
     }).catch(function (e) { box.textContent = e.message; });

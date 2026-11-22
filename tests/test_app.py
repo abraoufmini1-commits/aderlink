@@ -60,6 +60,7 @@ class FakeRouter(threading.Thread):
         self.profiles = {"default": {".id": "*0", "name": "default"}, "1-heure": {".id": "*1", "name": "1-heure"}}
         self.active_users = ["482915", "771204"]
         self.tables = {"/system/script": {}, "/system/scheduler": {}}  # .id -> enregistrement
+        self.logins = 0
 
     def run(self):
         while True:
@@ -77,6 +78,7 @@ class FakeRouter(threading.Thread):
                 cmd = words[0]
                 attrs = dict(w[1:].split("=", 1) for w in words[1:] if w.startswith("="))
                 if cmd == "/login":
+                    self.logins += 1
                     if attrs.get("password") == self.password:
                         _send(conn, "!done")
                     else:
@@ -371,6 +373,29 @@ class TicketTests(unittest.TestCase):
             with self.assertRaises(RouterOSError):
                 api.query("/commande/inconnue")
             self.assertEqual(api.query("/system/identity/print")[0]["name"], "Zone Test")
+
+    def test_batches_reuse_router_connection(self):
+        """Plusieurs lots à la suite sur le même routeur : une seule connexion (pas d'identification à chaque fois)."""
+        from app import tickets as tk
+        tk._POOL.clear()
+        before = self.router.logins
+        a = self.t.create_batch({"zone_id": "z1", "count": 3, "price": 100})
+        b = self.t.create_batch({"zone_id": "z1", "count": 4, "price": 100})
+        self.assertEqual((a["created"], b["created"]), (3, 4))
+        self.assertEqual(self.router.logins - before, 1)
+        self.assertEqual(tk.timing.detail.split(" · ")[0], "connexion déjà ouverte")
+        self.assertIn("4 tickets ajoutés", tk.timing.detail)
+        # connexion trop ancienne : refaite proprement
+        key = next(iter(tk._POOL))
+        api, _ = tk._POOL[key]
+        tk._POOL[key] = (api, time.time() - 200)
+        self.assertEqual(self.t.create_batch({"zone_id": "z1", "count": 2, "price": 100})["created"], 2)
+        self.assertEqual(self.router.logins - before, 2)
+        # connexion coupée par le routeur : refaite sans perdre le lot
+        api, _ = tk._POOL[key]
+        api.sock.close()
+        self.assertEqual(self.t.create_batch({"zone_id": "z1", "count": 2, "price": 100})["created"], 2)
+        self.assertEqual(self.router.logins - before, 3)
 
     def test_empty_batch_disappears(self):
         res = self.t.create_batch({"zone_id": "z1", "count": 3, "price": 100})

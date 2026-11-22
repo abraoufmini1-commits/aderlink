@@ -40,6 +40,57 @@ def open_router(zone, timeout=8):
                     use_ssl=r.get("ssl", False), timeout=timeout)
 
 
+# Détail du temps passé par la dernière action de ce fil (affiché dans « Pages lentes »)
+timing = threading.local()
+
+# Connexions aux routeurs gardées 90 s après une action : créer plusieurs lots à la suite sur le même
+# routeur ne refait pas à chaque fois la connexion et l'identification (souvent 0,5 à 1,5 s par le tunnel).
+_POOL, _POOL_LOCK, POOL_IDLE_S = {}, threading.Lock(), 90
+
+
+class _router_session:
+    def __init__(self, zone, timeout=8):
+        self.zone, self.timeout = zone, timeout
+        r = zone["router"]
+        self.key = (r["host"], r.get("port"), r["username"], r["password"], bool(r.get("ssl")))
+        self.api, self.reused = None, False
+
+    def __enter__(self):
+        now = time.time()
+        with _POOL_LOCK:
+            ent = _POOL.pop(self.key, None)
+            old = [k for k, (_, t) in _POOL.items() if now - t > POOL_IDLE_S]
+            stale = [_POOL.pop(k)[0] for k in old]
+        for a in stale:
+            a.close()
+        if ent and now - ent[1] <= POOL_IDLE_S:
+            try:
+                ent[0]._talk(["/system/identity/print"])  # toujours vivante ? (un seul aller-retour)
+                self.api, self.reused = ent[0], True
+            except Exception:
+                ent[0].close()
+        elif ent:
+            ent[0].close()
+        if self.api is None:
+            self.api = open_router(self.zone, self.timeout)
+            self.api.connect()
+        return self.api
+
+    def __exit__(self, exc_type, *rest):
+        if exc_type is None:
+            with _POOL_LOCK:
+                if self.key not in _POOL:
+                    _POOL[self.key] = (self.api, time.time())
+                    return False
+        self.api.close()
+        return False
+
+
+def router_session(zone, timeout=8):
+    """Comme open_router, mais réutilise la connexion d'une action récente sur ce routeur."""
+    return _router_session(zone, timeout)
+
+
 class TicketError(Exception):
     pass
 
@@ -337,7 +388,11 @@ class Tickets:
             if self.demo or group:  # Roaming : rien sur les routeurs, ADER LINK vérifie les codes
                 added = [new_code() for _ in range(count)]
             else:
-                with open_router(zone) as api:
+                t_conn = time.time()
+                sess = router_session(zone)
+                with sess as api:
+                    t_conn = time.time() - t_conn
+                    t_send = time.time()
                     # tout est envoyé d'un coup (rapide même par le tunnel), puis on refait les rares doublons
                     for _ in range(5):
                         need = count - len(added)
@@ -354,6 +409,10 @@ class Tickets:
                                 fatal = fatal or err
                         if fatal:
                             raise RouterOSError(fatal)
+                    t_send = time.time() - t_send
+                timing.detail = ("connexion déjà ouverte" if sess.reused else f"connexion {t_conn:.1f} s".replace(".", ",")) + \
+                    f" · {len(added)} tickets ajoutés par le routeur en {t_send:.1f} s".replace(".", ",") + \
+                    (f" ({t_send / max(1, len(added)) * 1000:.0f} ms par ticket)" if added else "")
         except RouterOSError as e:
             error = str(e)
 

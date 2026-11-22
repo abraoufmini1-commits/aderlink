@@ -283,7 +283,8 @@ class App:
                              "restarts": self.collector.restarts, "mode": self.collector.mode,
                              "error": self.collector.last_error} if hasattr(self.collector, "restarts") else None),
                 "slow": [{"at": x[0], "path": x[1], "seconds": x[2], "label": slow_label(x[1], x[3] if len(x) > 3 else "GET"),
-                          "waits_router": waits_router(x[1], x[3] if len(x) > 3 else "GET")} for x in reversed(self.slow)]}
+                          "waits_router": waits_router(x[1], x[3] if len(x) > 3 else "GET"),
+                          "detail": x[4] if len(x) > 4 else None} for x in reversed(self.slow)]}
 
     def overview(self, range_key, who):
         hours = {"6h": 6, "24h": 24, "7j": 168}.get(range_key, 24)
@@ -582,13 +583,15 @@ def make_handler(app):
         def _timed(self, fn):
             """Mesure le temps de réponse (après réception de la demande) : les pages lentes sont notées."""
             t0 = time.time()
+            from . import tickets as _tk
+            _tk.timing.detail = None
             try:
                 return fn()
             finally:
                 took = time.time() - t0
                 path = (self.path or "").split("?")[0][:60]
                 if took > 1.5 and not path.startswith("/api/restore"):
-                    app.slow.append((int(t0), path, round(took, 1), self.command))
+                    app.slow.append((int(t0), path, round(took, 1), self.command, getattr(_tk.timing, "detail", None)))
                     print(f"[lent] {path} : {took:.1f} s", flush=True)
 
         def log_message(self, fmt, *args):  # journal discret
