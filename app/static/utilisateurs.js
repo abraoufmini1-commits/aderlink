@@ -263,7 +263,10 @@
         return "<label class='check-opt'><input type='checkbox' name='uZone' value='" + esc(z.id) + "'" + (v.zones.indexOf(z.id) >= 0 ? " checked" : "") + "><span>" + esc(z.name) + "</span></label>";
       }).join("") : "<p class='pane-sub'>Ajoutez d'abord un routeur.</p>") + "</fieldset>" +
       "<div class='f' id='uComBox'><label for='uCom'>Commission du client</label><div class='unit-field'><input id='uCom' type='number' min='0' max='100' step='any' inputmode='decimal' value='" + esc(v.commission || "") + "' placeholder='0'><span class='unit'>%</span></div>" +
-      "<div class='hint'>Calculée sur les tickets vendus</div></div>" +
+      "<div class='hint'>Calculée sur les tickets qu'il a créés lui-même</div></div>" +
+      "<div class='f span2' id='uAllBox'><label class='check-opt'><input type='checkbox' id='uAll'" + (v.see_all === false ? "" : " checked") + ">" +
+      "<span>Voit toutes les ventes de ses routeurs</span></label>" +
+      "<div class='hint'>Décoché : il ne voit que les tickets qu'il a créés lui-même (revendeur sur un routeur partagé)</div></div>" +
       (u || S.role !== "admin" ? "" : "<fieldset class='span2 sub-pick'><legend>Abonnement de départ</legend>" +
         "<div class='f'><div class='sub-add'><input id='uSubN' type='number' min='1' step='1' inputmode='numeric' value='1' aria-label='Durée'>" +
         "<select id='uSubU' aria-label='Unité'><option value='heure'>heure(s)</option><option value='jour'>jour(s)</option><option value='mois' selected>mois</option><option value='an'>an(s)</option></select></div></div>" +
@@ -277,6 +280,7 @@
     function syncRole() {
       var r = document.querySelector("input[name=uRole]:checked").value;
       $("uComBox").hidden = r !== "revendeur";
+      $("uAllBox").hidden = r !== "revendeur";
       $("uMaxBox").hidden = r !== "client";
       $("uZoneBox").hidden = r === "client";
     }
@@ -293,6 +297,7 @@
         role: document.querySelector("input[name=uRole]:checked").value,
         zones: Array.prototype.map.call(document.querySelectorAll("input[name=uZone]:checked"), function (el) { return el.value; }),
         commission: +$("uCom").value || 0,
+        see_all: $("uAll").checked,
         max_routers: $("uMax").value
       };
       if (!u) {

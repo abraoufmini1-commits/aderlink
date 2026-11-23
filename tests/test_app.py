@@ -701,7 +701,19 @@ class UsersAndRolesTests(unittest.TestCase):
     def test_roles(self):
         admin = self.login("admin", "admin-secret-1")
         code, rev = self.post(admin, "/api/users", {"name": "Moussa Issa", "username": "moussa", "role": "revendeur",
-                                                    "zones": ["a"], "commission": 10})
+                                                    "zones": ["a"], "commission": 10, "see_all": False})
+        self.assertFalse(rev["see_all"])
+        # client par défaut : voit toutes les ventes de ses routeurs (même les tickets créés par l'administrateur)
+        code, naz = self.post(admin, "/api/users", {"name": "Nazirou", "username": "nazirou", "role": "revendeur",
+                                                    "zones": ["a"]})
+        self.assertTrue(naz["see_all"])
+        n = self.login("nazirou", naz["password"])
+        self.assertEqual([b["created_by"] for b in self.get(n, "/api/batches")["batches"]], ["admin"])
+        code, upd = self.post(admin, f"/api/users/{naz['id']}/update", {"name": "Nazirou", "username": "nazirou", "role": "revendeur",
+                                                                 "zones": ["a"], "see_all": False})
+        self.assertEqual(code, 200, upd)
+        self.assertFalse(upd["see_all"])
+        self.assertEqual(self.get(n, "/api/batches")["batches"], [])  # décoché : seulement ses propres tickets
         self.assertEqual(code, 200, rev)
         self.assertEqual(len(rev["password"]), 10)  # mot de passe créé automatiquement
         code, ger = self.post(admin, "/api/users", {"name": "Awa", "username": "awa", "role": "gerant",

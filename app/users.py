@@ -49,6 +49,7 @@ class Principal:
         self.expires_at = expires_at  # None = sans limite
         self.max_routers = max_routers  # clients : nombre de routeurs autorisés
         self.parent = None  # équipe d'un client : identifiant de ce client
+        self.see_all = True  # client : voit toutes les ventes de ses routeurs (sinon seulement ses tickets)
         self.limits = None  # formule du client (ou de son client pour une équipe) ; None = sans formule, tout permis
 
     def has(self, feature):
@@ -62,6 +63,11 @@ class Principal:
     @property
     def is_reseller(self):
         return self.role == "revendeur"
+
+    @property
+    def only_own_sales(self):
+        """Client réglé pour ne voir que les tickets qu'il a créés lui-même (vrai revendeur sur un routeur partagé)."""
+        return self.is_reseller and not self.see_all
 
     def can_zone(self, zone_id):
         return self.zones is None or zone_id in self.zones
@@ -109,7 +115,9 @@ class Users:
             for sql in ("ALTER TABLE points_vente ADD COLUMN user_id INTEGER",
                         "ALTER TABLE users ADD COLUMN expires_at INTEGER",
                         "ALTER TABLE users ADD COLUMN max_routers INTEGER DEFAULT 0",
-                        "ALTER TABLE users ADD COLUMN parent TEXT"):
+                        "ALTER TABLE users ADD COLUMN parent TEXT",
+                        # client : voit toutes les ventes de ses routeurs (1, par défaut) ou seulement ses tickets (0)
+                        "ALTER TABLE users ADD COLUMN see_all INTEGER DEFAULT 1"):
                 try:
                     store.db.execute(sql)
                 except Exception:
@@ -135,7 +143,7 @@ class Users:
             return rows, cur.lastrowid
 
     COLS = ("id", "username", "name", "phone", "role", "password_hash", "zones", "commission",
-            "active", "created_at", "last_login", "expires_at", "max_routers", "parent", "plan_id", "extra_routers")
+            "active", "created_at", "last_login", "expires_at", "max_routers", "parent", "plan_id", "extra_routers", "see_all")
 
     def _row(self, row):
         u = dict(zip(self.COLS, row))
@@ -203,6 +211,7 @@ class Users:
                       u["id"], u["commission"] or 0, expires, lim["max_routers"] if u["role"] == "client" else (u["max_routers"] or 0))
         p.parent = u["parent"]
         p.limits = lim if owner.get("plan_id") else None
+        p.see_all = u.get("see_all") is None or bool(u["see_all"])
         return p
 
     # --- gestion -----------------------------------------------------------------------
@@ -306,6 +315,8 @@ class Users:
         sub = data.get("subscription") or {}
         if not parent and (sub.get("unlimited") is False or sub.get("n")):
             self.subscription(uid, dict(sub, action="add"), note="Création du compte")
+        if "see_all" in data:
+            self._q("UPDATE users SET see_all = ? WHERE id = ?", (1 if data.get("see_all") else 0, uid), commit=True)
         user = self.get(uid)
         self._sync_pv(user)
         return dict(self.public(user), password=pwd)
@@ -320,6 +331,8 @@ class Users:
             raise UserError("Ce client a des routeurs : il doit rester client")
         self._q("UPDATE users SET username=?, name=?, phone=?, role=?, zones=?, commission=?, max_routers=? WHERE id=?",
                 (username, name, phone, role, json.dumps(zones), commission, max_routers, user_id), commit=True)
+        if "see_all" in data:
+            self._q("UPDATE users SET see_all = ? WHERE id = ?", (1 if data.get("see_all") else 0, user_id), commit=True)
         if username != user["username"]:  # son équipe suit son nouvel identifiant
             self._q("UPDATE users SET parent = ? WHERE parent = ?", (username, user["username"]), commit=True)
         if username != user["username"] and self.routers:  # les routeurs du client suivent son nouvel identifiant
@@ -542,6 +555,7 @@ class Users:
                 "max_routers": self.plans.limits(u.get("plan_id"), u.get("extra_routers"), u["max_routers"] or 0)["max_routers"],
                 "plan_id": u.get("plan_id"), "plan_name": (self.plans.get(u.get("plan_id")) or {}).get("name"),
                 "extra_routers": u.get("extra_routers") or 0,
+                "see_all": u.get("see_all") is None or bool(u.get("see_all")),
                 "routers_used": len(self.routers.owned(u["username"])) if self.routers else 0,
                 "parent": u["parent"]}
 

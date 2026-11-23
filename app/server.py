@@ -199,7 +199,7 @@ class App:
 
     def sales_scope(self, who):
         zone_ids = None if who.zones is None else list(who.zones)
-        return zone_ids, (who.username if who.is_reseller else None)
+        return zone_ids, (who.username if who.only_own_sales else None)
 
     def diag(self):
         """État du serveur, pour comprendre une lenteur (Paramètres, administrateur)."""
@@ -492,7 +492,13 @@ class App:
                     "zone_list": [{"id": z["id"], "name": z["name"]} for z in self.zones_for(who)],
                     "zone": chosen["id"] if chosen else ""})
         if who.is_reseller:
-            rep["commission"] = round(rep["totals"]["amount"] * (who.commission or 0) / 100)
+            own = rep["totals"]["amount"]
+            if not who.only_own_sales and who.commission:  # commission : seulement sur les tickets qu'il a créés lui-même
+                mine_rep = self._cached(("report", d1, d2, tuple(zone_ids or ()), who.username),
+                                        lambda: self.tickets.report(d1 * 86400 - off, (d2 + 1) * 86400 - off, off, zone_ids, who.username, names),
+                                        ttl=60)
+                own = mine_rep["totals"]["amount"]
+            rep["commission"] = round(own * (who.commission or 0) / 100)
         return rep
 
     def subscription_info(self, who):
@@ -522,7 +528,7 @@ class App:
     def batch_visible(self, b, who):
         if not b or not who.can_zone(b["zone_id"]):
             return False
-        return not who.is_reseller or b.get("created_by") == who.username
+        return not who.only_own_sales or b.get("created_by") == who.username
 
 
 _STATIC_CACHE = {}
