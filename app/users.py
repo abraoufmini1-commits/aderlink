@@ -564,6 +564,12 @@ class Users:
         rows, _ = self._q(f"SELECT {', '.join(self.COLS)} FROM users {where} ORDER BY active DESC, role, name",
                           (parent,) if parent else ())
         names = dict(self._q("SELECT username, name FROM users WHERE role = 'client'")[0])
+        # ventes et lots de tout le monde en 2 lectures (avant : 2 lectures PAR utilisateur, page de plusieurs secondes)
+        sales = {(by, zid): (n, a) for by, zid, n, a in self._q(
+            "SELECT b.created_by, b.zone_id, COUNT(t.code), COALESCE(SUM(b.price), 0) FROM tickets t "
+            "JOIN batches b ON b.id = t.batch_id WHERE t.first_used >= ? GROUP BY b.created_by, b.zone_id", (since,))[0]}
+        made = {(by, zid): (c, k) for by, zid, c, k in self._q(
+            "SELECT created_by, zone_id, COALESCE(SUM(count), 0), COUNT(*) FROM batches GROUP BY created_by, zone_id")[0]}
         out = []
         for r in rows:
             u = self.public(self._row(r))
@@ -573,15 +579,15 @@ class Users:
                 u["expires_at"], u["follows_parent"] = p.get("expires_at"), True
                 u["expired"] = bool(u["expires_at"]) and time.time() >= u["expires_at"]
             if u["role"] == "client":  # client : toutes les ventes de ses routeurs
-                zs = [z["id"] for z in self.routers.owned(u["username"])] if self.routers else []
-                cond, args = "b.zone_id IN (%s)" % (",".join("?" * len(zs)) or "NULL"), zs
+                zs = {z["id"] for z in self.routers.owned(u["username"])} if self.routers else set()
+                pick = lambda by, zid, zs=zs: zid in zs
             else:
-                cond, args = "b.created_by = ?", [u["username"]]
-            stats, _ = self._q(
-                "SELECT COUNT(t.code), COALESCE(SUM(b.price), 0) FROM tickets t JOIN batches b ON b.id = t.batch_id "
-                f"WHERE {cond} AND t.first_used >= ?", args + [since])
-            gen, _ = self._q(f"SELECT COALESCE(SUM(b.count), 0), COUNT(*) FROM batches b WHERE {cond}", args)
-            u["stats"] = {"sold": stats[0][0], "amount": stats[0][1], "generated": gen[0][0], "lots": gen[0][1],
-                          "commission_due": round(stats[0][1] * u["commission"] / 100)}
+                pick = lambda by, zid, me=u["username"]: by == me
+            sold = sum(n for (by, zid), (n, _) in sales.items() if pick(by, zid))
+            amount = sum(a for (by, zid), (_, a) in sales.items() if pick(by, zid))
+            generated = sum(c for (by, zid), (c, _) in made.items() if pick(by, zid))
+            lots = sum(k for (by, zid), (_, k) in made.items() if pick(by, zid))
+            u["stats"] = {"sold": sold, "amount": amount, "generated": generated, "lots": lots,
+                          "commission_due": round(amount * u["commission"] / 100)}
             out.append(u)
         return out

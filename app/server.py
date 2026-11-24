@@ -356,7 +356,7 @@ class App:
     def forget_pages(self):
         """Après une modification (lot créé, ticket supprimé…) : les pages Lots, ventes et Roaming sont recalculées."""
         with self._cache_lock:
-            for k in [k for k in self._cache if isinstance(k, tuple) and k and k[0] in ("lots", "lots_sum", "sales", "roam")]:
+            for k in [k for k in self._cache if isinstance(k, tuple) and k and k[0] in ("lots", "lots_sum", "sales", "roam", "users")]:
                 self._cache.pop(k, None)
 
     def _refresh_cache(self, key, fn):
@@ -1064,7 +1064,8 @@ def make_handler(app):
                 month = time.localtime(time.time() + off - time.timezone)
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
                 mine = None if who.is_admin else who.username
-                return {"users": app.users.list(since, parent=mine), "role": who.role,
+                return {"users": app._cached(("users", since, mine), lambda: app.users.list(since, parent=mine), ttl=15, warm=True),
+                        "role": who.role,
                         "zones": [{"id": z["id"], "name": z["name"], "owner": z.get("owner")}
                                   for z in app.config.get("zones", []) if who.can_zone(z["id"])]}
             if app.users and len(parts) == 5 and parts[2] == "users" and parts[3].isdigit() and parts[4] == "history":
