@@ -493,7 +493,7 @@ class Roaming:
         rows, _ = self.tickets._q(
             "SELECT t.zone_id, t.first_used, t.expired_at, t.bytes_used, t.uptime_used, "
             "b.validity_s, b.uptime_s, b.data_mb, b.forfait_id, b.id "
-            "FROM tickets t CROSS JOIN batches b ON b.id = t.batch_id "
+            "FROM tickets t INDEXED BY idx_tickets_code CROSS JOIN batches b ON b.id = t.batch_id "
             "WHERE t.code = ? AND b.roaming_id = ? AND t.removed = 0 AND b.removed = 0 ORDER BY b.id DESC LIMIT 1",
             (code, gid))
         self._note_read(time.monotonic() - t0)
@@ -502,6 +502,34 @@ class Roaming:
         k = ("home", "first_used", "expired_at", "bytes_used", "uptime_used", "validity_s", "uptime_s", "data_mb",
              "forfait_id", "batch_id")
         return dict(zip(k, rows[0]))
+
+    ACCT_CACHE_S = 20
+
+    def _ticket_acct(self, gid, code):
+        """Pour les paquets de consommation (les plus nombreux, toutes les quelques secondes par client) :
+        le ticket est gardé 20 s en mémoire au lieu d'être relu dans la base à chaque paquet.
+        La consommation annoncée par chaque paquet est ajoutée au ticket gardé, donc un ticket qui
+        dépasse ses données ou son temps est quand même coupé tout de suite."""
+        cache = self.__dict__.setdefault("_acct_cache", {})
+        now = time.time()
+        hit = cache.get((gid, code))
+        if hit and now - hit[0] < self.ACCT_CACHE_S:
+            return dict(hit[1])
+        t = self._ticket(gid, code)
+        if t is not None:
+            if len(cache) > 50000:
+                cache.clear()
+            cache[(gid, code)] = (now, dict(t))
+        return t
+
+    def _acct_remember(self, gid, code, t):
+        cache = self.__dict__.setdefault("_acct_cache", {})
+        hit = cache.get((gid, code))
+        if hit:
+            cache[(gid, code)] = (hit[0], dict(t))
+
+    def _acct_forget(self, gid, code):
+        self.__dict__.setdefault("_acct_cache", {}).pop((gid, code), None)
 
     def _note_read(self, dt):
         """Durée des lectures de ticket (affichée dans « État du serveur ») : pour voir si la base ralentit Roaming."""
@@ -610,7 +638,7 @@ class Roaming:
             code = cls[3:]
         elif MAC_RE.match(code):  # session ouverte automatiquement : le nom est l'adresse MAC
             code = self.code_for_mac(gid, code) or code
-        t = self._ticket(gid, code)
+        t = self._ticket_acct(gid, code) if self.async_writes else self._ticket(gid, code)
         if not t:
             return
         sid = pkt.text(R.ACCT_SESSION_ID) or ""
@@ -645,7 +673,10 @@ class Roaming:
         # avec au moins la consommation que ce paquet annonce ; sinon (écriture déjà faite) : relue
         seen = dict(t, bytes_used=max(t["bytes_used"] or 0, total), uptime_used=max(t["uptime_used"] or 0, secs),
                     first_used=t["first_used"] or (now if total > 0 else None)) if self.async_writes else None
+        if seen is not None:
+            self._acct_remember(gid, code, seen)
         if status != R.ACCT_START and self.finished(gid, code, now, t=seen):
+            self._acct_forget(gid, code)
             self.end_ticket(gid, code, t["home"], now)
 
     def finished(self, gid, code, now=None, t=None):
