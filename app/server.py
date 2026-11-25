@@ -1406,4 +1406,5 @@ def _read_stats(r):
     n = src.get("n") or 0
     if not n:
         return None
-    return {"n": n, "avg_ms": round(src.get("sum", 0) / n * 1000, 1), "max_ms": round(src.get("max", 0) * 1000)}
+    return {"n": n, "avg_ms": round(src.get("sum", 0) / n * 1000, 1), "max_ms": round(src.get("max", 0) * 1000),
+            "saved": src.get("saved", 0)}

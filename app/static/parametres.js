@@ -66,7 +66,8 @@
             "en file " + d.roaming.pending + " · réponse " + String(d.roaming.lag).replace(".", ",") + " s · abandonnées (trop vieilles) " + d.roaming.dropped +
             " · écritures en attente " + d.roaming.writes + " · fils " + d.roaming.threads +
             (d.roaming.reads ? "<br>lecture d'un ticket : " + String(d.roaming.reads.avg_ms).replace(".", ",") + " ms en moyenne, pire " +
-              d.roaming.reads.max_ms + " ms (" + d.roaming.reads.n + " en 1 min)" : "")) +
+              d.roaming.reads.max_ms + " ms (" + d.roaming.reads.n + " en 1 min" +
+              (d.roaming.reads.saved ? ", " + d.roaming.reads.saved + " évitées grâce à la mémoire" : "") + ")" : "")) +
           ((d.roaming.hot || []).length ? "<br><b>Roaming travaille sur :</b>" + d.roaming.hot.map(function (x) { return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") : "") + "</div>" : "") +
         ((d.hot || []).length ? "<div class='dg-slow'><b>Le serveur travaille sur :</b>" + d.hot.map(function (x) {
           return "<div>" + esc(x.where) + " · " + x.n + "</div>"; }).join("") + "</div>" : "") +

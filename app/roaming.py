@@ -503,7 +503,10 @@ class Roaming:
              "forfait_id", "batch_id")
         return dict(zip(k, rows[0]))
 
-    ACCT_CACHE_S = 20
+    # Les routeurs envoient la consommation toutes les 1 à 5 minutes par client : gardé 5 minutes, le ticket
+    # n'est relu qu'une fois par client au lieu d'à chaque paquet. Sans risque : la consommation de chaque paquet
+    # est ajoutée, la validité se calcule sur l'heure, un ticket fini est oublié et un second appareil est refusé.
+    ACCT_CACHE_S = 300
 
     def _ticket_acct(self, gid, code):
         """Pour les paquets de consommation (les plus nombreux, toutes les quelques secondes par client) :
@@ -514,6 +517,9 @@ class Roaming:
         now = time.time()
         hit = cache.get((gid, code))
         if hit and now - hit[0] < self.ACCT_CACHE_S:
+            r = self.__dict__.get("reads")
+            if r is not None:
+                r["saved"] = r.get("saved", 0) + 1
             return dict(hit[1])
         t = self._ticket(gid, code)
         if t is not None:
@@ -535,7 +541,8 @@ class Roaming:
         """Durée des lectures de ticket (affichée dans « État du serveur ») : pour voir si la base ralentit Roaming."""
         r = self.__dict__.setdefault("reads", {"n": 0, "sum": 0.0, "max": 0.0, "since": time.time()})
         if time.time() - r["since"] > 60:
-            self.reads = r = {"n": 0, "sum": 0.0, "max": 0.0, "since": time.time(), "prev": {k: r[k] for k in ("n", "sum", "max")}}
+            self.reads = r = {"n": 0, "sum": 0.0, "max": 0.0, "since": time.time(),
+                              "prev": {k: r.get(k, 0) for k in ("n", "sum", "max", "saved")}}
         r["n"] += 1
         r["sum"] += dt
         if dt > r["max"]:
