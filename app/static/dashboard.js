@@ -353,8 +353,19 @@
       window.AderInstallPrompt = null;
       return;
     }
-    if (/iphone|ipad|ipod/i.test(ua)) say("Sur iPhone, ouvrez cette page dans <strong>Safari</strong>, touchez <strong>Partager</strong> ⬆️ puis <strong>Sur l'écran d'accueil</strong>.");
-    else if (/android/i.test(ua)) say("Dans Chrome, touchez le menu <strong>⋮</strong> en haut à droite, puis <strong>Installer l'application</strong> (ou <strong>Ajouter à l'écran d'accueil</strong>).");
+    var android = /android/i.test(ua);
+    var inApp = /FBAN|FBAV|FB_IAB|Instagram|; wv\)|\bwv\b|Line\//i.test(ua);  // ouvert depuis WhatsApp, Facebook…
+    var other = /OPR\/|Opera Mini|OPiOS|PHX\/|Phoenix|UCBrowser|MiuiBrowser|HeyTapBrowser|VivoBrowser|Firefox|EdgA|YaBrowser/i.test(ua);
+    var openChrome = "intent://" + location.host + location.pathname + "#Intent;scheme=https;package=com.android.chrome;end";
+    if (/iphone|ipad|ipod/i.test(ua)) say(/CriOS|FxiOS|OPiOS|FBAN|FBAV|Instagram/i.test(ua)
+      ? "Sur iPhone, l'installation marche seulement avec <strong>Safari</strong> : copiez l'adresse <strong>" + location.host + "</strong>, ouvrez-la dans Safari, puis touchez <strong>Partager</strong> ⬆️ → <strong>Sur l'écran d'accueil</strong>."
+      : "Sur iPhone, touchez <strong>Partager</strong> ⬆️ en bas de Safari, puis <strong>Sur l'écran d'accueil</strong>.");
+    else if (android && /SamsungBrowser/i.test(ua)) say("Dans Samsung Internet, touchez le menu <strong>≡</strong> en bas, puis <strong>Ajouter la page à</strong> → <strong>Écran d'accueil</strong>. " +
+      "Ou <a href='" + openChrome + "'>ouvrez ADER LINK dans Chrome</a> et touchez Installer.");
+    else if (android && (inApp || other)) say("Ce navigateur ne sait pas installer les applications. " +
+      "<a class='btn btn-sm' href='" + openChrome + "'>Ouvrir dans Google Chrome</a><br>Puis connectez-vous et touchez <strong>Installer</strong>. " +
+      "Si Chrome n'est pas sur le téléphone, installez-le depuis le Play Store.");
+    else if (android) say("Dans Chrome, touchez le menu <strong>⋮</strong> en haut à droite, puis <strong>Installer l'application</strong> (ou <strong>Ajouter à l'écran d'accueil</strong>).");
     else say("Dans Chrome ou Edge, cliquez sur l'icône <strong>Installer</strong> à droite de la barre d'adresse, ou menu <strong>⋮</strong> → <strong>Installer ADER LINK</strong>. Si ADER LINK est déjà installé, il est dans le menu Démarrer.");
   });
 })();
