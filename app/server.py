@@ -397,7 +397,9 @@ class App:
                 time.sleep(3)
                 now = time.time()
                 with self._cache_lock:
-                    for k in [k for k, (_, _, seen) in self._warm.items() if now - seen > 600]:
+                    # Utilisateurs : tenue prête toute la journée (recalculée chaque minute, la 1re ouverture du matin aussi
+                    # est immédiate) ; les autres pages : 10 minutes après la dernière visite
+                    for k in [k for k, (_, _, seen) in self._warm.items() if now - seen > (86400 if k[0] == "users" else 600)]:
                         self._warm.pop(k, None)
                     todo = [(k, fn) for k, (fn, ttl, _) in self._warm.items()
                             if k not in self._refreshing and now - self._cache.get(k, (0,))[0] > ttl * 0.8]
@@ -1064,7 +1066,7 @@ def make_handler(app):
                 month = time.localtime(time.time() + off - time.timezone)
                 since = int(time.mktime((month.tm_year, month.tm_mon, 1, 0, 0, 0, 0, 0, -1))) - off + time.timezone
                 mine = None if who.is_admin else who.username
-                return {"users": app._cached(("users", since, mine), lambda: app.users.list(since, parent=mine), ttl=15, warm=True),
+                return {"users": app._cached(("users", since, mine), lambda: app.users.list(since, parent=mine), ttl=60, warm=True),
                         "role": who.role,
                         "zones": [{"id": z["id"], "name": z["name"], "owner": z.get("owner")}
                                   for z in app.config.get("zones", []) if who.can_zone(z["id"])]}

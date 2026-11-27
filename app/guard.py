@@ -31,6 +31,9 @@ class GuardError(Exception):
 KEY_FILES = ("vps.key", "vps.pub", "ca.crt", "ca.key", "server.crt", "server.key", "dh.pem")
 
 
+TG_PART = 45_000_000  # Telegram : 50 Mo au plus par fichier
+
+
 def make_backup(config, store, light=False, keys_dir=None):
     """Sauvegarde complète : config.json + copie cohérente de la base.
     light=True : sans l'historique des graphiques (relevés et journal) — pour Telegram, limité à 50 Mo."""
@@ -40,8 +43,18 @@ def make_backup(config, store, light=False, keys_dir=None):
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "aderlink.db"
             dst = sqlite3.connect(copy)
-            with store.lock:
-                store.db.backup(dst)
+            src_path = getattr(store, "path", None)
+            if src_path and src_path != ":memory:" and Path(src_path).is_file():
+                # copie depuis une connexion à part : une photo cohérente de la base, SANS bloquer l'application
+                # (avant : la base était bloquée 5 à 6 s pendant la copie, Roaming et les pages attendaient)
+                src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True, timeout=30)
+                try:
+                    src.backup(dst)
+                finally:
+                    src.close()
+            else:
+                with store.lock:
+                    store.db.backup(dst)
             if light:
                 for table in ("samples", "events"):
                     try:
@@ -51,7 +64,8 @@ def make_backup(config, store, light=False, keys_dir=None):
                 dst.commit()
                 dst.execute("VACUUM")
             dst.close()
-            zf.write(copy, "aderlink.db")
+            # pour Telegram (50 Mo au plus) : compression plus forte (2 fois plus petit, un peu plus lent, la nuit)
+            zf.write(copy, "aderlink.db", compress_type=zipfile.ZIP_LZMA if light else zipfile.ZIP_DEFLATED)
         # clés des tunnels du serveur (WireGuard / OpenVPN) : un nouveau serveur garde les mêmes, les routeurs se reconnectent seuls
         if keys_dir and Path(keys_dir).is_dir():
             for name in KEY_FILES:
@@ -204,30 +218,48 @@ class Guard:
         t = self.tg()
         if send and t.get("token") and t.get("chat_id"):
             doc, caption = data, f"Sauvegarde ADER LINK du {self.today()}"
-            if len(doc) >= 45_000_000:  # Telegram refuse plus de 50 Mo : on envoie tout sauf l'historique des graphiques
+            if len(doc) >= TG_PART:  # Telegram refuse plus de 50 Mo : tout sauf l'historique des graphiques, plus compressé
                 doc = make_backup(self.config, self.store, light=True, keys_dir=self.keys_dir)
                 caption += " (sans l'historique des graphiques)"
+            # gardée telle quelle : un nouvel essai renvoie ce fichier sans refaire la sauvegarde
+            tgf = self.dir / f"aderlink-tg-{self.today()}.zip"
+            tgf.write_bytes(doc)
+            (self.dir / f"aderlink-tg-{self.today()}.txt").write_text(caption)
+            for f in sorted(self.dir.glob("aderlink-tg-*.zip"), reverse=True)[2:]:
+                f.unlink()
+                f.with_suffix(".txt").unlink(missing_ok=True)
             try:
-                if len(doc) >= 45_000_000:
-                    raise GuardError("sauvegarde trop grosse pour Telegram")
-                self._api("sendDocument", {"chat_id": t["chat_id"], "caption": caption},
-                          {"document": (name, doc)}, timeout=300)
+                self._send_doc(name, doc, caption)
                 sent = True
             except GuardError as e:
                 self.log(f"Sauvegarde non envoyée sur Telegram : {e}")
         return {"name": name, "size": len(data), "telegram": sent}
 
-    def resend_backup(self, day):
-        """Renvoie sur Telegram la sauvegarde du jour déjà faite sur le serveur."""
-        f = self.dir / f"aderlink-auto-{day}.zip" if self.dir else None
+    def _send_doc(self, name, doc, caption):
+        """Envoie le fichier ; au-delà de 45 Mo, en plusieurs parties (à remettre bout à bout pour restaurer)."""
         t = self.tg()
-        if not (f and f.is_file() and t.get("chat_id")):
+        parts = [doc[i:i + TG_PART] for i in range(0, len(doc), TG_PART)] or [doc]
+        for i, part in enumerate(parts, 1):
+            if len(parts) == 1:
+                fname, cap = name, caption
+            else:
+                fname = f"{name}.{i:03d}"
+                cap = (f"{caption} — partie {i}/{len(parts)}" +
+                       ("\nPour restaurer : téléchargez la sauvegarde complète dans Paramètres, ou remettez les parties "
+                        "bout à bout (copy /b sur PC, cat sur le serveur)." if i == len(parts) else ""))
+            self._api("sendDocument", {"chat_id": t["chat_id"], "caption": cap}, {"document": (fname, part)}, timeout=300)
+
+    def resend_backup(self, day):
+        """Renvoie sur Telegram la sauvegarde du jour déjà préparée (sans la refaire : la base n'est pas relue)."""
+        t = self.tg()
+        if not (self.dir and t.get("chat_id")):
             return False
-        doc, caption = f.read_bytes(), f"Sauvegarde ADER LINK du {day}"
-        if len(doc) >= 45_000_000:
-            doc = make_backup(self.config, self.store, light=True, keys_dir=self.keys_dir)
-            caption += " (sans l'historique des graphiques)"
-        self._api("sendDocument", {"chat_id": t["chat_id"], "caption": caption}, {"document": (f.name, doc)}, timeout=300)
+        f = self.dir / f"aderlink-tg-{day}.zip"
+        if not f.is_file():
+            return False
+        cap = self.dir / f"aderlink-tg-{day}.txt"
+        caption = cap.read_text() if cap.is_file() else f"Sauvegarde ADER LINK du {day}"
+        self._send_doc(f"aderlink-auto-{day}.zip", f.read_bytes(), caption)
         return True
 
     # --- alertes -----------------------------------------------------------------------------------

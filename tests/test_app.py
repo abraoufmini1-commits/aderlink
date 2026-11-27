@@ -1427,6 +1427,56 @@ class GuardTests(unittest.TestCase):
             g.set_token("pas un jeton")
 
 
+class TelegramBackupTest(unittest.TestCase):
+    """Sauvegarde de la nuit : copiée sans bloquer la base, plus compressée pour Telegram, renvoyée sans être refaite."""
+
+    def test_backup_light_split_resend(self):
+        import tempfile, zipfile, io
+        from pathlib import Path
+        from app import guard as G
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "a.db"))
+            with store.lock:
+                store.db.execute("CREATE TABLE IF NOT EXISTS t (x TEXT)")
+                store.db.executemany("INSERT INTO t VALUES (?)", [("ticket %d " % i * 20,) for i in range(20000)])
+                store.db.commit()
+            cfg = {"admin": {"password_hash": "h"}, "secret_key": "s", "telegram": {"token": "1:x", "chat_id": "42"}}
+            g = G.Guard(cfg, store, data_dir=tmp)
+            calls = []
+            g._api = lambda m, data=None, files=None, timeout=20: calls.append((data["caption"], files["document"][0], len(files["document"][1])))
+            # la base n'est pas bloquée pendant la copie : la sauvegarde se fait même si l'application tient la base
+            import threading
+            (Path(tmp) / "backups").mkdir()
+            old_part = G.TG_PART
+            G.TG_PART = 10_000  # petit seuil : force la version allégée puis le découpage
+            out = {}
+            with store.lock:
+                th = threading.Thread(target=lambda: out.update(r=g.backup_now()))
+                th.start()
+                th.join(30)
+            self.assertFalse(th.is_alive())
+            r = out["r"]
+            self.assertTrue(r["telegram"])
+            self.assertGreater(len(calls), 1)  # en plusieurs parties
+            self.assertTrue(all(n <= 10_000 for _, _, n in calls))
+            self.assertIn("partie 1/", calls[0][0])
+            self.assertTrue(calls[0][1].endswith(".zip.001"))
+            # les parties remises bout à bout = une sauvegarde valide (base compressée LZMA)
+            doc = (Path(tmp) / "backups" / f"aderlink-tg-{g.today()}.zip").read_bytes()
+            with zipfile.ZipFile(io.BytesIO(doc)) as zf:
+                self.assertEqual(zf.getinfo("aderlink.db").compress_type, zipfile.ZIP_LZMA)
+                self.assertEqual(zf.read("aderlink.db")[:16], b"SQLite format 3\x00")
+            # nouvel essai : le même fichier, sans refaire la sauvegarde
+            n, calls[:] = len(calls), []
+            import os
+            os.remove(Path(tmp) / "a.db")  # si la sauvegarde était refaite, elle échouerait
+            try:
+                self.assertTrue(g.resend_backup(g.today()))
+            finally:
+                G.TG_PART = old_part
+            self.assertEqual(len(calls), n)
+
+
 class RecoverUsedTest(unittest.TestCase):
     """Rattrapage des ventes : tickets utilisés pendant une panne d'ADER LINK, comptés au bon moment."""
 
